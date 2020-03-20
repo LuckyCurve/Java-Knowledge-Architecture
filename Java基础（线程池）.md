@@ -1,49 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## 池化技术
 
 池化技术有很多实现，例如线程池，数据库连接池，Http连接池等都是池化技术的具体应用，
@@ -94,7 +48,7 @@ Executor还提供了线程工厂，队列以及拒绝策略等
 
 常见的实现类：ThreadPoolExecutor 和 ScheduledThreadPoolExecutor类，他们之间的继承关系如下图所示：
 
-![继承关系](Untitled.assets/image-20200320134740369.png)
+![继承关系](Java基础（线程池）.assets//image-20200320134740369.png)
 
 
 
@@ -153,7 +107,7 @@ public ThreadPoolExecutor(int corePoolSize,
 
 流程图
 
-![流程图](Untitled.assets/image-20200320140307867.png)
+![流程图](Java基础（线程池）.assets//image-20200320140307867.png)
 
 **将要执行的任务传进线程池中去，线程池会先用任务队列来接受任务（如果核心线程数都被占用了的话），非核心线程的存在时间为定义的keepAliveTime。**
 
@@ -288,7 +242,7 @@ Finish All Task
 
 execute（）方法执行过程
 
-![image-20200320150235100](Untitled.assets/image-20200320150235100.png)
+![image-20200320150235100](Java基础（线程池）.assets//image-20200320150235100.png)
 
 
 
@@ -512,11 +466,63 @@ public static ExecutorService newCachedThreadPool(ThreadFactory threadFactory) {
 
 ## ScheduledThreadPoolExecutor
 
+**ScheduledThreadPoolExecutor主要作用是在给定的时间后再执行任务，或者是定时执行任务**，但是在实际开发中一般用的比较少，因为SpringBoot整合了自己的Schedule Task
+
+
+
+简介：
+
+使用了内部类DelayedWorkQueue，会对队列中的任务进行按时间顺序的排序，执行所需时间短的在前面执行，若执行时间相同，则按照任务加入队列的顺序依次执行，在JDK1.5之后才出，代替了Timer
+
+
+
+执行步骤：
+
+当嗲用ScheduledThreadPoolExecutor的scheduleAtFixedRate（）或者scheduleWirhFixedDelay方法时，会向ScheduledThreadPoolExecutor实例化对象中的DelayQueue中传入一个实现了RunnableScheduledFuture接口的ScheduledFutureTask，线程池再从DelayQueue中获取ScheduledFutureTask，再执行任务
+
+
+
+ScheduledThreadPoolExecutor与ThreadPoolExecutor的对比：
+
+- 使用了DelayQueue作为队列任务
+- 获取任务的方法不同
+- 执行周期任务后，多了额外的处理
+
+
+
+![流程图](Java基础（线程池）.assets/image-20200320211225122.png)
+
+流程简介：
+
+1. 线程 1 从 `DelayQueue` 中获取已到期的 `ScheduledFutureTask（DelayQueue.take()）`。到期任务是指 `ScheduledFutureTask `的 time 大于等于当前系统的时间；
+2. 线程 1 执行这个 `ScheduledFutureTask`；
+3. 线程 1 修改 `ScheduledFutureTask` 的 time 变量为下次将要被执行的时间；
+4. 线程 1 把这个修改 time 之后的 `ScheduledFutureTask` 放回 `DelayQueue` 中（`DelayQueue.add()`)。
 
 
 
 
 
+
+
+## 线程池大小的确定
+
+大部分程序员在设定线程池的大小的时候都是按照自己的意愿随心而定
+
+
+
+危害：
+
+如果设置太少，会导致大量的任务堆积在工作队列中，如果队列满了，根据线程池的饱和策略来定，有可能出现任务丢失，或者出现OOM，这种情况就是内存压力过大，CPU没有得到充分利用
+
+如果设置太多，会导致大量线程都在争取CPU资源，会有大量的上下文切换，增加线程整体的执行时间，效率降低
+
+
+
+解决公式：
+
+- CPU密集型任务（N+1）：主要压力在CPU这边，线程数设置成N（CPU核心数）+1，多的一个线程是为了及时填补上意外情况导致的任务暂停
+- IO密集型任务（2N）：这种任务应用起来，系统会用大部分的时间来处理 I/O 交互，而线程在处理 I/O 的时间段内不会占用 CPU 来处理，这时就可以将 CPU 交出给其它线程使用，具体的计算方法是 2N。
 
 
 
