@@ -359,6 +359,155 @@ SHOW COLUMNS FROM USER;
 
 # 检索数据
 
+如何使用SELECT 语句检索出一个或多个数据列
+
+
+
+## SELECT语句
+
+
+
+SELECT是非常常用的关键字
+
+使用SELECT关键字必须给出两条信息：想选择什么，以及从什么地方选择
+
+
+
+
+
+## 检索单个列
+
+
+
+![image-20200322210728532](images/image-20200322210728532.png)
+
+假设表的结构如图所示
+
+
+
+检索username这一列
+
+```mysql
+ SELECT username FROM user;
+```
+
+即可，标准格式`SELECT (COLUMNS) FROM (TABLE)`
+
+> 数据没有排序，输出的结果可能是数据被添加到表里面的顺序，也可能不是，只要返回相同的数目即是正常的
+
+因为SQL语句（至少mysql）是遇到分号才算一条语句的结束，所以可以将一条语句拆分成多行（也是非常推荐的），这样便于阅读。
+
+
+
+## 检索多个列
+
+
+
+数据表还是如上图，假设要检索username和password这两个列
+
+```mysql
+SELECT username,password FROM user
+```
+
+
+
+SQL语句一般返回原始的，无格式的数据，至于数据的格式化问题，转换问题则是要在业务层中解决
+
+
+
+
+
+## 检索所有列
+
+
+
+使用通配符的方式来解决 *代表任意
+
+```mysql
+SELECT * FROM user
+```
+
+> :warning:：除非你要检索数据的每个列，最好别用*通配符，虽然省事儿，但是检索不需要的列通常会降低程序的性能
+
+
+
+## 检索不同的行
+
+
+
+如果检索单列，只需要MySQL返回不同的值
+
+使用DISTINCT（不同的）关键字即可，如检索username，只要不重复的，用法如下
+
+```mysql
+SELECT DISTINCT username FROM user;
+```
+
+会返回不同结果的username
+
+
+
+DISTINCT关键字直接作用于所有列，而不是他后面的那个列，如
+
+```mysql
+SELECT DISTINCT username,password FROM user;
+```
+
+唯有username和password都相同的列才会被省去
+
+
+
+## 限制结果
+
+限制SELECT的输出结果（只取前几行），使用LIMIT关键字
+
+```MYSQL
+SELECT * FROM user LIMIT 5;
+```
+
+至多返回5行数据，如果不足5行则直接返回
+
+
+
+为了方便演示，使用Java插入了一些数据，便于查询
+
+数据截图：
+
+![image-20200322215536498](images/image-20200322215536498.png)
+
+1~3的id已经被使用了，即使被数据被删除了也不能再次使用【主键的规则】
+
+使用上述limit语句查询显示4~8的id数据
+
+
+
+> :warning:： mysql的行索引是从零开始的
+
+所以`SELECT * FROM user LIMIT 5`查询的是行索引为0~4的数据
+
+使用`SELECT * FROM user LIMIT a,b`查询的是行下标从5开始后的五个数据
+
+
+
+
+
+## 使用完全限定的表名
+
+
+
+迄今为止使用的SQL例子都只是列名引用列，也可以使用完全限定的名字来限定列：
+
+```mysql
+SELECT user.id FROM user LIMIT 5;
+```
+
+也可以限定表名字
+
+```mysql
+SELECT user.id FROM test.user LIMIT 5;
+```
+
+通过 `表名.列名` 或者 `数据库名.表名` 来完全限定
 
 
 
@@ -366,6 +515,240 @@ SHOW COLUMNS FROM USER;
 
 
 
+# 排序检索数据
+
+ 
+
+使用SELECT 的 ORDER BY 子句，根据需要排序检索出的数据
 
 
+
+## 排序数据
+
+使用 `SELECT * FROM user` 检索出的数据并不是纯粹的随机排列，如果不排序，数据一般都是按照它在底层表中出现的顺序显示，也就是数据插入的数据，但是如果后来对数据进行了更新或者删除的话，则此顺序会受到MySQL回收存储空间的影响，因此，如果不明确控制，不能依赖默认的排列顺序
+
+
+
+:key:**子句**（clause）：SQL语句由子句构成，一个子句通常包括一个关键字和所提供的数据组成，有些子句是必须的，有些子句是可选的
+
+像 `SELECT * FROM user LIMIT 5` 的SELECT语句的FROM子句就是必须的，而LIMIT子句就是可选的，此ORDER BY 子句就是可选的：
+
+```mysql
+SELECT * FROM user ORDER BY username LIMIT 10;
+```
+
+> 默认是升序排列，一般ORDER BY的字段都是检索的字段，但是ORDER BY没有检索的字段也是完全合法的
+
+
+
+
+
+## 按多个列排序
+
+
+
+经常会出现这种情况，如果显示雇员清单，由姓和名两列（首先按照性排列，在每个性中再按照名排列），实现此功能只需要指定列名，列名之间用逗号隔开即可
+
+
+
+```mysql
+SELECT first_name,last_name FROM user ORDER BY first_name,last_name;
+```
+
+会先按照firstname排序，再通过lastname排序firstname相同的数据
+
+如果firstname都是唯一的，则不用对lastname进行排序
+
+
+
+
+
+
+
+## 指定排序方向
+
+
+
+默认是升序排序，如果要使用降序排序，则使用DESC关键字即可
+
+按照降序排列username：
+
+```java
+SELECT * FROM user ORDER BY username DESC LIMIT 10;
+```
+
+
+
+DESC和DISTINCT关键字不同，DISTINCT关键字会作用于所有的列，让其都保持唯一，而DESC则只会保持其前面的列是降序的，其余列都是保持默认的升序
+
+
+
+> 如果想让多个列都进行降序排列，则必须在每个列上都指定DESC关键字
+
+默认的升序排列关键字是ASC，但是ASC用的非常的少，因为默认就是ASC的
+
+
+
+
+
+> 区分大小写的排序设置：因为MySQL是不区分大小写的，所以A和a的排列地位是一样的，如果要进行区分，需要数据库管理员对数据库进行配置，用简单的ORDER BY是做不到的
+
+
+
+使用ORDER BY找出id最大的值
+
+```mysql
+SELECT id FROM user ORDER BY id LIMIT 1;
+```
+
+先按照id降序排列，再取最上面一个即获取到id的最大值
+
+
+
+> 子句会有位置的问题，例如：只有按照	FROM子句 + ORDER BY 子句 + LIMIT 子句才不会报错，否则会报错
+
+
+
+
+
+
+
+# 过滤数据
+
+
+
+使用SELECT语句的WHERE子句来指定搜索条件
+
+
+
+## 使用WHERE子句
+
+
+
+很少需要检索表中的所有行，往往只需要指定指定搜索条件，也叫过滤条件
+
+```mysql
+SELECT * FROM user WHERE id = 0;
+```
+
+WHERE子句不止仅能进行相等判断
+
+
+
+> SQL过滤和应用过滤：
+>
+> 数据也可以再客户端这边过滤，即服务器端仅仅返回所有数据，然后再客户端这边去处理，这种实现很不令人满意，不仅会让客户机的效率大大降低，还会导致网络的数据传输量加大，造成带宽的浪费
+
+
+
+
+
+>  子句的排列顺序为：FROM    WHERE   ORDER BY    LIMIT
+
+
+
+
+
+## WHERE子句操作符
+
+
+
+| 操作符  |        说明        |
+| :-----: | :----------------: |
+|    =    |        等于        |
+|   <>    |       不等于       |
+|   !=    |       不等于       |
+|    <    |        小于        |
+|   <=    |      小于等于      |
+|    >    |        大于        |
+|   >=    |      大于等于      |
+| BETWEEN | 再指定的两个词中间 |
+
+
+
+### 检查单个值
+
+
+
+```mysql
+SELECT * FROM user WHERE username = 'ECAC3';
+```
+
+>  使用单引号和双引号的效果相同
+
+
+
+```mysql
+SELECT * FROM user WHERE id < 10;
+```
+
+
+
+### 不匹配检查
+
+
+
+```mysql
+SELECT * FROM user WHERE id <> 10;
+```
+
+等价于
+
+```mysql
+SELECT * FROM user WHERE id != 10;
+```
+
+
+
+
+
+### 范围值检查
+
+
+
+可以使用BETWEEN关键字，不过于其他WHERE子句的操作符稍有不同
+
+```mysql
+SELECT * FROM user WHERE id BETWEEN 5 AND 10;
+```
+
+> BETWEEN  a  AND  b
+>
+> 一定是查询大于等于a小于等于b的值
+
+
+
+以上语句等价于：
+
+```mysql
+SELECT * FROM user WHERE id >= 5 AND id <= 10;
+```
+
+
+
+
+
+
+
+### 空值检查
+
+
+
+设计表时候即可指定这个字段能否为NULL
+
+
+
+:key: ：NULL	无值（no value），与包含字段0，空字符串不同
+
+
+
+SELECT由一种特殊的WHERE子句来检查具有空值的NULL
+
+```mysql
+SELECT * FROM user WHERE password IS NULL;
+```
+
+
+
+> :warning:：在匹配过滤和不匹配过滤中都不会返回当前列为NULL的行
 
