@@ -532,15 +532,86 @@ ScheduledThreadPoolExecutor与ThreadPoolExecutor的对比：
 
 
 
+# 线程池的使用实例：
+
+在学习MySQL的时候，如果要插入大量数据，即可使用多线程来提高效率
+
+
+
+不使用并发编程：
+
+```java
+class TestOssApplicationTests {
+
+    @Autowired
+    ProductMapper productMapper;
+
+    String name;
+    Integer price;
+    Random random1 = new Random(100);
+
+    @Test
+    void contextLoads() {
+        long time1 = System.currentTimeMillis();
+        Random random = new Random();
+        for (int i = 0; i < 50; i++) {
+            name = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 6);
+            price = random.nextInt(100);
+            Product product = Product.builder().name(name).price(price).build();
+            productMapper.insert(product);
+        }
+        long time2 = System.currentTimeMillis();
+        System.out.println("消耗时间为：" + (time2 - time1));
+    }
+```
+
+消耗时间为：4610
 
 
 
 
 
+使用并发编程：
 
+```java
+    @Test
+    void fun2() {
+        long time1 = System.currentTimeMillis();
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                9,
+                9,
+                1,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(10),
+                new ThreadPoolExecutor.CallerRunsPolicy());
 
+        for (int i = 0; i < 50; i++) {
+            Runnable runnable = new Runnable() {
 
+                @Override
+                public void run() {
+                    name = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 6);
+                    price = random1.nextInt(100);
+                    Product product = Product.builder().name(name).price(price).build();
+                    productMapper.insert(product);
+                }
+            };
+            executor.execute(runnable);
+        }
 
+        executor.shutdown();
+
+        while (!executor.isTerminated()){
+
+        }
+        Long time2 = System.currentTimeMillis();
+        System.out.println("消耗时间为："+(time2 - time1));
+    }
+```
+
+消耗时间为：1767
+
+一倍的差距，有点大
 
 
 
