@@ -1219,3 +1219,532 @@ SELECT * FROM product WHERE name REGEXP "^[0-9\\.]";
 
 
 ## 计算字段
+
+
+
+存在很多情况，存储在表中的数据都不是应用程序所需要的，我们希望直接在数据库层面上检索，转换出需要的数据，而不是直接检索出所有数据，再传递给客户端去重新在应用程序中格式化。这就依赖于计算字段了
+
+
+
+与前面所介绍的列不同，计算字段并不实际存在于数据库表中，计算字段是运行SELECT语句内创建的
+
+
+
+:key: 字段（field）：基本和列的意思相同，习惯上将数据库列称为列，字段一般用在计算字段的连接上
+
+
+
+在客户机的角度上：计算字段和普通的列是一样的
+
+
+
+> 能在服务器端完成的操作一般也能在客户机完成，但一般来说在服务器端的运行速率比客户机的处理效率要高
+
+
+
+## 字段拼接
+
+
+
+:key: 拼接（concatenate）：将值连接到一起形成单个值
+
+
+
+要将商品的名称和价格按照：名称（价格）的格式来给定
+
+解决方法：使用Concat函数来拼接两个列
+
+```mysql
+SELECT Concat(name,"(",price,")") from product;
+```
+
+Concat 函数具有拼接字符串的作用，形成一个长串，列名为Concat(name,"(",price,")")
+
+:warning:如果查询的name或者price其中一个是NULL的，那么整个列就是NULL
+
+
+
+可以通过删除name右侧的空格来整理数据，通过RTrim（）函数来完成
+
+上面的SQL可以优化为：
+
+```mysql
+SELECT Concat(RTrim(name),"(",RTrim(price),")") from product;
+```
+
+去掉了数据右侧的空格，减少了网络的带宽浪费
+
+> RTrim去除右侧空格，LTrim去除左侧空格，Trim去除左右空格
+
+
+
+**使用别名来优化查询结果的列名显示**，因为客户端无法识别列名Concat(RTrim(name),"(",RTrim(price),")")
+
+优化成为去除左右两边空格
+
+```mysql
+SELECT Concat(Trim(name),"(",Trim(price),")") product_info from product;
+```
+
+> 标准格式应该为：SELECT Concat(Trim(name),"(",Trim(price),")") AS product_info from product;   不过AS关键字可以省略
+
+
+
+
+
+## 执行算术计算
+
+
+
+如果有一张订单表，里面存有三列，分别为订单号，单价和数量，现在算出每个订单号的总价
+
+我们就不新建表了，直接使用product表，用id代表数量，price代表单价
+
+计算总价：
+
+```mysql
+SELECT name,id,price,id*price AS total FROM product ORDER BY name
+```
+
+> 其他算术操作符： +  -   *   /
+
+
+
+> 可以使用SELECT关键字来简单的访问和处理表达式，如：
+>
+> - 算术运算： SELECT 1*10;
+> - 去除空格：SELECT Trim("  a  b  c  ");
+> - 返回当前时间：SELECT Now();
+
+
+
+
+
+# 使用数据处理函数
+
+
+
+## 函数
+
+SQL支持函数来处理数据，前一章中处理数据左右空格的Trim（）就是一个函数
+
+
+
+> 函数的可移植性就没有SQL的可移植性强，因为每种DBMS的SQL都是大同小异的，且都支持一些操作，只要修改一些关键词即可
+>
+> 而每个BDMS都实现了大量特定的函数，不易在不同的DBMS中间移植
+
+
+
+
+
+## 使用函数
+
+
+
+大多数的SQL都实现了以下类型的函数：
+
+- 处理文本串的文本函数（删除填充数值，大小写转换等）
+- 算术运算的数值函数（返回绝对值，进行代数运算）
+- 用于日期处理的函数
+- 返回System的信息的函数
+
+
+
+### 文本处理函数
+
+去除左右空格的Trim函数我们已经见过了，再来介绍一个常用的
+
+让字母大写的函数Upper函数
+
+
+
+```mysql
+SELECT Upper(name) AS upper_name FROM product LIMIT 5;
+```
+
+还有一些常见的文本处理函数如下：
+
+|     函数      |       功能        |
+| :-----------: | :---------------: |
+|   Left（）    | 返回串左边的字符  |
+|  Length（）   |   返回串的长度    |
+|  Locate（）   | 找出串的一个子串  |
+|   Lower（）   |  将串转换为小写   |
+|   LTrim（）   |   去除左边空格    |
+|   RTrim（）   |   去除右边空格    |
+|   Rigth（）   | 返回串右边的字符  |
+|   Upper（）   |  将串转换出大写   |
+| SubString（） |  返回子串的字符   |
+|  Soundex（）  | 返回串的SOUNDEX值 |
+
+
+
+Soundex函数将串转换出为SOUNDEX（类似的发音字符和音节）
+
+
+
+使用的时候了解下语法就行了
+
+
+
+
+
+### 日期和时间处理函数
+
+![image-20200323202030378](images/image-20200323202030378.png)
+
+我们以前只是使用WHERE关键字来过滤字符和数值的操作，也可以使用WHERE关键字来过滤时间日期操作
+
+
+
+和Java的一样，MySQL使用的日期格式也为 yyyy-mm-dd
+
+
+
+使用datetime的数据类型来存储时间
+
+
+
+在Easy Code的插件的MySQL的字段和Java的类之间的转换可以看出：
+
+![image-20200323205452471](images/image-20200323205452471.png)
+
+datatime和timestamp会被转换成为Java的Data数据类型
+
+
+
+设计表为：
+
+![image-20200323210245054](images/image-20200323210245054.png)
+
+千万别把表名设置成了order，order 是 关键字，会报错
+
+此时数据表中的所有数据为：
+
+![image-20200323210525308](images/image-20200323210525308.png)
+
+如果此时要查询order_date为2000-09-01的订单，使用以下SQL语句
+
+```mysql
+SELECT * FROM orders WHERE order_date = "2000-09-01";
+```
+
+只能查询出订单号为2的数据，即如果没有指定到时分秒，默认都是补零，这与我们实际当中的用法有很大的冲突
+
+解决方法：使用库函数将order_date的日期部分拿出来作比较即可
+
+```mysql
+SELECT * FROM orders WHERE Date(order_date) = "2000-09-01";
+```
+
+
+
+> 在你仅需知道的是日期的时候，可以直接使用Date（）函数，尽管你知道相应的列只包含日期也是如此，如果只想获取时间，同样也可以使用Time（）函数
+>
+> 这两个函数都是在MySQL 4.1.1 之后引入的
+
+
+
+
+
+还有一种情况就是只要获取2000年09月的订单：
+
+
+
+- 可以使用
+
+```mysql
+ SELECT * FROM orders WHERE Date(order_date) BETWEEN "2000-09-01" AND "2000-09-30";
+```
+
+但是如果你误将9月记成了31天，那么就会一条数据也输不出来，尽管这些数据都是满足要求的，但是MySQL会自动的检测你输入的日期是否合法，不合法也只会给你一个Warning
+
+![image-20200323211825855](images/image-20200323211825855.png)
+
+
+
+- （不需要记住每个月有多少天的方法）
+
+```mysql
+ SELECT * FROM orders WHERE Year(order_date) = “2000” AND Month(order_date) = ”9“;
+```
+
+
+
+最好碰上时间数据都加上引号，`Year(order_date) = 2000` 也是合法的，但是`Date(order_date) = 2000-09-01`就是违法的了
+
+
+
+> :warning:：在数据库规范中没有双引号，一般都是单引号
+
+
+
+
+
+### 数值处理函数
+
+![image-20200323212557592](images/image-20200323212557592.png)
+
+用来进行数值处理，运用的往往不如日期的函数那么频繁，但是却是各个DBMS最统一的一块
+
+
+
+
+
+
+
+# 汇总数据
+
+
+
+## 汇集函数
+
+
+
+我们经常只需要数据的汇总情况，而不是每一条数据的详细信息，主要的检索例子有以下几种：
+
+- 确定行数
+- 确定行组的和
+- 找出列的最大值，最小值，平均值
+
+如果将这些任务交给客户端去处理，不仅客户机要编写相应的处理函数，还会增加信息传输造成的带宽浪费（前提是你仅仅只想知道上述罗列的检索）
+
+
+
+:key:聚集函数（aggregate function）：运行在行组上，计算和返回单个值的函数。
+
+![image-20200323213258430](images/image-20200323213258430.png)
+
+
+
+> MySQL还支持一些标准偏差函数，这里没有列举
+
+
+
+
+
+### AVG（）函数
+
+
+
+返回product的price字段的平均值
+
+```mysql
+SELECT AVG(price) FROM product;
+```
+
+或者id<50的price平均值
+
+```mysql
+ SELECT AVG(price) FROM product WHERE id < 50;
+```
+
+
+
+AVG函数只能返回单个列的平均值，如果要输出多个列的平均值，要多次使用AVG函数
+
+> AVG函数在统计时自动忽略 NULL 值
+
+
+
+
+
+### COUNT（）函数
+
+返回检索出的数据的行数
+
+COUNT的两种使用方式：
+
+- 使用COUNT（*）直接检索行数，不去管行中是否有NULL值
+- 使用COUNT（Field）会返回该字段非NULL的行数
+
+![image-20200323214425808](images/image-20200323214425808.png)
+
+![image-20200323214433301](images/image-20200323214433301.png)
+
+可以通过这种方式确定列password存在一个NULL
+
+
+
+
+
+### MAX（）函数
+
+返回指定列的最大值，简单用法：
+
+```mysql
+SELECT MAX(price) FROM product;
+```
+
+虽然MAX函数一般是用来对数据和日期来返回最大值，但也可以返回文本列的最大值，自动返回升序的最后一行
+
+
+
+> MAX函数自动忽略NULL的行
+
+
+
+
+
+
+
+### MIN（）函数
+
+
+
+返回列的最小值，用法与MAX差不多
+
+
+
+```mysql
+SELECT MIN(price) FROM product;
+```
+
+
+
+
+
+### SUM（）函数
+
+可以直接嵌套*运算计算总金额
+
+```mysql
+SELECT SUM(id*price) FROM product;
+```
+
+一样忽略NULL
+
+
+
+
+
+## 聚焦不同值
+
+
+
+主要是DISTINCT的使用，DISTINCT默认直接限制后面所有的列
+
+
+
+计算所有price的平均值（去除权重）
+
+```mysql
+ SELECT AVG(DISTINCT price) FROM product;
+```
+
+计算不同name的数量
+
+```mysql
+SELECT COUNT(DISTINCT name) FROM product;
+```
+
+
+
+name字段中重复的和为NULL的行数：
+
+```mysql
+SELECT COUNT(*)-COUNT(DISTINCT name) name_num FROM product;
+```
+
+
+
+
+
+## 组合聚集函数
+
+
+
+就是SELECT里面包含多个函数
+
+
+
+```mysql
+SELECT COUNT(*),AVG(price),MAX(price) FROM product;
+```
+
+可以给每个字段取个别名，便于理解和复用
+
+
+
+
+
+
+
+# 分组数据
+
+
+
+## 数据分组
+
+
+
+会有这种情况，统计每个厂商的产品的平均价格，最大价格，最小价格等，统计其中一个厂商我们可以轻而易举的达到，但是要一次统计多个，我们还办不到，这就需要数据分组
+
+
+
+## 创建分组
+
+
+
+数据库表模拟（表名最好都带上s）：
+
+![image-20200323222743439](images/image-20200323222743439.png)
+
+
+
+```mysql
+SELECT vend_id,AVG(price) FROM products GROUP BY vend_id;
+```
+
+结果如图所示
+
+![image-20200323223033331](images/image-20200323223033331.png)
+
+因为使用了GROUP BY 进行了分组，统计结果就是对每个组而言的，而不是对整个集进行聚集
+
+
+
+GROUP  BY可以进行嵌套，还有很多细微规定。
+
+
+
+一旦使用了 GROUP BY 关键字后，除了根据分组的那个变量以外，其他变量都是去了意义，只有他们的统计量有意义
+
+例如上面的例子中，只有每一行数据的vend_id有意义，其他的字段只有他们的SUM，MAX等才有意义
+
+
+
+## 过滤分组
+
+
+
+使用GROUP BY 进行分组后，如何进行操作筛选掉一些不满足条件的组呢？不能使用WHERE子句，WHERE只能操作行，要使用HAVING子句
+
+
+
+可以使用HAVING子句代替所有的WHERE子句
+
+
+
+> HAVING和WHERE的区别：WHERE用来过滤操作行，而HAVING用来直接过滤操作一个分组
+
+
+
+HAVING由于是站在组的基础上的，所以他只支持一些统计量如AVG，SUM，MIN，MAX的判断，不能直接指定单个值的判断
+
+
+
+
+
+WHERE和HAVING复用的例子：
+
+对id大于8的行根据vend_id进行分组，并且筛选出平均价格大于70的数据，并展示平均价格
+
+![image-20200323225653842](images/image-20200323225653842.png)
+
+
+
+关键词使用的顺序：
+
+SELECT-->FROM-->WHERE-->GROUP BY-->HAVING-->ORDER BY-->LIMIT 
