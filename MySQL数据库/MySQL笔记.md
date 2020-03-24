@@ -1,4 +1,4 @@
-> mysql必知必会读书笔记
+> 《mysql必知必会》读书笔记
 
 
 
@@ -2643,7 +2643,64 @@ INSERT INTO customers (c1,c2,c3......) VALUES (v1,v2,v3......);
 
 
 
+> 使用这种指定列名的操作可以省略一些列，但必须有以下要求：
+>
+> - 该列定义为允许NULL
+> - 在定义列的时候给出了默认值
 
+
+
+:warning:：INSERT操作可能很耗时（特别是有很多索引需要更新时）
+
+一般都会是SELECT语句要求的时效性更高（更重要），可以降低INSERT语句的优先级
+
+INSERT LOW_PRIORITY INTO
+
+同样也适用于UPDATE和DELETE语句
+
+
+
+
+
+## 插入多个行
+
+
+
+语法如下：
+
+
+
+```mysql
+INSERT INTO  customers (c1,c2,c3,......) VALUES(c1,c2,c3,......),VALUES(c4,c5,c6......);
+```
+
+同时插入c123和c456两行数据
+
+提高了MySQL性能，此插入比两条INSERT语句执行效率高
+
+
+
+
+
+
+
+### 插入检索出的数据
+
+
+
+INSERT可以将SELECT语句的结果插入表中
+
+实际应用：合并两张表，将custnews表合并到customers中来（前提是他们结构一样）
+
+
+
+```mysql
+INSERT INTO customers (c1,c2,c3,......) SELECT c1,c2,c3,...... FROM custnews;
+```
+
+会用SELECT出来的数据表的第一列来填充customers的第一列，以此类推
+
+即所谓的INSERT SEARCH指令，SEARCH语句依旧可以加上WHERE子句等过滤条件
 
 
 
