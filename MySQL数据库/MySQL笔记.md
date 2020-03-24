@@ -6,7 +6,7 @@
 
 
 
-# 了解SQL
+# 一、了解SQL
 
 
 
@@ -161,7 +161,7 @@ SQL优点：
 
 
 
-# MySQL简介
+# 二、MySQL简介
 
 
 
@@ -269,7 +269,7 @@ MySQL官方提供的图形交互客户机，用来编写和执行MySQL命令
 
 
 
-# 使用MySQL
+# 三、使用MySQL
 
 
 
@@ -357,7 +357,7 @@ SHOW COLUMNS FROM USER;
 
 
 
-# 检索数据
+# 四、检索数据
 
 如何使用SELECT 语句检索出一个或多个数据列
 
@@ -515,7 +515,7 @@ SELECT user.id FROM test.user LIMIT 5;
 
 
 
-# 排序检索数据
+# 五、排序检索数据
 
  
 
@@ -613,7 +613,7 @@ SELECT id FROM user ORDER BY id LIMIT 1;
 
 
 
-# 过滤数据
+# 六、过滤数据
 
 
 
@@ -758,7 +758,7 @@ SELECT * FROM user WHERE password IS NULL;
 
 
 
-# 数据过滤
+# 七、数据过滤
 
 使用 WHERE 子句建立更强大的查询功能，和NOT 和 IN操作符
 
@@ -917,7 +917,7 @@ SELECT * FROM product WHERE id NOT IN (1,2);
 
 
 
-# 使用通配符进行过滤
+# 八、使用通配符进行过滤
 
 
 
@@ -1003,7 +1003,7 @@ SELECT * FROM product WHERE id LIKE "23a31_";
 
 
 
-# 用正则表达式进行搜索
+# 九、用正则表达式进行搜索
 
 
 
@@ -1212,7 +1212,7 @@ SELECT * FROM product WHERE name REGEXP "^[0-9\\.]";
 
 
 
-# 创建计算字段
+# 十、创建计算字段
 
 
 
@@ -1320,7 +1320,7 @@ SELECT name,id,price,id*price AS total FROM product ORDER BY name
 
 
 
-# 使用数据处理函数
+# 十一、使用数据处理函数
 
 
 
@@ -1494,7 +1494,7 @@ SELECT * FROM orders WHERE Date(order_date) = "2000-09-01";
 
 
 
-# 汇总数据
+# 十二、汇总数据
 
 
 
@@ -1671,7 +1671,7 @@ SELECT COUNT(*),AVG(price),MAX(price) FROM product;
 
 
 
-# 分组数据
+# 十三、分组数据
 
 
 
@@ -1748,3 +1748,904 @@ WHERE和HAVING复用的例子：
 关键词使用的顺序：
 
 SELECT-->FROM-->WHERE-->GROUP BY-->HAVING-->ORDER BY-->LIMIT 
+
+
+
+
+
+## 分组和排序
+
+
+
+GROUP BY 和 ORDER BY 的比较
+
+
+
+|     ORDER BY     |             GROUP BY             |
+| :--------------: | :------------------------------: |
+|  排列产生的顺序  |      将行分组，输出统计数据      |
+| 任意列都可以使用 | 只能使用选择列和其他列的聚集函数 |
+|                  |                                  |
+
+> 一般使用GROUP BY  语句时候也应该给出ORDER  BY 语句用来排序，不要过分依赖于默认的排序序列
+
+
+
+以products表为例子，id为数量，price为单价，输出总价格超过1000的厂商vend_id，并以总价降序排列。
+
+```mysql
+SELECT vend_id,SUM(id*price) FROM products GROUP BY vend_id HAVING SUM(id*price) > 1000 ORDER BY SUM(id*price) DESC;
+```
+
+建议给SUM（id*price）起一个别名total来使得SQL语句更易读
+
+
+
+```mysql
+SELECT vend_id,SUM(id*price) AS total FROM products GROUP BY vend_id HAVING total> 1000 ORDER BY total DESC;
+```
+
+
+
+
+
+## SELECT子句顺序
+
+
+
+必须遵守以下顺序：
+
+SELECT-->FROM-->WHERE-->GROUP BY-->HAVING-->ORDER BY-->LIMIT 
+
+
+
+
+
+
+
+# 十四、使用子查询
+
+
+
+## 子查询
+
+
+
+至今我们见到的所有SELECT语句都是简单查询，即从单个数据库表中检索数据的单条语句
+
+
+
+:key:查询（query）：此术语一般指SELECT 语句
+
+
+
+SQL还允许创建子查询，即嵌套在其他查询中的查询
+
+
+
+
+
+## 使用子查询进行过滤
+
+
+
+直接使用《MySQL必知必会》里面的表了
+
+
+
+现在要查询订单TNT2的所有客户，思路如下：
+
+1. 到orderitems中查询出TNT2所对应的order_num
+2. 到orders表中查询出order_num所对应的cust_id
+3. 到customers表中查询出cust_id所对应的客户信息
+
+
+
+
+
+直接使用嵌套的SELECT语句
+
+```mysql
+SELECT * FROM customers WHERE cust_id IN (SELECT cust_id
+ FROM orders WHERE order_num IN (SELECT
+ order_num FROM orderitems WHERE prod_id = "TNT2"));
+```
+
+SELECT子句由里向外执行
+
+
+
+
+
+
+
+## 作为计算字段使用子查询
+
+
+
+要显示customers表中各个客户的订单数量
+
+
+
+1. 从customers中获取所有cust_id
+2. 在orders表中检索出cust_id对应的行数，并返回给customers显示
+
+
+
+与上面例子的区别就在于要多显示一列计算字段，而上一个例子中所有的字段都是SELECT最外层表的字段
+
+
+
+```mysql
+SELECT cust_name,cust_state,(SELECT Count(*) FROM orders WHERE orders.cust_id = customers.cust_id) AS num FROM customers ORDER BY cust_name;
+```
+
+上面的orders表中和customers表中都有cust_id字段，需要使用全限定名
+
+
+
+> 这不是最有效的解决方案
+
+
+
+
+
+
+
+# 十五、联结表
+
+
+
+
+
+## 联结
+
+
+
+SQL最强大的地方在于查询数据的时候使用联结表
+
+
+
+### 关系表
+
+
+
+SQL规定将数据分表存储，例如vendors表和products表，完全可以将供应商信息带在产品后面，但是SQL规定要拆开：
+
+- 很多product的vendor都是相同的，重复存储信息造成浪费
+- 如果供应商的某些信息改变了，只需要改vendors表一处即可
+- 如果都带上，有可能出现录入错误的情况
+
+
+
+关系表的设计就是要保证把信息分解成多个表，一类数据一个表，各表之间通过某些常用的值（关系）互相关联
+
+
+
+例如上述例子，products将vendors的id以外键形式存储于表中，将vendors和products表关联
+
+
+
+:key: 外键：外键为某个表的一列，他包含着另外一个表的主键值，定义了两个表之间的关系。
+
+
+
+> 外键仅仅保证了当前列的值是在其他表的主键中存在的
+
+
+
+好处如下：
+
+- vendors信息不重复
+- 如果vendor需要更新信息，只需要修改vendors的一行即可
+- 数据无重复，一致性高
+
+
+
+关系数据库的可伸缩性远比非关系型数据库好
+
+
+
+:key: 可伸缩性（scale）：能够适应不断增加的工作量而不失败
+
+
+
+### 为什么要使用联结
+
+
+
+虽然数据存在于多个表中，增加了数据库的可伸缩性，但是有代价的
+
+如何使用SELECT语句检索出数据呢？
+
+使用联结，在一条SELECT 语句中关联表，返回我们需要的数据
+
+
+
+
+
+
+
+## 创建联结
+
+非常简单，指定要联结的数据表和他们之间如何关联的即可
+
+
+
+如：联结products和vendors表，通过vend_id
+
+```mysql
+SELECT vend_name,prod_name,prod_price FROM products,vendors WHERE vendors.vend_id = products.vend_id ORDER BY vend_name,prod_name;
+```
+
+这里因为两个表都有vend_id字段，所以需要指定全限定列名
+
+
+
+
+
+
+
+### WHERE子句的重要性
+
+在一条SELECT语句中联结几个表时，相应的关系是在运行时构造的，在数据表的定义过程中数据库是不知道他们之间的关系的
+
+
+
+:key: 笛卡尔积：没有联结条件（WHERE子句）的表关系返回的结果为两个表的笛卡尔积（查询出的行数是第一个表的行数乘上第二个表的行数）
+
+
+
+> 应该保证所有联结都有WHERE子句和WHERE子句的正确性
+
+
+
+
+
+
+
+### 内部联结
+
+目前所用的联结都是等值联结，基于两个表的相等测试，也被称为内部联结
+
+
+
+
+
+```mysql
+SELECT vend_name,prod_name,prod_price FROM products,vendors WHERE vendors.vend_id = products.vend_id ORDER BY vend_name,prod_name;
+```
+
+上面的SQL语句可以用以下的SQL语句来替换：
+
+```mysql
+SELECT vend_name,prod_name,prod_price FROM vendors INNER JOIN products ON vendors.vend_id = products.vend_id;
+```
+
+:warning:：SQL规范推荐首选INNER  JOIN  语法，尽管WHERE语法会简单
+
+
+
+
+
+### 联结多个表
+
+
+
+联结orderitems，products，vendors，查询order_num为20005的prod_name,vend_name,prod_price,quantity.
+
+
+
+多表联结使用WHERE：
+
+```mysql
+SELECT prod_name,vend_name,prod_price,quantity FROM products,vendors,orderitems WHERE order_num=20005 AND orderitems.prod_id = products.prod_id AND products.vend_id = vendors.vend_id;
+```
+
+
+
+> mysql联结的表越多，性能下降的越厉害
+
+
+
+
+
+例子回顾：查询订购产品的TNT2的用户：
+
+使用子查询（复杂）：
+
+```mysql
+SELECT * FROM customers WHERE cust_id IN (SELECT cust_id
+ FROM orders WHERE order_num IN (SELECT
+ order_num FROM orderitems WHERE prod_id = "TNT2"));
+```
+
+使用联结查询：
+
+```mysql
+SELECT customers.* FROM customers,orders,orderitems WHERE prod_id="TNT2" AND orderitems.order_num=orders.order_num AND orders.cust_id = customers.cust_id;
+```
+
+列出所有情况即可，明显使用联结查询更加的简单
+
+
+
+:warning: ：联结是SQL中最重要最强大的特性
+
+
+
+
+
+
+
+# 十六、创建高级联结
+
+
+
+## 使用表别名
+
+
+
+SQL除了可以给列起别名，还可以给表起别名：
+
+- 缩短SQL语句
+- 允许在单条SQL中使用多次相同的表
+
+
+
+表别名与列别名不同，只有在SQL语句中有效，不会返回到客户机上，而列别名可以直接返回到客户机上【表别名似宏，而列别名类似函数】
+
+
+
+
+
+## 使用不同类型的联结：
+
+我们只使用到了内部联结或等值联结的简单联结，下面介绍几种其他的：
+
+
+
+
+
+### 自联结
+
+
+
+会有如下情况：
+
+在products表中，有一物品【ID为DTNTR】存在问题，要查询出该厂商的其他产品是否也存在问题，子查询的解决方案：
+
+```mysql
+SELECT * FROM products WHERE vend_id = (
+SELECT vend_id FROM products WHERE prod_id = "DTNTR");
+```
+
+使用联结和表别名来解决此问题：
+
+```mysql
+ SELECT p1.* FROM products AS p1,products AS p2 WHERE p2.prod_id = "DTNTR" AND p1.vend_id = p2.vend_id;
+```
+
+尽量使用联结来代替子查询
+
+
+
+
+
+### 自然联结
+
+
+
+我们建立的每个内部联结【等值联结】都是自然联结，很可能我们永远也不会用到除了内部链接【等值联结】之外的自然联结了
+
+
+
+
+
+
+
+### 外部联结
+
+
+
+内部链接与外部链接最大的区别：都是先将两个表做笛卡尔积，内部链接则会直接筛去没有关联的行，而外部链接不会这样，他会保证左边表的数据永远是齐全的，如果联结的表没有数据就填充NULL。
+
+
+
+例如：要检索所有客户以及他们的订单：
+
+内部链接：
+
+```mysql
+SELECT customers.cust_name,order_num FROM customers INNER JOIN orders ON customers.cust_id = orders.cust_id;
+```
+
+![image-20200324150921923](images/image-20200324150921923.png)
+
+
+
+外部联结：
+
+```mysql
+SELECT customers.cust_name,order_num FROM customers LEFT OUTER JOIN orders ON customers.cust_id = orders.cust_id;
+```
+
+![image-20200324151028285](images/image-20200324151028285.png)
+
+
+
+显然此时的外部链接更加的合理，因为也需要没有订单的客户信息
+
+
+
+左外联和右外联是有区别的
+
+![image-20200324151626303](images/image-20200324151626303.png)
+
+图解：内部链接只包含Table A和Table B共有的那一部分
+
+而左外连包含的是Table A的全部
+
+而右外联包含的是Table B的全部
+
+
+
+
+
+
+
+## 使用带聚集函数的联结
+
+
+
+例子：检索所有客户和每个客户所下订单数
+
+涉及到的表为orders和customers
+
+```mysql
+SELECT customers.cust_name,count(*)  FROM customers INNER JOIN orders ON customers.cust_id = orders.cust_id GROUP BY cust_name;
+```
+
+![image-20200324152326636](images/image-20200324152326636.png)
+
+
+
+成功漏掉订单为NULL的用户信息
+
+使用左外连：
+
+千万不能再使用count(*)来查询商品的数量了，因为INNER JOIN会帮你自动去除NULL，所以Count（ * ）等于 order_num 的数量，要使用 Count（orders.order_num）来查询
+
+```mysql
+ SELECT customers.cust_name,count(order_num) FROM customers LEFT OUTER JOIN orders ON customers.cust_id = orders.cust_id GROUP BY cust_name;
+```
+
+![image-20200324152715264](images/image-20200324152715264.png)
+
+
+
+
+
+## 使用联结和条件联结
+
+联结及其使用的要点：
+
+- 注意使用的联结类型。一般都是使用内部链接，但有时候会出现无法对应的情况也要使用外连接
+- 保证正确的联结条件。
+- 应该总是给出联结条件，否则就是笛卡尔积了。
+- 如果有多种联结再一条语句中，建议先测通每个联结再进行合并
+
+
+
+
+
+# 十七、组合查询
+
+
+
+## 组合查询
+
+
+
+多数的SQL只支持单条SELECT语句（前面的使用子查询本质上也是单条SELECT 语句的复用），而MySQL也支持执行多个查询，并将结果作为单个结果集返回，这些组合查询通常被称为并（union）或复合查询（compound query）
+
+
+
+使用组合查询的情况：
+
+- 从不同的表返回类似结构的数据
+- 单表执行多个查询，按单个查询返回数据
+
+
+
+组合查询可以与具有多个WHERE 子句的SELECT 语句相互转换，在两者间进行取舍的时候，要自己手动实验以测验哪种效率更高
+
+
+
+## 创建组合查询
+
+
+
+用UNION操作符来组合多条SQL语句
+
+
+
+### 使用UNION
+
+给出每条SELECT 语句，在各条SELECT 语句之间放上关键字UNION
+
+
+
+
+
+例如：想要价格小于5的物品的所有信息，并且还包括供应商1001和1002生产的所有产品的信息，虽然可以使用WHERE子句直接完成，不过这次使用UNION
+
+
+
+多个WHERE子句完成：
+
+```mysql
+SELECT * FROM products WHERE prod_price<5 OR vend_id IN ("1001","1002");
+```
+
+用UNION联合查询
+
+```mysql
+SELECT * FROM products WHERE prod_price<5
+UNION
+SELECT * FROM products WHERE vend_id IN (1001,1002);
+```
+
+
+
+UNION简单的完成数据拼接，需要列相同。
+
+在单个表中看来UNION比较复杂，在涉及到多个表时UNION可能会比较简单
+
+
+
+
+
+### UNION规则
+
+
+
+- 必须由两条及以上的SELECT 语句构成
+- 每个查询都必须包含相同的列，表达式，或聚集函数（不用在意次序）
+- 列的数据类型必须兼容
+
+
+
+### 包含或取消重复的行
+
+
+
+UNION已经自动的帮我们取消了重复的行，例如上面举出的例子，价格小于5的商品有四件，为指定厂商生产的产品为5件，应该有九件才对，这是基于UNION的去重
+
+
+
+如果不想让UNION去重（这种情况非常少见），可以使用UNION ALL 操作
+
+```mysql
+ SELECT * FROM products WHERE prod_price<5
+    -> UNION ALL
+    -> SELECT * FROM products WHERE vend_id IN (1001,1002);
+```
+
+此时就会返回9行数据
+
+
+
+
+
+
+
+### 对组合查询进行排序
+
+在UNION组合查询的时候，只允许在最后一个SELECT语句的末尾使用一次ORDER BY 语句，即全局的排序【不允许部分排序】
+
+
+
+SQL语句如下：
+
+```mysql
+mysql>  SELECT * FROM products WHERE prod_price<5
+    -> UNION
+    -> SELECT * FROM products WHERE vend_id IN (1001,1002) ORDER BY vend_id;
+```
+
+
+
+
+
+> 此章的例子比较简单，UNION也可以用来组合不同的表
+
+
+
+
+
+
+
+# 十八、全文本搜索
+
+
+
+> 并不是所有的引擎都支持全文本搜索，MySQL支持几种基本的数据库引擎，如MyISAM和InnoDB，前者支持全文本搜索，后者不支持
+
+
+
+## 理解全文本搜索
+
+
+
+
+
+第八章介绍的LIKE可以运用通配符来匹配文本和部分文本
+
+第九章介绍了使用正则表达式来进行较为复杂的匹配模式
+
+
+
+重要限制：
+
+- 性能不高：随着数据量的增大表现得越来越明显
+- 难以明确控制：很难（甚至有时候没办法）去指定某个一定要匹配，某个词一定不能匹配
+- 无法提供智能化的结果：即无法按照最好的匹配度来排序
+
+
+
+这些限制可以使用MySQL的全文本搜索来解决
+
+
+
+
+
+## 使用全文本搜索
+
+
+
+为了防止每次都要扫描全部的行，必须先索引被搜索的列，而且会随着数据的改变索引也会更新
+
+
+
+### 启用全文本搜索支持
+
+
+
+一般在创建表格时候启用全文本搜索，使用FULLTEST子句，知道格式即可：
+
+![image-20200324184528289](images/image-20200324184528289.png)
+
+
+
+:warning:：如果创建一个新表，并且向表中导入数据，创建新表时就不应该指定FULLTEST子句，应该在数据导完之后再进行指定，这样会提升效率（如果先前就指定了的话那么每一次导入数据MySQL就会对数据进行一遍重新的索引）
+
+
+
+
+
+### 进行全文本搜索
+
+
+
+再索引之后，使用Match和Against函数来执行全文本搜索，Match指定被搜索的列，Against指定搜索表达式
+
+
+
+索引note_text列中包含rabbit关键词的行
+
+```mysql
+mysql> SELECT * FROM productnotes WHERE Match(note_text) Against("rabbit");
+```
+
+
+
+Match函数参数指定的列必须与FULLTEXT定义中的相同，并且如果FULLTEXT指定了多个列，那么Match则必须要列出他们，并且顺序一致
+
+
+
+> 全文本搜索不区分大小写
+
+
+
+也可以用LIKE子句来实现
+
+```mysql
+mysql> SELECT * FROm productnotes WHERE note_text LIKE "%rabbit%";
+```
+
+
+
+使用LIKE不会以特殊的排序，而FULLTEXT则会按照匹配度由高到低来排序
+
+
+
+因为rabbit在第一句话的第三个词，而在第二句话的第二十个词，所以排在前面
+
+
+
+演示下FULLTEXT如何工作
+
+```mysql
+mysql> SELECT note_text,Match(note_text) Against("rabbit") AS rank FROM productnotes;
+```
+
+![image-20200324190555463](images/image-20200324190555463.png)
+
+不包含rabbit关键词的rank为0，包含rabbit关键词的rank不为零
+
+当Match（） Against（）在WHERE子句中进行工作时候，会自动筛选掉那些rank为0的行，并且按照rank降序排序
+
+
+
+
+
+### 使用查询扩展
+
+
+
+查询扩展用来放宽所返回的全文本搜索的范围
+
+在使用查询扩展时，MySQL对数据和索引扫描两遍来完成搜索：
+
+1. 进行基本的全文本搜索，返回满足条件的所有行，即Rank不为0
+2. MySQL检查这些匹配行并选择所有有用的词
+3. MySQL再次进行全文本搜索，这次不仅包含原来的词，还包含分析出来的有用的词
+
+利用查询扩展，可能会找出相关的结果，即使他们并不精确包含所查找的词
+
+
+
+语法：
+
+不使用扩展查询：
+
+```mysql
+mysql> SELECT count(*) FROM productnotes WHERE Match(note_text) Against("rabbit");
+```
+
+使用扩展查询：
+
+```mysql
+mysql> SELECT count(*) FROM productnotes WHERE Match(note_text) Against("rabbit" WITH QUERY EXPANSION);
+```
+
+输出分别为 2  和  4.
+
+
+
+《MySQL必知必会》中查询anvils的解释：
+
+![image-20200324200438292](images/image-20200324200438292.png)
+
+
+
+> 当表中数据行数越多，使用扩展查询返回的结果越好
+
+
+
+
+
+### 布尔文本搜索
+
+
+
+MySQL支持全文本搜索的另外一种形式，称为布尔搜索，以布尔方式，提供关于以下内容的细节：
+
+- 要匹配的词
+- 要排斥的词
+- 排列提示【词的优先级排列】
+- 表达式分组
+- ……
+
+
+
+> 布尔方式不同于普通的全文本搜索的地方在于：即使没有定义FULLTEXT索引，也可以使用，不过速度会非常缓慢
+
+语法为：
+
+```mysql
+mysql> SELECT count(*) FROM productnotes WHERE Match(note_text) Against("rabbit" IN BOOLEAN MODE);
+```
+
+输出结果是2，和不适用 IN  BOOLEAN  MODE的结果一样
+
+
+
+> 虽然结果一样，但是和没使用布尔搜索的行为还是由差异的
+
+
+
+匹配：heavy但不以Item开头的行【只有布尔文本搜索可以这样用】
+
+```mysql
+mysql> SELECT note_text FROM productnotes WHERE Match(note_text) Against("heavy -Item*" IN BOOLEAN MODE);
+```
+
+为1行，如果不加上-Item*，结果为2
+
+![image-20200324202153982](images/image-20200324202153982.png)
+
+
+
+普通的全文本时不支持的，以免字符冲突了
+
+
+
+EXAM：
+
+- `"+rabbit +bait"`：同时包含rabbit和bait
+- `"rabbit bait"`：至少包含rabbit和bait的其中一个
+- `'"rabbit bait"'`：包含rabbit bait短语
+- `">rabbit <carrot"`：增加rabbit的占比，减轻carrot的占比（不要求同时包含）
+
+
+
+在布尔方式中，不是按照 rank降序返回行
+
+
+
+### 全文本搜索的使用说明：
+
+- 在索引全文本数据时候，会自动忽略三个字母及以下的单词【可改】
+- MySQL自动屏蔽一些非用词，在索引的时候会自动忽略这些词【可覆盖】
+- 如果一个词占比超过50%，会自动被加入非用词列表（检索这个词没什么必要），不作用于IN BOOLEAN MODE
+- 行数少于三行，无法全文本搜素
+- 自动忽略查询词的单引号
+- 不具有词分隔符（例如日语和汉语）无法恰当的进行全文本搜素哦
+- 仅在MyISAM数据库引擎中支持全文本搜素哦
+
+
+
+
+
+
+
+# 十九、插入操作
+
+
+
+## 数据插入
+
+INSERT语句，用来插入行到数据库的命令
+
+
+
+
+
+## 插入完整的数据
+
+
+
+```mysql
+INSERT INTO customers VALUES (v1,v2,v3,......);
+```
+
+INSERT语句一般没有输出。
+
+以上写法是将v1插入到数据库的第一列，v2插入到数据库的第二列。。。
+
+这种写法很不安全，太过于依赖表中列的定义次序
+
+
+
+编写更安全的INSERT语句（同时也更加繁琐）：
+
+```mysql
+INSERT INTO customers (c1,c2,c3......) VALUES (v1,v2,v3......);
+```
+
+将vi插入到列c1中，将v2插入到列c2中，以此类推，可以不按照列的次序
+
+> 尽管这种方式要繁琐很多，但是不会受到表的结构变化的影响
+
+
+
+
+
+
+
+
+
+
+
