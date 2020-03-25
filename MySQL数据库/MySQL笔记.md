@@ -2706,3 +2706,829 @@ INSERT INTO customers (c1,c2,c3,......) SELECT c1,c2,c3,...... FROM custnews;
 
 
 
+
+
+# 二十、更新和删除数据
+
+
+
+
+
+## 更新数据
+
+
+
+使用UPDATE，可以采用两种方式：
+
+- 更新特定行
+- 更新所有行
+
+
+
+> 在使用UPDATE语句的时候一定要记得WHERE语句，因为有可能一不注意就更新了很多行，甚至是所有行
+
+
+
+语法：
+
+更新10005客户的电子邮件地址：
+
+```mysql
+mysql> UPDATE customers SET cust_email = "luckycurvec@gmail.com" WHERE cust_id = 10005;
+```
+
+
+
+同时更新多个数据：
+
+```mysql
+mysql> UPDATE customers SET cust_email = "luckycurvec@gmail.com",cust_name = "LuckyCurve" WHERE cust_id = 10005;
+```
+
+记得一定要加上WHERE语句并且仔细分析条件（一般使用主键来作为条件，防止直接UPDATE太多行）
+
+
+
+
+
+可以在UPDATE语句中使用子查询来将查询的数据更新到数据表中
+
+
+
+> 如果UPDATE语句更新多行，而其中一行出现了错误，则整个更新过程将被取消，并且数据将会回滚，可以使用IGNORE关键字来忽略错误继续更新
+>
+> UPDATE IGNORE customers ......
+
+
+
+如果要删除某个列的值，直接将其置为NULL即可
+
+```mysql
+mysql> UPDATE customers SET cust_email = NULL WHERE cust_id = 10005;
+```
+
+
+
+
+
+## 删除数据
+
+使用DELETE语句即可完成删除操作：
+
+- 删除特定的行
+- 删除所有的行
+
+
+
+> 千万要注意WHERE语句，要不然可能直接删除所有行
+
+
+
+用法：
+
+```mysql
+mysql> DELETE FROM customers WHERE cust_id = 10006;
+```
+
+DELETE只能删除某一行，而不能删除某一列（删除某一列使用UPDATE将该列置为NULL即可）
+
+DELETE只能删除表的内容，而不能删除表本身
+
+
+
+
+
+## 更新和删除的指导原则
+
+- 除非打算删除或更新每一行，否则一定不要省略WHERE子句
+- 保证每个表都有主键，方便更改或删除数据时候能够直接指到某一行
+- 执行DELETE和UPDATE语句前，应该先使用SELECT语句来测试WHERE子句的正确性
+
+
+
+> 使用时候一定要非常小心，MySQL没有撤销按钮
+
+
+
+
+
+
+
+
+
+# 二十一、创建和操纵表
+
+
+
+## 创建表
+
+
+
+创建表的常见方式：
+
+- 交互式的GUI界面操作
+- MySQL命令行操作
+
+实际上使用GUI界面底层还是使用的是SQL语句，只不过是工具帮你封装好了的SQL语句
+
+
+
+### 表创建基础
+
+
+
+使用CREATE TABLE操作来创建表，至少要包括：
+
+- 新表的名字
+- 列的名字和定义
+
+例如：
+
+![image-20200325134630023](images/image-20200325134630023.png)
+
+指定了表名，各个列，通过PRIMART KEY来指定关键字，以及表的引擎
+
+
+
+> 查看MySQL的默认引擎：
+>
+> ![image-20200325143544367](images/image-20200325143544367.png)
+
+
+
+> 创建表时候如果表名已经存在了，MySQL不会去覆盖表，需要你手动删除表或者更改现有的表名
+>
+> 也可以更保险一点：在表名后面加上IF  NO  EXISTS，仅在表名不存在的时候创建他
+
+
+
+### 使用NULL值
+
+
+
+每个列必须是NULL列或者是NOT NULL列，在创建表时候需要指定，如果没指定默认就是NULL列
+
+
+
+如果在插入数据时，列没有给出相应的值，则会默认置为NULL，可以插入NULL列，无法插入到NOT NULL列
+
+
+
+
+
+### 主键再介绍
+
+
+
+主键值必须唯一，如果是多个列，则组合值必定唯一
+
+
+
+多个主键的SQL语句：
+
+![image-20200325141342642](images/image-20200325141342642.png)
+
+
+
+主键可以在创建表时定义，或者在创建表之后定义
+
+
+
+> 允许NULL值的列不能作为唯一标识，故不能成为主键
+
+
+
+
+
+### 使用AUTO_INCREMENT
+
+
+
+主键每次都要保证唯一，维持主键的唯一也是个问题
+
+会很容易想到让ID每次都+1，如何确定当前ID，可以使用SELECT语句的Max函数来查询cust_id的最大值再加一
+
+这种办法不可靠（有可能出现类似Java并发的情况，多个INSERT语句同时执行，即无法确定了cust_id），效率也不高（每次都要执行	SELECT语句，并且调用Max函数）
+
+解决方法：MySQL提供了AUTO_INCREMENT关键字，使得指定的列每次增加一行数据之后会自动加一
+
+
+
+每个表只允许一个AUTO_INCREMENT列，并且该列要被索引（使他成为主键）
+
+
+
+
+
+> 如果一个列被指定为AUTO_INCREMENT，你可以再插入数据的时候就不用考虑这一列了，但是如果你插入的时候给该列指定了一个唯一的值，那么后续的增加就会以你插入的数据为标准
+
+以上说法并不准确：
+
+例子：如果你当前的ID字段已经到了50，插入一个数据，指定id为500，下一个插入的数据的ID为501，没问题
+
+但如果你删除了ID为12345的数据，再指定ID为1，下一个插入的数据的ID为502
+
+
+
+
+
+### 指定默认值
+
+
+
+如果在插入数据时候没有给定值，默认给的值就是NULL，也可以在创建表时候指定列的默认值
+
+![image-20200325143035036](images/image-20200325143035036.png)
+
+
+
+> 推荐使用默认值来代替NULL
+
+
+
+
+
+### 引擎类型
+
+
+
+MySQL具有多种引擎，全都能执行CREATE TABLE和SELECT命令等
+
+为什么要使用引擎？每个引擎都具有不同的特性和功能，在不同场景使用不同引擎来提高数据库的允许速率
+
+
+
+创建表的时候你也可以直接忽略引擎，直接使用默认引擎【默认InnoDB】
+
+
+
+常见的引擎：
+
+- InnoDB：可靠的事务处理引擎，不支持全文本搜素
+- MEMORY：功能类似于MyISAM，速度很快（数据存储在内存中）
+- MyIASM：性能极高的引擎，支持全文本搜素哦，不支持事务处理
+
+![image-20200325144048445](images/image-20200325144048445.png)
+
+引擎的详细详细，字段说明：
+
+- SUPPORT：是否支持，还有DEFAULT默认引擎
+- Transactions：是否支持事务
+
+
+
+在一个数据库中引擎可以混用，即Table A使用了InnoDB，Table B使用了MyIASM
+
+
+
+外键联结的两个表必须是相同的引擎
+
+
+
+
+
+## 更新表
+
+
+
+理想情况下，在表的结构确定之后，就不应该再去改变表
+
+使用ALTER TABLE来更改表结构：
+
+- 再ALTER TABLE后接上需要更改的表名
+- 所作更改的列
+
+
+
+例子：
+
+```mysql
+mysql> ALTER TABLE user ADD col char(20);
+```
+
+给user表增加了一个列名为col的列
+
+
+
+删除列：
+
+```mysql
+mysql> ALTER TABLE user DROP COLUMN col;
+```
+
+
+
+复杂的表结构更改一般涉及到以下几个过程：
+
+- 用新的布局创建一个新表
+- 使用INSERT SEARCH语句将旧表数据挪到新表
+- 检验包含所需数据的新表
+- 重命名旧表或者删除（解决名字冲突）
+- 更改新表的名字
+
+
+
+> 小心使用ALTER TABLE，MySQL的更改无法撤回
+
+
+
+
+
+## 删除表
+
+
+
+```mysql
+mysql> DROP TABLE user;
+```
+
+
+
+
+
+
+
+## 重命名表
+
+
+
+```mysql
+mysql> RENAME TABLE role TO roles;
+```
+
+
+
+
+
+
+
+# 二十二、使用视图
+
+
+
+## 视图
+
+
+
+MySQL5之后增加了视图
+
+视图是一个虚拟的表，可以将查询结果包装成为一个视图，他包含的是一个SQL查询结果
+
+
+
+
+
+### 为什么要使用视图
+
+- 重用SQL
+- 简化SQL
+- 使用表的组成部分而不是整个表
+- 保护数据
+- 更改数据结构和表示
+
+
+
+视图创建出来之后，就可以与利用基本表的方式来利用他们
+
+
+
+使用多层嵌套视图会使得性能下降的很厉害，因为就相当于每次都执行了SQL语句并且还要将结果封装成视图	
+
+
+
+### 视图的规则和限制
+
+
+
+- 视图名必须唯一
+- 创建的视图数目没有限制
+- 需要足够的访问权限
+- 视图可以嵌套
+- ORDER BY也可以在视图中使用，如果外层还有一层SELECT语句，那么视图的ORDER BY会被外层的SELECT的ORDER BY覆盖
+- 视图不能索引，也不能关联触发器和设置默认值
+- 视图可以和表一起使用
+
+
+
+## 使用视图
+
+
+
+- 创建视图：CREATE VIEW
+- 创建视图语句：SHOW CREATE VIEW
+- 删除视图：DROP VIEW
+- 更新视图：
+    - 先DROP再CREATE
+    - CREATE OR  REPLACE VIEW
+
+
+
+### 利用视图简化联结
+
+
+
+最常见的例子就是隐藏复杂的SQL
+
+
+
+例如：要从customers，orders和orderitems查出cust_name,cust_contact,prod_id
+
+SELECT语句为：
+
+```mysql
+mysql> SELECT cust_name,cust_contact,prod_id FROM customers,orders,orderitems WHERE customers.cust_id=orders.cust_id AND orders.order_num=orderitems.order_num ORDER BY cust_name;
+```
+
+创建一个名为productcustomers的视图，用来封装这个SELECT语句
+
+```mysql
+mysql> CREATE VIEW productcustomers AS
+    -> SELECT cust_name,cust_contact,prod_id FROM customers,orders,orderitems
+    -> WHERE customers.cust_id=orders.cust_id AND orders.order_num=orderitems.order_num ORDER BY cust_name;
+```
+
+
+
+然后就可以直接将productcustomers当作一张表来使用了（虚拟表，实际上不存在，只是执行的时候临时调用SELECT语句填充数据）
+
+![image-20200325184529464](images/image-20200325184529464.png)
+
+
+
+> 尽量产生数据量大一些的视图，以免同时维护多个功能和数据类似的视图
+
+
+
+
+
+### 用视图重新格式化索引出的数据
+
+
+
+例如要列出vend_name (vend_country) 格式的数据，可以使用以下SELECT语句
+
+```mysql
+mysql> SELECT Concat(Trim(vend_name)," ( ",Trim(vend_country)," ) ") AS vend_title FROM vendors ORDER BY vend_name;
+```
+
+
+
+现在创建视图vendorlocations来取代他
+
+```mysql
+mysql> CREATE VIEW vendorlocations AS
+    -> SELECT Concat(Trim(vend_name)," ( ",Trim(vend_country)," ) ") AS vend_title FROM vendors ORDER BY vend_name;
+```
+
+SELECT  vendorlocations结果为：
+
+![image-20200325185349135](images/image-20200325185349135.png)
+
+
+
+
+
+### 用视图过滤不想要的数据
+
+
+
+用法大同小异，将SELECT的返回值想象成一张表，起了个视图的别名，但是视图不是真实存在的即可
+
+
+
+去除email为NULL的数据
+
+![image-20200325185529472](images/image-20200325185529472.png)
+
+
+
+> 关于视图里面的WHERE子句和外部使用视图时候的WHERE子句：
+>
+> ​	因为视图的本质就是SELECT语句，如果SELECT语句有WHERE，就会自动和视图里面的WHERE子句结合
+
+
+
+
+
+**视图更像是另一种永久化的AS语句，不只是只在那一条SQL语句中有效**
+
+
+
+
+
+
+
+### 使用视图和计算字段
+
+
+
+![image-20200325185801947](images/image-20200325185801947.png)
+
+一样的
+
+
+
+### 更新视图
+
+
+
+通常，视图是可更新的，如果更新视图里的字段，会直接更新到该视图的基表字段（视图是没有数据的），对视图的操作都操作了其基表。
+
+
+
+并不是所有视图都是可更新的：
+
+- 使用GROUP BY的视图
+- 联结
+- 子查询
+- 并
+- 聚集函数
+- DISTINCT
+- 导出列
+
+
+
+> 可能会在MySQL版本提升之后或许限制会变窄
+
+
+
+
+
+
+
+# 二十三、使用存储过程
+
+
+
+:warning:：存储过程就是函数
+
+## 存储过程
+
+
+
+在MySQL5之后引进的对存储过程的支持
+
+
+
+存储过程简单来说，就是为以后的使用而保存一条或多条MySQL语的集合，但他们的左右又不止批处理
+
+
+
+
+
+## 为什么要使用存储过程
+
+
+
+- 封装数据处理细节，简化复杂操作
+- 保证数据完整性（屏蔽了底层的表格）
+- 简化对变动的管理
+- 提升性能（使用存储过程比使用单条的SQL语句要快）
+- 简化SQL，使得一个简单的SQL变得更灵活
+
+简而言之，存储过程的三个好处：简单、安全、高性能
+
+
+
+缺点：
+
+- 编写存储过程往往比编写SQL更难
+- 可能没有权限去创建存储过程
+
+
+
+
+
+## 使用存储过程
+
+
+
+### 执行存储过程
+
+
+
+MySQL称执行存储过程为调用，命令为CALL
+
+![image-20200325204636834](images/image-20200325204636834.png)
+
+
+
+
+
+### 创建存储过程
+
+
+
+返回产品平均价格的存储过程
+
+
+
+要先修改MySQL的分隔符（因为在存储对象内部会存在默认的分隔符，语句会立马得到执行）
+
+```mysql
+mysql> DELIMITER //
+```
+
+
+
+书写存储对象
+
+```mysql
+mysql> CREATE PROCEDURE productpricing()
+    -> BEGIN
+    -> SELECT AVG(prod_price) AS price_average
+    -> FROM products;
+    -> END //
+```
+
+
+
+改回默认分隔符
+
+```mysql
+mysql> DELIMITER;
+```
+
+
+
+:warning:：除了\外都能作为分隔符
+
+
+
+调用刚刚书写的存储过程
+
+```mysql
+mysql> CALL productpricing();
+```
+
+![image-20200325210106665](images/image-20200325210106665.png)
+
+
+
+
+
+### 删除存储过程
+
+```mysql
+mysql> DROP PROCEDURE productpricing;
+```
+
+不用使用（），直接使用存储过程名即可，说明存储过程无法重载
+
+
+
+
+
+
+
+### 使用参数
+
+
+
+一般存储过程都不显示结果，而是将结果返回给你指定的变量
+
+
+
+:key:变量：内存中一块特殊的位置，用来存放临时数据
+
+
+
+```mysql
+mysql> CREATE PROCEDURE productpricing(
+    -> OUT p1 DECIMAL(5,5),
+    -> OUT p2 DECIMAL(5,5),
+    -> OUT p3 DECIMAL(5,5)
+    -> )
+    -> BEGIN
+    -> SELECT MIN(prod_price) INTO p1 FROM products;
+    -> SELECT AVG(prod_price) INTO p2 FROM products;
+    -> SELECT MAX(prod_price) INTO p3 FROM products;
+    -> END //
+```
+
+> 说明：
+>
+> ​	P1，P2，P3是用来接受price的最值和平均值，并且指定为OUT（输出，返回给调用者） 后面的DECIMAL（a，b）指的是整数部分精度为a，小数部分精度为b的十进制数，再由后面的SELECT INTO 语句将查询到的结果传递
+
+
+
+那么如何调用？
+
+需要三个参数
+
+
+
+```mysql
+mysql> CALL productpricing(
+    -> @price_low,
+    -> @price_avg,
+    -> @price_max);
+```
+
+在MySQL中变量名要以@来头
+
+此行不会有任何输出，只是执行了存储过程里的SELECT INTO 语句将值传输到了这三个变量中来
+
+为了获取信息，输出这三个变量即可
+
+```mysql
+mysql> SELECT @price_low;
+mysql> SELECT @price_avg;
+mysql> SELECT @price_max;
+```
+
+
+
+
+
+
+
+下面是一个指定传入参数为IN的例子
+
+```mysql
+mysql> DELIMITER //
+mysql> CREATE PROCEDURE ordertotal(
+    -> IN onumber INT,
+    -> OUT ototal DECIMAL(8,5)
+    -> )
+    -> BEGIN
+    -> SELECT SUM(item_price*quantity)
+    -> FROM orderitems
+    -> WHERE order_num = onumber
+    -> INTO ototal;
+    -> END//
+```
+
+传入订单号，返回合计
+
+
+
+调用该函数，可直接使用以下语句
+
+```mysql
+mysql> CALL ordertotal(20005,@total);
+```
+
+
+
+
+
+### 建立智能存储过程
+
+
+
+上面都只是封装了简单的SELECT语句，不用封装也可以轻易完成，但是随着业务量的增大，他的威力才真正发挥出来
+
+建议在PROCEDURE头上加上注释，以便再次阅读
+
+> MySQL注释的写法：  用 -- 开头即可
+
+
+
+
+
+### 检查存储过程
+
+mySQL语句为：
+
+```mysql
+mysql> SHOW CREATE PROCEDURE  ordertotal;
+```
+
+
+
+
+
+# 二十四、使用游标
+
+
+
+## 游标
+
+
+
+:key: 游标（cursor）：游标是一个存储在MySQL服务器上的数据库查询，他不是一条SELECT语句，而是被该语句检索出来的结果集。
+
+
+
+> 不像大多数的DBMS，MYSQL的游标只能用于存储过程和函数
+
+
+
+
+
+## 使用游标
+
+
+
+- 使用游标前必须先声明他
+- 一旦声明后必须使用
+- 对于存有数据的游标，根据需要检索各行
+- 在结束游标使用时，必须关闭游标
+
+
+
+### 创建游标
+
+
+
