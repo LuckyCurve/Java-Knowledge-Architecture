@@ -3532,3 +3532,610 @@ mysql> SHOW CREATE PROCEDURE  ordertotal;
 
 
 
+游标仅限于存储过程
+
+使用DECLARE语句创建
+
+```mysql
+mysql> CREATE PROCEDURE processorders()
+    -> BEGIN
+    -> DECLARE ordernumbers CURSOR
+    -> FOR
+    -> SELECT order_num FROM orders;
+    -> END//
+```
+
+定义了一个存储过程，其中声明了游标，但是并没有使用他
+
+
+
+在定义游标之后，可以打开和关闭他
+
+
+
+
+
+### 打开和关闭游标
+
+
+
+因为游标的操作仅限于存储过程，所以所有的操作都必须包含在存储过程当中
+
+
+
+先删除上面声明的存储过程
+
+```mysql
+mysql> DROP PROCEDURE processorders;
+```
+
+打开和关闭游标例子
+
+
+
+```mysql
+mysql> CREATE PROCEDURE processorders()
+    -> BEGIN
+    -> #declare the cursor
+    -> DECLARE ordernumbers CURSOR
+    -> FOR
+    -> SELECT order_num FROM orders;
+    ->
+    -> #open the cursor
+    -> OPEN ordernumbers;
+    ->
+    -> #close the cursor
+    -> CLOSE ordernumbers;
+    -> END//
+```
+
+以上例子仅仅只是声明了一个游标，并且随后打开，然后关闭了他，什么都没有做
+
+> MySQL的注释：
+>
+> - "-- 空格  "
+> - "#"
+> - "/*    */"
+
+
+
+
+
+### 使用游标数据
+
+
+
+使用游标，检索游标中中的数据
+
+语句：FETCH
+
+
+
+依旧要先删除processorders存储过程
+
+```mysql
+mysql> DROP PROCEDURE processorders;
+```
+
+
+
+使用FETCH关键字定义新的存储过程
+
+
+
+```mysql
+mysql> CREATE PROCEDURE processorders()
+    -> BEGIN
+    
+    -> #declare a local variable
+    -> DECLARE o INT;
+    
+    -> #declare a cursor
+    -> DECLARE ordernumbers CURSOR
+    -> FOR
+    -> SELECT order_num FROM orders;
+    
+    -> #open the cursor
+    -> OPEN ordernumbers;
+    
+    -> #get cursor info
+    -> FETCH ordernumbers INTO o;
+    
+    -> #close cursor
+    -> CLOSE ordernumbers;
+    -> END//
+```
+
+将检索出的第一行的order_num列插入到一个局部变量o中
+
+
+
+
+
+如果要将所有的数据都添加到变量o中来，使用以下语句来循环插入
+
+
+
+![image-20200326143417245](images/image-20200326143417245.png)
+
+![image-20200326143425579](images/image-20200326143425579.png)
+
+FETCH   ----   UNTIL中的语句会反复执行
+
+
+
+直到满足条件为止
+
+
+
+> DECLARE 语句有顺序的问题，顺序是
+>
+> - 局部变量
+> - 游标
+> - 句柄
+>
+> 的顺序来，否则会报错
+
+
+
+游标给存储过程带来了更加强大和灵活的功能
+
+
+
+
+
+
+
+# 二十五、使用触发器
+
+
+
+## 触发器
+
+
+
+如果想要某条语句或者某些语句在某时间发生时候被执行，怎么办呢？
+
+
+
+:key:触发器（Trigger）：是MySQL响应以下任意语句而自动执行的一条MySQL语句（或者是位于BETWEEN和END之间的一组语句）
+
+- DELETE
+- INSERT
+- UPDATE
+
+其他的MySQL语句不支持触发器
+
+
+
+
+
+## 创建触发器
+
+
+
+需要给出四条信息：
+
+- 触发器名称（唯一）
+- 触发器关联的表
+- 触发器响应的语句（DELETE，UPDATE或INSERT）
+- 触发器如何执行
+
+
+
+> 触发器名只需要在每个表中唯一即可，但不是在每个数据库中唯一
+
+
+
+创建触发器的语法：
+
+
+
+MySQL5的写法：
+
+```mysql
+mysql> CREATE TRIGGER newproduct AFTER INSERT ON products
+    -> FOR EACH ROW SELECT "product added";
+```
+
+会报错：
+
+```
+ERROR 1415 (0A000): Not allowed to return a result set from a trigger
+```
+
+
+
+要将结果放进一个变量里边
+
+```mysql
+mysql> CREATE TRIGGER newproduct AFTER INSERT ON products
+    -> FOR EACH ROW
+    -> BEGIN
+    -> SELECT "product added" INTO @var;
+    -> END//
+```
+
+以后再就直接查询这个变量里的值
+
+
+
+
+
+每个表的每种事件都只存在一种触发事件，所以单个表最多存在六个触发器
+
+INSERT，DELETE，UPDATE的BEFORE和AFTER
+
+
+
+MySQL的触发器事务是安全的，即只要其中一个环节（BEFORE，SQL，AFTER）其中一个执行失败，没有执行的会放弃执行，已经执行了的MySQL会回滚
+
+
+
+
+
+## 删除触发器
+
+
+
+```mysql
+mysql> DROP  TRIGGER newproduct;
+```
+
+
+
+触发器只能执行在实际存在的表中，无法执行在视图上
+
+
+
+
+
+
+
+# 二十六、管理事务处理
+
+
+
+
+
+## 事务处理
+
+
+
+并非所有的引擎都支持事务（二十一章有截图，哪些引擎支持事务的）
+
+![image-20200325144048445](images/image-20200325144048445.png)
+
+只有InnoDB引擎支持事务管理
+
+
+
+而InnoDB刚好是MySQL的默认引擎
+
+
+
+事务管理用来维护数据库的完整性，他能保证成批量的SQL要么完全执行，要么完全不执行，防止因为意外的故障导致数据库内的数据杂乱不完整（可能本来要一步完成的批量SQL现在运行到了一半，导致数据不完整），在数据量小的时候你或许还能观察出错误来，但随着数据量的增大，错误的发现越来越难，维护数据库的难度也越来越高
+
+
+
+事务的常见术语：
+
+- :key:事务（transaction）：一组SQL语句
+- :key:回退（rollback）：撤销指定SQL语句的过程
+- :key:提交（commit）：将未存储的SQL语句结果写入数据库
+- :key:保留点（savepoint）：事务处理中设置的临时占位符，可以对他进行单独的回退（与回退整个事务不同）
+
+
+
+
+
+## 控制事务处理
+
+
+
+MySQL使用以下语句来标识事务的开始
+
+START TRANSACTION
+
+
+
+### 使用ROLLBACK
+
+
+
+例子：
+
+先要改变MySQL的结束标志，才能执行批量的SQL语句
+
+```mysql
+DELIMITER //
+```
+
+具体的SQL语句
+
+```mysql
+mysql> SELECT * FROM roles;
+    -> START TRANSACTION;
+    -> DELETE FROM orders;
+    -> SELECT * FROM orders;
+    -> ROLLBACK;
+    -> SELECT * FROM ordRers//
+```
+
+
+
+ROLLBACK会回到一个事务的处理开始出，即`START TRANSACTION`处
+
+
+
+ROLLBACK只能用来回退INSERT，UPDATE，DELETE语句，无法回退CREATE和DROP语句，他们没有对数据的改变，可以理解为SELECT语句
+
+
+
+
+
+### 使用COMMIT语句
+
+
+
+每次执行SQL语句，都会自动的进行提交操作，即所谓的隐式提交
+
+而在事务模块中，提交不会隐式的进行，需要你显式地声明
+
+
+
+```mysql
+mysql> START TRANSACTION;
+    -> DELETE FROM roles WHERE id = 1;
+    -> COMMIT;
+```
+
+可以在事务的最后面来COMMIT操作（实际上不加上COMMIT操作也能完成订单的删除，会在事务执行末尾自动COMMIT），COMMIT是对事务回滚的理解，如果没有COMMIT，则数据无效，这就导致了事务模块里面的SQL语句有可能无效
+
+
+
+
+
+### 使用保留点
+
+
+
+对于一个简单的事务，ROLLBACK和COMMIT就足以应付了，如果事务比较复杂，不可能每次都是直接退回到开始的SQL语句上来，因为运行每一条SQL语句都是一种对资源的开销
+
+回退部分事务处理需要保留点来确定回退的位置，SAVEPOINT语句
+
+```mysql
+#declare savepoint
+SAVEPOINT delete1
+
+#back to savepoint
+ROLLBACK TO delete1
+```
+
+> 保留点越多越好，保留点只是一种标记，不会有大量的开销，但可以使你在进行事务回滚的时候少执行很多SQL语句（如果这个事务足够复杂的话）
+
+
+
+> 在执行完一次ROLLBACK或者是COMMIT后会自动释放
+
+
+
+
+
+### 更改默认的提交行为
+
+
+
+上面已经提到过，SQL会在每条语句后面都隐式的执行COMMIT操作，如何让MySQL不自动执行COMMIT操作呢？
+
+```mysql
+SET autocoming = 0;
+```
+
+>  autocoming是针对每个客户端链接的，而不是针对整个服务器的
+
+
+
+
+
+# 二十七、全球化和本地化
+
+
+
+## 字符集和校对顺序
+
+
+
+MySQL中会存储大量不同的语言或者是字符，他们都需要自己的一套检索方式和排列方式，所以MySQL会适应不同的排序和检索数据的方式
+
+
+
+常见术语：
+
+- :key:字符集：字母和符号的集合
+- :key:编码：某个字符的内部表示
+- :key:校对：规定字符如何比较的指令
+
+校对很重要，也很复杂：就拿最容易举例子的英文排序，apple和Apple就会引起常规的歧义（因为MySQL不区分大小写）都会比较复杂。
+
+
+
+在正常的数据库活动中（SELECT，INSERT）中都不太需要担心，使用何种字符集和校对的决定在服务器，数据库和表级
+
+
+
+
+
+## 使用字符集和校对顺序
+
+
+
+查看所有可用的字符集及其默认的校对方式
+
+```mysql
+mysql> SHOW CHARACTER SET;
+```
+
+
+
+
+
+查看完整的校对和适用的字符集
+
+```mysql
+mysql> SHOW COLLATION;
+```
+
+
+
+
+
+给表定义字符集
+
+![image-20200326170413564](images/image-20200326170413564.png)
+
+
+
+甚至可以临时给表中的字段加上校对顺序
+
+![image-20200326170553335](images/image-20200326170553335.png)
+
+临时区分大小写。
+
+
+
+
+
+
+
+
+
+# 二十八、安全管理
+
+
+
+## 访问控制
+
+MySQL数据库的安全基础是：用户不能对过多的数据具有过多的访问权
+
+
+
+- 多数用户只需要对表进行读写，少数用户需要创建表和删除表
+- 某些用户只能读表
+- 某些用户可以添加用户，但是没法删除用户
+- 某些用户可能需要用户管理
+- 允许某些用户访问存储过程，但不允许他们访问数据
+- 根据用户的地点来限制用户权限
+
+
+
+在非现实的数据库实验MySQL时候，使用root很好（不会出现权限不够的情况），而在现实世界的日常过程中，绝不使用root，应该创建一系列账号来进行不同的操作
+
+
+
+> 访问权还能阻止一些无意的操作
+
+
+
+
+
+## 管理用户
+
+
+
+MySQL的用户账号和信息存储存储在名为mysql的MySQL数据库中，一般不需要直接访问他，需要访问他的时机是获得所有用户的账号列表
+
+```mysql
+mysql> USE mysql;
+		-> SELECT user FROM user;
+```
+
+
+
+​	
+
+
+
+### 创建用户账号
+
+
+
+```mysql
+mysql> CREATE USER ben IDENTIFIED BY "222222";
+```
+
+虽然MySQL中的user表存储了用户的很多信息，但是IDENTIFIED会加密存储，即使是root也无法知晓密码
+
+
+
+重命名一个用户
+
+```mysql
+mysql> RENAME USER ben TO bean;
+```
+
+
+
+
+
+### 删除用户账号
+
+
+
+语法如下：
+
+```mysql
+mysql> DROP USER bean;
+```
+
+
+
+
+
+
+
+### 设置访问权限
+
+
+
+查看用户权限：
+
+```mysql
+mysql> SHOW GRANTS FOR ben;
+```
+
+![image-20200326172543072](images/image-20200326172543072.png)
+
+USAGE标识没有权限
+
+
+
+> 定义用户的用户名为user@host，如果没有指定主机名，则主机名为%
+
+
+
+
+
+设置权限，需要以下信息：
+
+- 授予的权限
+- 授予权限的数据库或表
+- 用户名
+
+赋予bean  对test数据库下的所有表的SELECT权限
+
+
+
+```mysql
+mysql> GRANT SELECT ON test.* TO "ben"@"%";
+```
+
+用户名的写法不同
+
+再来检查权限：
+
+```mysql
+mysql> SHOW GRANTS FOR ben;
+```
+
+![image-20200326174803172](images/image-20200326174803172.png)
