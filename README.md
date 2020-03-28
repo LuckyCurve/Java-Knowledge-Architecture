@@ -10,9 +10,13 @@
 
 
 
+[Java基础（读书笔记：《Java编程思想（第四版）》）](Java基础/Java笔记.md)
+
+[Java并发编程实战（读书笔记：《Java并发编程实战》）](Java基础/Java并发编程实战.md)
+
 ## MySQL数据库
 
-[MySQL数据库](MySQL数据库/MySQL笔记.md)
+[MySQL数据库（读书笔记：《MySQL必知必会》）](MySQL数据库/MySQL笔记.md)
 
 
 
