@@ -1236,6 +1236,10 @@ public Map<String , Date> loginTime = ConcurrentHashMap<String,Data>();
 
 # 第四章、对象的组合
 
+前三章介绍了一些线程和同步的基础知识
+
+
+
 我们并不希望每一次访问都需要对内存进行分析以确保安全，而是希望通过现有的安全组价来组合成为更大规模的组件或程序
 
 
@@ -1362,7 +1366,7 @@ if (!a.contain("hello")) {
 
 第一章讲的先判断后赋值操作，虽然单步都是原子性的，但是还是有问题
 
-:question:：到后面讨论问题都没探讨到每一步骤了，都是直接站在类和方法的角度来分析
+:question:：到后面讨论问题都没探讨到每一步骤了，都是直接站在类和方法的角度来分析【纠正】：这里讨论的状态变量都是没有不变性条件的
 
 
 
@@ -1388,6 +1392,300 @@ if (!a.contain("hello")) {
 
 
 
+如果组合对象之间存在某些不变性条件时（存在某种耦合关系），线程安全的委托就会失效，例子如下：
+
+```java
+@NotThreadSafe
+public class Demo15 {
+    //会出现条件upper>lower
+    private final AtomicInteger lower = new AtomicInteger(0);
+    private final AtomicInteger upper = new AtomicInteger(0);
+
+    public void setLower(Integer i) {
+        if (i > upper.get()) {
+            throw new IllegalArgumentException("can`t set lower to "+i+" > upper");
+        }
+        lower.set(i);
+    }
+
+    public void setUpper(Integer i) {
+        if (i < lower.get()) {
+            throw new IllegalArgumentException("can`t set upper to "+i+" < lower")
+        }
+        upper.set(i);
+    }
+}
+
+```
+
+因为两个变量会有不变性关系（upper >= lower）,所以在每次执行插入的时候都需要判断lower或upper的情况再来做决定（为了保持upper和lower的不变性）
+
+Demo15的线程安全性不能委托给状态变量lower和upper
+
+【解决办法】：给相关方法加锁，并且还要避免发布lower和upper
+
+
+
+
+
+能否将底层的状态变量发布出去，还是取决于类中的这些状态变量施加了哪些不变性条件，发布出去之后会不会打破这些不变性条件，例如上面缓存例子中的Key-Value，很显然不能讲KV单独发布出去，因为会破坏KV之间的一一对应的不变性条件
+
+
+
+【条件】：如果一个状态变量是线程安全的（前提），并且没有不变性条件来约束他的取值（与其他的状态变量没有耦合），在变量的操作上也不存在任何不允许的状态（不会要保证例如：count>0这种类似的条件，因为其他线程会随意修改这个值），那么就可以将这个对象安全的发布。
+
+
+
+
+
+
+
+```java
+@ThreadSafe
+public class Demo16 {
+
+    private final Map<String, Point> locations;
+    private final Map<String, Point> unmodifiableMap;
+
+    public Demo16(Map<String, Point> locations) {
+        this.locations = locations;
+        this.unmodifiableMap = Collections.unmodifiableMap(this.locations);
+    }
+
+    //无法修改
+    public Map<String, Point> getLocations() {
+        return unmodifiableMap;
+    }
+
+    //可以修改指定name的Point
+    public Point getLocation(String name) {
+        return locations.get(name);
+    }
+
+    public void setLocation(String name, Integer x, Integer y) {
+        if (!locations.containsKey(name)) {
+            throw new IllegalArgumentException("invalid name:" + name);
+        }
+        locations.get(name).set(x, y);
+    }
+}
+
+@ThreadSafe
+class Point {
+    //XY之间的不变性关系就是XY成对
+    @GuardedBy("this")
+    private Integer x, y;
+
+    /*
+    使用自身对象（保证了线程安全）来实现构造函数一定要小心
+    因为在初始化过程中可能出现线程切换，导致x赋值了，y没有赋值
+    而此时参数point对象被其他线程修改（保证了可见性），会立马在
+    你的构造函数中体现，所以破坏了可见性条件，要保证操作的原子性
+     */
+    public Point(Point point) {
+        this(point.get());
+    }
+
+    /*
+    通过构造函数的私有化保证操作的原子性
+     */
+    private Point(Integer[] a) {
+        this(a[0], a[1]);
+    }
+
+
+    /*
+    使用基本数据类型来做初始化则不会有任何问题
+    因为哪怕出现了线程切换，参数x，y是固定的
+     */
+    public Point(Integer x, Integer y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    public synchronized Integer[] get() {
+        return new Integer[]{x, y};
+    }
+
+    public synchronized void set(Integer x, Integer y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+```
+
+Demo16安全发布底层对象locations（ConcurrentHashMap<String,Point>），通过getLocation发布locations的只读对象副本（不能直接发送locations原版对象，因为需要维护KV键值对的顺序），如果想要修改locations，可以通过getLocation来获取指定name的Point对象，并直接操作获取到的Point对象即可（ConcurrentHashMap具有可见性的特性，保证数据同步）（Point对象在已经保证了线程安全性【重点】）
+
+Point线程安全性的实现【很有意思，代码在上面】
+
+
+
+
+
+重用能降低开发工作量，应该在现有的线程安全类上加功能
+
+例如：给已经是线程安全的链表添加一个“若没有则添加”的方法（注意“先判断再执行”的错误），要添加一个新的原子操作，最安全的办法就是修改原始的类，意味着同步策略的代码在一个源文件中，非常容易理解和维护
+
+第二种办法就是继承这个类，需要这个类考虑到了扩展性（如果类库的设计者没有考虑可拓展性，例如大量使用了private，对子类进行了屏蔽），就不适合采用这种方法，
+
+```java
+@ThreadSafe
+public class Demo17<E> extends Vector<E> {
+    public synchronized boolean putIfAbsent(E e) {
+        boolean contains = !contains(e);
+        if (contains) {
+            add(e)
+        }
+        return contains;
+    }
+}
+```
+
+如果Vector的底层同步策略改变了，那么Demo17就会被破坏
+
+
+
+
+
+如果要对Collections.synchronizedList返回的List进行功能扩展呢？
+
+先了解下该方法
+
+```java
+public static <T> List<T> synchronizedList(List<T> list) {
+  return (list instanceof RandomAccess ?
+          new SynchronizedRandomAccessList<>(list) :
+          new SynchronizedList<>(list));
+}
+```
+
+返回一个静态内部类SynchronizedList
+
+synchronizedList类的简单摘要：
+
+![image-20200401150702565](images/image-20200401150702565.png)
+
+![image-20200401150725642](images/image-20200401150725642.png)
+
+也是把传入的List封装到对象内部，通过几个固定的接口来实现同步的调用底层的代码
+
+类默认访问权限为包访问权限，必不可能和Collections在一个包下，怎么办？
+
+
+
+第三种策略是扩展类的功能，但不是通过类本身，而是将代码放在一个“辅助类”中
+
+典型错误（想直接将synchronizedList封装起来，再增加一个同步方法）
+
+**这里将synchronizedList声明为public而不是private因为这个类不是用来封装synchronizedList的，这个类是为了提供同步操作synchronizedList的一个公共接口**
+
+```java
+@NotThreadSafe
+public class Demo18<E> {
+    public List<E> list = Collections.synchronizedList(new ArrayList<E>());
+
+    public synchronized boolean putIfAbsent(E e) {
+        boolean absent = !list.contains(e);
+        if (absent) {
+            list.add(e);
+        }
+        return absent;
+    }
+}
+```
+
+这是不正确的，因为List里面的其他操作的锁是当前List对象，而putIfAbsent的锁是
+
+Demo18对象本身，可能出现putIfAbsent刚判断出不包含e这个对象，另外一个线程先行调用list.add（e），再到putIfAbsent使用add出现问题
+
+
+
+
+
+解决方案：使用同一个锁就好了
+
+```java
+@ThreadSafe
+public class Demo18Opt<E> {
+    public List<E> list = Collections.synchronizedList(new ArrayList<>());
+
+    public boolean putIfAbsent(E e) {
+        synchronized (list) {
+            boolean absent = !list.contains(e);
+            if (absent) {
+                list.add(e);
+            }
+            return absent;
+        }
+    }
+}
+```
+
+这种操作非常的脆弱，将synchronizedList的加锁方法拓展到了一个完全无关的类中，不利于维护
+
+这种加锁机制（客户端加锁）与拓展类机制有很多的共同点：
+
+- 新类或派生类的行为与组合类或基类的行为耦合在一起
+
+也许会破坏原有对象的封装性
+
+
+
+
+
+通过组合来实现原子操作，最常见的例子就是Collections的synchronizedList，Map等
+
+```java
+@ThreadSafe
+public class Demo18Opt2<E> implements List<E> {
+    //这个传入的List是线程安全的
+    private final List<E> saveList;
+
+    public Demo18Opt2(List<E> saveList) {
+        this.saveList = saveList;
+    }
+
+    public synchronized boolean putIfAbsent(E e) {
+        boolean absent = !saveList.contains(e);
+        if (absent) {
+            saveList.add(e);
+        }
+        return absent;
+    }
+
+    //一系列操作直接调用saveList的原子操作即可
+    @Override
+    public synchronized void clear() {
+        saveList.clear();
+    }
+}
+
+```
+
+和上面的客户端加锁的区别就是：将对saveList的访问完全依赖于Demo18Opt2，并且不让saveList发布。
+
+
+
+
+
+充分利用文档：在文档中说明客户代码需要了解的线程安全，以及代码维护人员需要了解的同步策略
+
+
+
+设计同步策略来保证并发访问时候的数据完整性以及可见性，并及时记录
+
+
+
+最起码要保证类中的线程安全性文档化，如类是否是安全的@ThreadSafe，@NotThreadSafe，为了让该类更好拓展，应该在类中的状态变量上加上保护该变量的锁的类型@GuardedBy
+
+
+
+即使在官方文档里面的线程安全也不是坟场完美
+
+
+
+如果没有提供这些细节，你只能去猜测
 
 
 
@@ -1397,6 +1695,123 @@ if (!a.contain("hello")) {
 
 
 
+# 第五章、基础构建模块
+
+
+
+第四章介绍了构建线程安全类的一些技术，例如线程安全性的依托条件等，委托是创建线程安全类的一个最有效的策略
+
+
+
+Java提供了丰富的并发基础构建模块，如：线程安全的容器类以及线程控制流的同步工具类（Synchronizer），本章介绍最有用的并发构建模块
+
+
+
+容器中常见的复合操作包括：迭代，跳转以及条件运算，例如“若没有则添加”（putIfAbsent方法）
+
+这些复合操作在没有客户端锁的情况下依然是安全的
+
+当多个线程一起修改容器时候，他们可能会出现意料之外的情况
+
+
+
+这些容器都支持客户端加锁，例如以下工具类来操作CopyOnWriteArrayList
+
+```java
+//操作CopyOnWriteArrayList的封装
+public class Demo19 {
+    //好像有这个方法了 ：）
+    public static boolean addIfAbsent(CopyOnWriteArrayList list, Object obj) {
+        synchronized (list) {
+            boolean absent = !list.contains(obj);
+            if (absent) {
+                list.add(obj);
+            }
+            return absent;
+        }
+    }
+}
+```
+
+当然，这个类也并不是绝对的安全，因为CopyOnWriteArrayList里面的操作都不是直接锁对象的，所以有可能这个AddIfAbsent方法判断完成之后对象的状态就发生了改变（这样就降低了CopyOnWriteArrayList的延展性和并发性）。
+
+
+
+
+
+> 《Java并发编程实战》：虽然Vector是一个古老的类（书中是以Vector来举例子的），但很多“现代”的容器类也并没有消除复合操作中的问题
+
+
+
+
+
+在多线程中使用迭代器非常容易跑出ConcurrentModificationException异常，在单线程中也有可能抛出，可以使用线程安全的容器如CopyOnWriteArrayList来操作，或者对容器加锁，对其中的迭代器也需要以相同的方式加锁，因为迭代器也可以改变容器中的内容，实际情况操作起来非常复杂，需要对所有共享容器和其迭代器的地方加上锁，而且在某些情况下迭代器会隐藏起来：
+
+```java
+@NotThreadSafe
+public class Demo20 {
+    @GuardedBy("this")
+    private final HashSet<Integer> set = new HashSet<>();
+
+    public synchronized void add(Integer integer){
+        set.add(integer);
+    }
+
+    public synchronized boolean remove(Integer integer) {
+        //这里虽然可能会有iterator的隐形逸出，但是是在锁里面
+        boolean include = set.contains(integer);
+        if (include) {
+            set.remove(integer);
+        }
+        return include;
+    }
+
+    public void print() {
+        //这里就会有迭代器逸出了，还没有在锁当中
+        System.out.println(set);
+    }
+
+}
+
+```
+
+调用print方法依然有出现ConcurrentModificationException异常的情况，因为set的toString方法会隐藏使用迭代器：
+
+```java
+public String toString() {
+  Iterator<E> it = iterator();
+  if (! it.hasNext())
+    return "[]";
+
+  StringBuilder sb = new StringBuilder();
+  sb.append('[');
+  for (;;) {
+    E e = it.next();
+    sb.append(e == this ? "(this Collection)" : e);
+    if (! it.hasNext())
+      return sb.append(']').toString();
+    sb.append(',').append(' ');
+  }
+}
+```
+
+追toString的源码追到了AbstractCollection类当中去了，所有间接地迭代操作都有可能抛出ConcurrentModificationException异常，例如：当容器中包含另一个容器，外容器使用hashcode方法和equals方法会间接地执行迭代操作
+
+
+
+
+
+利用Java5提出的并发容器代替同步容器来极大的增加性能
+
+
+
+
+
+ConcurrentHashMap：对比与传统方式的对HashMap的封装，例如Collections.synchronizedMap(map)等同步容器，执行get或者是contains方法时候会一直遍历Key，如果HashMap足够大，可能需要很多的时间，同时会占用锁让其他的线程无法访问HashMap，性能会比较低
+
+实现：底层与HashMap一样，但是使用了粒度更细的加锁策略来提供更高的并发性和伸缩性，这种机制被称为”分段锁“，可以保证任意数量的读取线程来并发的访问Map，一定数量的写入线程可以并发的修改Map，极大提高了并发环境下的吞吐量，而在单线程环境下只损失非常小的性能
+
+局限：不提供独占访问，导致ConcurrentHashMap无法在外部被扩充，例如“不存在则添加”则无法在外部实现（即使你加锁了，让同一时刻只有一个线程来访问，但是无法独占访问整个map），但是ConcurrentHashMap也考虑到了这些，实现了“若没有则添加”，“若相等则移除”，“若相等则替换”等诸多操作，接口在ConcurrentMap接口中都有，ConcurrentHashMap做了一一实现
 
 
 
@@ -1404,15 +1819,22 @@ if (!a.contain("hello")) {
 
 
 
+CopyOnWriteArrayList
+
+在迭代期间可以不用加锁
+
+
+
+基于事实不可变对象的线程安全性的理论：只要发布一个事实不可变对象，那么在访问该对象时就不需要进一步的同步
+
+
+
+在每次修改时候都会创建并重新发布一个副本（创建副本过程是锁起来的），从而实现可变性，每次修改就创建一个事实不可变对象，保证了发布的对象的安全性，他的迭代器是指向底层基础数据的引用，所以能保证迭代器不抛出ConcurrentModificationException异常，并且返回的元素与迭代器创建的元素一样
 
 
 
 
 
+阻塞队列
 
-
-
-
-
-
-
+支持生产者消费者设计模式，该模式将“需要完成的任务”和“已经完成的任务”和“执行工作”这两步分开来，并把任务放入一个待完成的列表里，以便后续处理
