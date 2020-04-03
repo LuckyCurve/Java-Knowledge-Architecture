@@ -1,4 +1,4 @@
-# 第一章、简介
+# 简介
 
 
 
@@ -155,7 +155,9 @@ Java应用程序启动时候至少包含两个线程：垃圾回收线程和主�
 
 
 
-# 第二章、线程安全性
+# 第一部分、基础知识
+
+## 第二章、线程安全性
 
 
 
@@ -585,7 +587,7 @@ public class Demo5Opt2 {
 
 
 
-# 第三章、对象的共享
+## 第三章、对象的共享
 
 
 
@@ -1234,7 +1236,7 @@ public Map<String , Date> loginTime = ConcurrentHashMap<String,Data>();
 
 
 
-# 第四章、对象的组合
+## 第四章、对象的组合
 
 前三章介绍了一些线程和同步的基础知识
 
@@ -1695,7 +1697,7 @@ public class Demo18Opt2<E> implements List<E> {
 
 
 
-# 第五章、基础构建模块
+## 第五章、基础构建模块
 
 
 
@@ -1838,3 +1840,921 @@ CopyOnWriteArrayList
 阻塞队列
 
 支持生产者消费者设计模式，该模式将“需要完成的任务”和“已经完成的任务”和“执行工作”这两步分开来，并把任务放入一个待完成的列表里，以便后续处理
+
+
+
+阻塞队列的简单实现：
+
+```java
+public class Demo21 {
+    private final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>();
+
+    public static void main(String[] args) throws InterruptedException {
+        Demo21 demo21 = new Demo21();
+        LinkedBlockingQueue<String> queue = demo21.queue;
+        new Thread(() -> {
+            Integer i = 0;
+            while (true) {
+                try {
+                  	//向队列里添加任务
+                    queue.put(Integer.toString(i));
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                i++;
+            }
+        }).start();
+				//读取任务，如果读取不到就阻塞线程
+        while (true) {
+            String s = queue.take();
+            System.out.println("取出任务："+s);
+        }
+    }
+}
+```
+
+
+
+很多生产者消费者模式可以通过Executor任务执行框架来实现
+
+
+
+
+
+如果是可变对象，生产者-消费者设计和阻塞队列一起，促进了串行线程封闭。即保证对象的线程封闭性，在阻塞队列传输的过程中，通过安全发布对象的方式来讲对象的线程所有权由生产者线程交给消费者线程，并且在这之后生产者线程也无权访问这个对象，实现了对象的安全发布转交线程所有权。
+
+
+
+对象池就使用了串行线程封闭，将对象借给一个线程，使用完成后线程将对象还给对象池，安全的在线程之间传递对象所有权
+
+
+
+通过发布机制来传递对象的所有权的注意点：必须确保只有一个线程能接受被转移的对象
+
+
+
+
+
+1.6提出的Deque和BlockingDeque，适用于工作密取模式：每个消费者都有各自的双端队列，如果一个消费者完成了自己的双端队列里的任务，就可以从其他消费者的双端队列的尾部秘密的读取一个任务，与生产者消费者模式的区别：没有共用一条阻塞队列，极大的减少了竞争
+
+
+
+
+
+
+
+线程可能会阻塞或暂停状态，原因：等待IO操作结束，等待获取一个锁，等待Sleep方法结束，等待另一个线程计算结果，线程阻塞被挂起，处于某种阻塞状态（BLOCKING，WAITING或TIMED_WAITING），当某个外部事件发生时，线程会被置回RUNNABLE状态，继续运行
+
+
+
+对线程阻塞的方法通常有可能会抛出InterruptedException异常，如sleep方法和BlockingQueue的put和take方法。即
+
+如果该方法抛出InterruptedException异常，那么该方法是一个阻塞方法，如果该方法被中断，他会努力使得线程提前结束阻塞状态并抛出异常
+
+
+
+
+
+Thread提供了interrupt方法来中断线程，中断只是一种协议或建议，不是强制性的立马中断，如果主线程调用线程A的interrupt方法，主线程仅仅只是要求A线程到某个可以停下的地方再停下（取决于B线程对中断请求的响应速度）
+
+
+
+对于interruptException异常的处理：
+
+- 向上抛出
+- 捕获异常，调用Thread.interrupt方法来保持中断状态
+
+千万不能捕获了异常但是不进行处理，这是非常不好的习惯
+
+
+
+
+
+同步工具类：根据自身的状态来协调线程的控制流
+
+
+
+常见的同步工具类：阻塞队列，信号量，栅栏，闭锁
+
+
+
+闭锁：相当于一扇门，在闭锁到达状态结束之前，这扇门是闭着的，没有任何线程能够通过，当到达结束状态时候，门会打开，所有线程都能通过，且永远保持打开状态
+
+闭锁通常用来确保某些活动直到其他活动完成之后再继续执行：
+
+- 确保R被初始化之后再进行操作，所有对R的操作都需要现在这个闭锁上等待
+- 开始游戏操作需要在所有玩家准备这个比索上等待
+
+
+
+CountDownLatch是一种灵活的闭锁实现，使得一个或多个线程等待一组事件发生。包括一个计数器，用来表示需要等待的线程数量，其中有一个CountDown方法来递减计数，表示一个操作已经执行完成。当计数器为零时候，await方法才会取消线程阻塞，或者是等待的线程中断，或等待超时
+
+标准的闭锁使用案例：
+
+```java
+public class Demo22 {
+    public long timeTasks(int nThreads, final Runnable runnable) throws InterruptedException {
+        final CountDownLatch startGate = new CountDownLatch(1);
+        final CountDownLatch lastGate = new CountDownLatch(nThreads);
+
+        for (int i = 0; i < nThreads; i++) {
+            new Thread(() -> {
+                try {
+                    startGate.await();
+                    try {
+                        runnable.run();
+                    } finally {
+                        lastGate.countDown();
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        }
+
+        long startTime = System.nanoTime();
+        startGate.countDown();
+        lastGate.await();
+        long lastTime = System.nanoTime();
+        return lastTime - startTime;
+    }
+		//测试调用
+    public static void main(String[] args) throws InterruptedException {
+        Demo22 demo22 = new Demo22();
+        long timeTasks = demo22.timeTasks(5, () -> {
+            System.out.println(Thread.currentThread().getName());
+        });
+        System.out.println("耗时：" + timeTasks);
+    }
+
+}
+
+```
+
+
+
+需要闭锁管理的线程调用闭锁的await方法阻塞起来，直到countDown 到零为止，线程取消阻塞，继续向下执行
+
+
+
+
+
+FutureTask也可以用来做闭锁
+
+Future.get的行为取决于任务的状态，如果执行完成则直接返回结果，如果没有执行完则线程会被阻塞直到执行完，你可以先将任务添加到FutrueTask里面去，再去执行其他事情，直到任务执行完之后再来Future.get
+
+```java
+public class Demo23 {
+    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(9, 15, 100, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(10));
+
+    public void addTask(Callable callable) throws ExecutionException, InterruptedException {
+        CopyOnWriteArrayList<Future> futureList = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            Future future = executor.submit(callable);
+            futureList.add(future);
+        }
+        //    可以做一些其他事情等待任务执行完，避免电泳future.get阻塞了
+        for (Future i : futureList) {
+            System.out.println(i.get());
+        }
+    }
+
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        Demo23 demo23 = new Demo23();
+        demo23.addTask(()->{
+            return "hello world";
+        });
+    }
+}
+
+```
+
+futrue.get方法对异常进行了封装，封装成了ExecutionException异常，有可能包含以下三种情况：
+
+- Callable抛出的受检查异常
+- RuntimeException异常
+- Error
+
+因此并不好处理
+
+
+
+
+
+信号量（Semaphore）
+
+控制同时访问某个特定资源的操作数量，或者同时执行某个操作的数量
+
+信号量里面存放了一组虚拟的许可，可以通过构造函数来指定许可的数量，执行操作或者获取资源时候都需要许可，如果没有许可就会处于阻塞的状态
+
+
+
+简单应用：资源池的应用，如数据库连接池
+
+将Semaphore的大小置于池的大小，每次获取连接的时候调用acquire方法，获取一个许可，执行完后再调用release来释放许可，如果线程池里面空了（都被占用了），自然也就不存在许可，acquire会一直阻塞
+
+【更简单的方法】：使用BlockingQueue作为资源池，将资源直接存进BlockingQueue里面，用的时候取，用完了存回去
+
+
+
+Demo：
+
+```java
+package cn.luckycurve.threadsecurity;
+
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.Semaphore;
+
+public class Demo24<T> {
+    private final Set<T> set;
+    private final Semaphore semaphore;
+
+
+    public Demo24(Integer bound) {
+        set = new CopyOnWriteArraySet<>();
+        semaphore = new Semaphore(bound);
+    }
+
+    public boolean add(T t) throws InterruptedException {
+        semaphore.acquire();
+        boolean wasAdd = false;
+        try {
+            wasAdd = set.add(t);
+            return wasAdd;
+        } finally {
+            semaphore.release();
+            if (wasAdd) {
+                semaphore.release();
+            }
+        }
+    }
+
+    public boolean remove(T t) throws InterruptedException {
+        semaphore.acquire();
+        boolean wasRemove = false;
+        try {
+            wasRemove = set.remove(t);
+            return wasRemove;
+        } finally {
+            semaphore.release();
+            if (wasRemove) {
+                semaphore.acquire();
+            }
+        }
+    }
+}
+
+```
+
+
+
+栅栏
+
+栅栏与闭锁非常类似，只不过闭锁是等待某个事件（方法）的执行来触发取消线程挂起的操作，而栅栏是：必须所有的线程都同时达到栅栏处，才能够继续执行
+
+
+
+
+
+
+
+任务：构建一个高效且可伸缩的缓存
+
+模拟长时间的计算类的计算：
+
+```java
+public interface Computable<A, V> {
+    V compute(A a);
+}
+```
+
+封装这个类，将他的A和V传入到缓存中
+
+```java
+public class Memoizerl<A, V> implements Computable<A, V> {
+    @GuardedBy("this")
+    private final Map<A, V> cache = new HashMap<>();
+    private final Computable<A, V> computable;
+
+    public Memoizerl(Computable<A, V> computable) {
+        this.computable = computable;
+    }
+
+    @Override
+    public synchronized V compute(A a) {
+        V result = cache.get(a);
+        if (result == null) {
+            result = computable.compute(a);
+            cache.put(a, result);
+        }
+        return result;
+    }
+}
+
+```
+
+> 注意：
+>
+> ​	Computable不是线程安全的（因为他是被其他线程传入进来的，线程拥有者为两个，况且他还不是线程安全的）
+
+这种实现缓存的方法并不好，每次只有一个线程能进入到computable方法中，如果计算面广，缓存命中率会很低，每次都是单线程先去查缓存，再去做运算，效率有时候还不如不使用并发的程序
+
+
+
+```java
+public class Memorizerl2<A, V> implements Computable<A, V> {
+
+    private final ConcurrentHashMap<A, V> cache = new ConcurrentHashMap<>();
+
+    private final Computable<A, V> computable;
+
+    public Memorizerl2(Computable<A, V> computable) {
+        this.computable = computable;
+    }
+
+    @Override
+    public V compute(A a) {
+        V result = cache.get(a);
+        if (result == null) {
+            result = computable.compute(a);
+            cache.put(a, result);
+        }
+        retun result;
+    }
+}
+```
+
+改进的Memorizerl2比Memorizerl有着更优秀的并发性能
+
+也存在漏洞：如果线程A进行了一个开销很大的计算，而线程B也紧跟着进行了这个计算（显然是划不来的），应该告知线程B线程A正在计算，等待线程A计算完成之后去缓存里面查就好了
+
+FutrueTask就可以完成这个功能，FutureTask的get方法是有结果立即返回，否则就阻塞
+
+一个近乎完美的解决方案：
+
+```java
+public class Memorizerl3<A, V> implements Computable<A, V> {
+    private final ConcurrentHashMap<A, Future<V>> cache = new ConcurrentHashMap<>();
+
+    private final Computable<A, V> computable;
+
+    public Memorizerl3(Computable<A, V> computable) {
+        this.computable = computable;
+    }
+
+    @Override
+    public V compute(final A a) {
+        Future<V> result = cache.get(a);
+        if (result == null) {
+            FutureTask<V> task = new FutureTask<>(() -> {
+                return computable.compute(a);
+            });
+            result = task;
+            cache.put(a, task);
+            task.run();
+        }
+        try {
+            return result.get();
+        } catch (ExecutionException | InterruptedException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+
+```
+
+与第二个的区别：
+
+- 将传参加上final类型修饰符来修饰（保证不会改变）
+- 与第二个方法的最主要区别：第二个方法是先计算再添加结果，而这一种方法是通过使用FutureTask来实现先添加再计算
+
+在计算时长较长的时候，明显的第二种方法的缓存命中率高，且随着计算时间的增长，命中率会更高
+
+
+
+>  仅有一点点的小瑕疵：如果当线程A判断完没有key这个键的时候，还没来得及添加到cache里面去，线程B也来判断是否包含Key
+>
+> 这种事件出现的概率是微乎其微的，对比与计算所用的时长，这几条语句的运行时长可以忽略不计，于是就相当于每次线程进来的时候其他线程都是处于计算阶段的，key必然已经添加到了缓存中
+
+造成这个瑕疵的原因是：操作不是原子性的，即“先判断后操作”
+
+
+
+```java
+public class Memorizerl4<A, V> implements Computable<A, V> {
+    private final ConcurrentHashMap<A, FutureTask<V>> cache = new ConcurrentHashMap<>();
+
+    private final Computable<A, V> computable;
+
+    public Memorizerl4(Computable<A, V> computable) {
+        this.computable = computable;
+    }
+
+    @Override
+    public V compute(A a) {
+        //    书本上的写法，感觉while（true没有意义）
+        while (true) {
+            FutureTask<V> result = cache.get(a);
+            if (result == null) {
+                FutureTask<V> task = new FutureTask<V>(() -> {
+                    return computable.compute(a);
+                });
+                result = cache.putIfAbsent(a, task);
+                if (result == null) {
+                    result = task;
+                    task.run();
+                }
+            }
+            try {
+                return result.get();
+            } catch (InterruptedException | ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+    }
+}
+
+```
+
+唯一的BUG被解决掉了（通过PutIfAbsent的原子性操作来解决的，在添加之前先检查一遍有没有）
+
+【重点】：通过PutIfAbsent的返回值来确定是否执行task（如果不为null，这说明正好是第二种情况的漏洞，解决了“先判断后执行”的问题），就直接让线程走到result的get方法，让线程挂起
+
+
+
+
+
+因为缓存的V存储的是Future对象，可能会造成污染（如果计算取消或者是失败，调用future.get方法可能返回一个毫不相关的值），可以在
+
+也可以通过futureTask的子类来设置一个过期时间，并定时清理预期的元素
+
+
+
+
+
+## 第一部分小结
+
+
+
+- 可变状态是至关重要的
+
+    所有的并发问题都可以归结为如何协调对并发状态的访问。可变状态越少，就越容易保证线程安全性（如果是不可变对象或者是事实不可变对象，则是线程安全的）
+
+- 尽量将域声明为final，除非需要他们是不可变的
+
+    如果是一个类（封装类除外），尽量都声明成final，并在声明的时候就进行初始化（不要将初始化任务交给构造函数去做，这样这个对象就逸出了）（声明成final最重要的一点是：保证可见性）
+
+- 不可变对象一定是线程安全的
+
+    第一点已经提到过
+
+- 封装有助于管理复杂性
+
+    尽量使用封装，将数据封装在对象中，将同步机制封装在对象中，保证了被封装对象不会轻易的逸出，更容易保证安全性
+
+- 用锁来保护可变对象
+
+    这点在我看来是非常难的（如果你不遵循上一条封装原则的话），就会出现很多地方都能够发布对象，而你需要在每个可能的地方（包括对象的隐式调用）都需要大量的逻辑去维护，如果锁运用的不恰当，将会造成大量的性能损失
+
+- 当保护同一个不变性条件中的所有变量时，需要使用同一把锁
+
+    这是肯定的，例如对象Data中存在两个变量lower和upper，不变性条件：lower < upper，如果没有使用同一把锁，则不能保证变量之间的可见性，很可能别的线程已经修改了lower值，而你手上的还是以前的lower值，更可怕的是你会依据以前的lower值来修改此时的upper值
+
+- 执行复合操作期间，要持有锁
+
+- 如果多个线程访问同一可变变量而没有同步机制，程序就会出问题
+
+- 不要故作聪明的推断出不需要同步
+
+    【非常重要】：有可能在你现有的逻辑上不需要同步，但是当别人来拓展你这个类的时候难道还要重新自己来加锁（更糟糕的是别人可能没注意到你没有加锁，直接拿来就用了）
+
+- 在设计过程中考虑线程安全，或者在文档中明确指出不是线程安全的
+
+- 同步策略文档化
+
+
+
+
+
+
+
+
+
+# 第二部分、结构化并发应用程序
+
+
+
+
+
+## 第六章、任务执行
+
+
+
+大部分并发应用程序都是围绕着“任务执行”来构造的
+
+第一步、找出任务边界
+
+理想状态下各个任务是相互独立的，任务并不依赖其他任务的边界，状态，独立性可以有助于实现并发
+
+在正常负载下，服务器应用程序应该保持良好的吞吐量和响应速度，尽可能多的支持更多用户，降低用户的服务成本
+
+在负荷过载时，服务器不应该是直接停止运行，而是应该性能逐步降低
+
+要保证以上条件，需要应用程序拥有清晰的边界任务以及明确的任务执行策略
+
+
+
+大多数应用服务器的任务边界就是服务器本身，例如Web服务器，邮箱服务器，文件服务器等等，既可以保证任务的独立性，也可以实现合理的任务规模
+
+
+
+
+
+串行模型在GUI客户端上或许还能用，因为不会存在长时间的堵塞
+
+但在Web服务器上基本是使用不了的，因为存在大量的IO操作，例如读取请求和回写请求的IO，文件处理的IO，数据库的请求，都非常容易造成堵塞，一旦堵塞服务器就不会响应，资源利用率低（堵塞的时候只有IO在工作，CPU处于空闲状态）
+
+
+
+进阶思路：为每个请求创建一个新的线程来提供服务，主程序则负责接收请求并创建线程：任务处理代码必须是线程安全的，因为会有很多线程并发的调用这段代码，只要请求的速率达不到服务器的处理效率，那么这种方法可以同时带来更快的响应速度和更高的吞吐量
+
+缺陷：
+
+- 线程的生命周期的开销非常大
+
+    线程的创建和销毁根据平台的不同会存在着不同的消耗，而且会比较费时，如果请求的到达率非常高并且处理的请求都是轻量级的，可能导致一个问题：花在创建线程和销毁线程上的时间会远远多于处理业务代码的时间
+
+- 资源消耗
+
+    活跃的线程非常占用资源，尤其是内存，会给GC带来很大的压力，而且过多的线程会同时抢占CPU，导致CPU大部分时间处于线程切换的状态，处理效率反而降低
+
+- 稳定性
+
+    创建线程的数量会有一个限制，受平台的影响。同时JVM的启动参数，Thread的栈大小等多种因素都会影响线程数量，如果超过这个数量，会抛出OutOfMemoryError异常（Error异常，重新编写代码吧，太难处理了，Java也不建议我们处理）
+
+
+
+
+
+Executor框架即可解决这个问题：
+
+任务是一组逻辑工作单元，线程就是使得异步任务执行的机制
+
+线程池简化了线程的管理工作，在Java类库中，任务执行的主要抽象不是Thread，而是Executor
+
+简单Demo
+
+```java
+public class Demo1 {
+    private final Integer NTHREADS = 100;
+    private final Executor executor = Executors.newFixedThreadPool(NTHREADS);
+
+    public void calculate(){
+        executor.execute(()->{
+            //一系列业务操作
+        });
+    }
+}
+
+```
+
+一般Executor的配置是固定的，配置完成后在服务器的任意地方都可以向此ececutor提交任务
+
+
+
+
+
+任务的执行策略：
+
+因为将任务的提交与执行解耦开来，使得任务的执行策略很容易修改，具体包括：
+
+- 在什么线程中执行任务
+- 任务按照什么顺序执行
+- 有多少个任务能并发地执行
+- 在队列中有多少个任务在等待执行
+- 如果因为过载需要拒绝一个任务，应该优先拒绝哪一个？如何通知应用程序被拒绝？
+- 执行任务之后需要进行哪些动作
+
+
+
+各种执行策略都是一种资源管理工具，对不同的硬件资源需要采取不同的执行策略
+
+
+
+> 每当看到下面形式的代码
+>
+> new Thread(Runnable runnable).start();
+>
+> 并且希望有一种更灵活的执行策略时，请使用Executor代替Thread
+
+
+
+
+
+线程池：管理一组同构工作线程的资源池
+
+工作者的任务很简单：从工作队列中取出任务，执行，执行完毕后返回线程池等待下一个任务
+
+可以调整线程池大小来保证足够多的线程使得服务器处于忙碌状态，还免去了创建线程和销毁线程的时间，更重要的是可以防止过多线程竞争使得应用程序耗尽内存
+
+
+
+
+
+工具类Executors提供了一系列的默认配置
+
+- newFixedThreadPool
+
+    `return new ThreadPoolExecutor(nThreads, nThreads,0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());`
+
+默认创建一个固定长度的线程池，每提交一个任务就创建一个线程，直到线程数量达到最大，这时候线程规模将不变化（如果线程抛出了异常导致线程挂掉了，会补充一个新的线程）
+
+- newCachedThreadPool
+
+    `return new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>());`
+
+线程池的规模不受限制，如果当前线程数超过了处理需求时，那么将回收空闲的线程，而当需求增加时，则会添加新的线程
+
+- newSingleThreadExecutor
+
+    `return new FinalizableDelegatedExecutorService
+    (new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>()));`
+
+是一个单线程的Executor，当这个线程挂了之后就会重新创建一个补上能够确保依照任务在队列中的顺序串行执行
+
+- newScheduledThreadPool
+
+    ```
+    public ScheduledThreadPoolExecutor(int corePoolSize) { super(corePoolSize, Integer.MAX_VALUE, 0, NANOSECONDS,
+              new DelayedWorkQueue());
+    }
+    ```
+
+创建固定长度线程池，以延迟或者定时的方式执行
+
+
+
+
+
+Executor的生命周期的讨论
+
+如果Executor无法正常的关闭，那么就会存在运行的线程，而JVM只有在所有（非守护）线程全部终止后才会退出，也可能导致JVM无法正常结束
+
+
+
+Executor执行关闭应用程序时，可能采用最平缓的方式（完成所有任务，不接受新的任务），也可能是最暴力的方式（像是直接关闭电源），最起码是可关闭的，并且返回任务的状态给应用程序
+
+
+
+为了解决这个问题，Executor向下拓展了ExecutorService接口，添加了一些生命周期管理的方法，还有一些用于任务提交的便利方法
+
+Executor接口：
+
+```java
+public interface Executor {
+    void execute(Runnable command);
+}
+```
+
+ExecutorService接口：
+
+```java
+public interface ExecutorService extends Executor {
+
+    void shutdown();
+
+    List<Runnable> shutdownNow();
+
+    boolean isShutdown();
+
+  	boolean isTerminated();
+
+    boolean awaitTermination(long timeout, TimeUnit unit)
+        throws InterruptedException;
+
+    <T> Future<T> submit(Callable<T> task);
+
+    <T> Future<T> submit(Runnable task, T result);
+
+    Future<?> submit(Runnable task);
+
+    <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks)
+        throws InterruptedException;
+
+    <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks,
+                                  long timeout, TimeUnit unit)
+        throws InterruptedException;
+
+    <T> T invokeAny(Collection<? extends Callable<T>> tasks)
+        throws InterruptedException, ExecutionException;
+
+    <T> T invokeAny(Collection<? extends Callable<T>> tasks,
+                    long timeout, TimeUnit unit)
+        throws InterruptedException, ExecutionException, TimeoutException;
+}
+```
+
+
+
+ExecutorService的生命周期的三种状态：运行，关闭和已终止
+
+在创建时候就处于运行状态，shutdown方法执行平稳的关闭过程，不接受新的任务，等待已经加载的任务的完成，shutdownNow执行暴力的停止，关闭所有正在运行的任务，并且不再执行队列中尚未开始的任务
+
+
+
+在ExecutorService关闭之后（终止之前）提交的任务是由“拒绝执行处理器”来完成的，处理方法有多种多样。
+
+等所有的线程都终止之后，ExecutorService进入终止状态，可以调用awaitTermination来等待ExecutorService到达终止状态，或者通过isTerminated来检查是否已经终止，通常在调用awaitTermination之后立马调用shutdown，从而同步关闭Executor
+
+
+
+
+
+定时任务与周期任务
+
+在Java1.5中提出的Timer类和ScheduledThreadPoolExecutor类都有定时任务和周期任务的方法，而后来一般都使用后者，因为Timer是基于绝对时间的，而ScheduledThreadPoolExecutor只支持相对时间的调度
+
+
+
+Timer类的具体问题：执行所有的定时任务只会开启一个线程，如果我们设置每十分钟执行一次，然而这个操作花费了四十分钟的时间，那么在执行完这个操作之后或许会连续执行四次该操作，又或者是直接不执行，无论哪种都会出现问题（最起码的失去了最起码的时效性），还有另一个问题就是Timer一旦抛出了异常就会直接中断执行，并不会重新去创建线程去尝试（被称之为线程泄露）
+
+
+
+如果想自己实现一个定时任务，可以与ScheduledThreadPoolExecutor一样底层采用DelayQueue的方式来管理一组Delay对象来实现定时任务
+
+
+
+
+
+HTML页面渲染器：
+
+串行的HTML页面渲染器：
+
+![image-20200403165513234](images/image-20200403165513234.png)
+
+先渲染文字，再去加载图片（比从上到下渲染好的很多，可以在网络带宽不好的情况下先去加载文字后图片），但是在加载图片的过程中IO操作一直占用，CPU空闲，利用率不高
+
+
+
+
+
+携带结果的Callable和Future
+
+Runnable和Callable的局限性：都有明确的入口点和出口点，任务一旦传输到Executor并且开始执行之后就无法取消，只能等到任务执行完成，会一直占用当前线程，也可以用Callable来调用一个无返回值的任务，如Callable<void>
+
+而Future表示一个任务的生命周期，并提供了相应的方法来判断任务是否完成或者取消，以便获取任务和取消任务等
+
+get方法会根据Future的状态来返回值，如果没有执行完成，则会发生阻塞，如果已经执行完成，会返回执行完成的值，如果任务抛出了异常，get方法会将异常封装成为ExecutionException对象并且将其抛出，可以使用getCause来获取具体原因。如果任务被取消，则会报CancellationException异常
+
+ExecutorService的submit方法可以接受一个Callable或者一个Runnable，返回封装成的Futrue对象（安全发布问题），你可以通过这个对象获取任务的执行结果或者是取消任务，然后Executor会自动帮你调用Future的run方法
+
+
+
+HTML页面渲染（Future）：
+
+即使是单线程CPU也能有很大的提升（保证一个线程是CPU密集型，另一个线程是IO密集型，都不会相互影响）
+
+![image-20200403173712809](images/image-20200403173712809.png)
+
+新建了个线程池，把加载图片的任务丢到线程池里面去
+
+【重点】最后的异常处理：InterruptedException异常的处理，让当前线程断开，并且强制取消future任务
+
+其实还有值得优化的地方：上述是另启动一个线程加载全部的图片后再依次显示，最好是加载一张显示一张
+
+
+
+上面例子获得的并发性是非常有限的，因为通常主线程加载文字一会儿就加载完了，处于阻塞状态等待新线程，而新线程还再执行图片IO操作（并发性提升不大，代码量和复杂度却提高了很多）
+
+【结论】：只有当大量相互独立且同构的任务并发的进行处理时，才能体现性能上的真正提升
+
+
+
+
+
+使用Executor需要先将任务存储进去，然后会返回给你一个Future，你只要在线程中使用Future对象的get方法，即可获得结果，方法有点繁琐（个人已经觉得不繁琐了，这是Brian Goetz的观点），可以通过一种更好的方法来完成服务——CompletionService接口
+
+CompletionService只有唯一的实现类ExecutorCompletionService
+
+使用大致过程：将Callable直接传递给他（如果是Runnable就直接丢给Executor，又不用返回值，没必要用这个），这些结果会在完成时候返回并封装成一个Future加到内部的BlockingQueue队列里面去，将计算部分委托到了内部的Executor上
+
+具体实现思路：在我们使用CompletionService，给他传入Runnable或者是Callable，都会被封装成为QueueingFuture（FutureTask）的一个子类，并且覆盖他的done方法，当计算完成之后就将结果保存包BlockQueue里面，具体的QueueingFuture的代码为
+
+```java
+private class QueueingFuture extends FutureTask<Void> {
+  QueueingFuture(RunnableFuture<V> task) {
+    super(task, null);
+    this.task = task;
+  }
+  protected void done() { completionQueue.add(task); }
+  private final Future<V> task;
+}
+```
+
+好的点是：如果Future没有算出来，就不会将Future加入到BlockingQueue里面去
+
+
+
+使用 CompletionService来实现图片的一张张顺序加载
+
+![image-20200403213114185](images/image-20200403213114185.png)
+
+相当于是对每个图片就分开处理了（都是相似的任务），然后获取图片的数量，一直从completionService里面拿出future，图片IO处理完就拿得到，没处理完就拿不到，可以实现每个图片加载过程是单个任务的，不会造成大图片阻塞
+
+
+
+另外，多个CompletionService可以共用一个线程池（Executor），CompletionService的作用就是相当于将任务丢给Executor，再取回结果封装到自身，使得开发者可以完全忽略掉Executor的存在（当然，创建工作还是要你去完成的）
+
+
+
+为任务设置时限？特别是在Web环境下，如果响应速度过慢，很多任务也就失去了意义（用户可能随时关闭浏览器以为服务器卡死了）
+
+
+
+可以对future的get方法入手，设置过期时间，如果没有过期则直接返回结果，如果过期了就会抛出TimeoutException异常，一定要通过future取消任务，避免计算资源的浪费
+
+简单的例子：
+
+```java
+public class OutOfTime2 {
+
+    public static void main(String[] args) {
+        FutureTask<String> task = new FutureTask<String>(()->{
+            TimeUnit.SECONDS.sleep(10);
+            return "hello world";
+        });
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        executor.execute(task);
+        try {
+            task.get(2,TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+            System.out.println("-------timeout------------");
+            task.cancel(true);
+        }
+        executor.shutdown();
+    }
+}
+
+```
+
+future.cancel(boolean) 的参数标注是mayInterruptIfRunning
+
+> 可能关闭executor的方式有点瑕疵
+
+
+
+
+
+可以使用invokeAll方法来简化Future组操作的get方法和定时任务操作，同时会返回一个Future组
+
+如果其中的任务超过了限定的时间或者是被中断时候，任务将被自动取消，客户端可以通过对返回的Future组调用get或isCancelled方法来判断状态
+
+```java
+public class Demo25 {
+    public static void main(String[] args) {
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        ArrayList<Callable<String>> list = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            list.add(() -> {
+                return Thread.currentThread().getName();
+            });
+        }
+        try {
+            List<Future<String>> futures = executor.invokeAll(list, 10, TimeUnit.SECONDS);
+            for (Future<String> i : futures) {
+                System.out.println(i.get());
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
+        }
+    //    关闭线程池
+        executor.shutdown();
+
+    }
+}
+```
+
+通过这个例子的输出也可以验证线程池的正确性
+
+同样的，关闭线程池的地方不是很完善
+
+
+
+面向任务来设计并发程序，简化了开发过程
+
+尽量使用Executor去代替Thread，每次创建线程和销毁线程都会调用本地方法，非常消耗资源
+
+此时的任务重点就落在了划定任务边界上，当然是划分的越细越好（会存在更高的并发性，而且使用线程池又没有了创建线程和销毁线程所带来的的开销）
