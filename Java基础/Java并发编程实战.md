@@ -2758,3 +2758,691 @@ public class Demo25 {
 尽量使用Executor去代替Thread，每次创建线程和销毁线程都会调用本地方法，非常消耗资源
 
 此时的任务重点就落在了划定任务边界上，当然是划分的越细越好（会存在更高的并发性，而且使用线程池又没有了创建线程和销毁线程所带来的的开销）
+
+
+
+
+
+
+
+## 第七章、取消与关闭
+
+
+
+任务和线程的启动都非常容易，但有时候我们需要提前结束任务或线程，例如：用户取消了操作，系统急需关闭
+
+
+
+Java没有提供任何机制来安全的终止线程，但却提供的interrupt，让一个线程去终止另外一个线程
+
+【虽然Thread的stop方法和suspend方法可以达到中断任务的效果，但是是极度不安全的，连Java官方都不建议使用】
+
+
+
+应该使任务首先清除当前正在执行的工作然后再结束，保证了数据处于一致的状态（例如转账任务）
+
+
+
+一个行为良好的软件和勉强运行的软件之间的最主要区别就是：行为良好的软件能够很完善的处理失败，关闭和取消等过程
+
+
+
+如果外部代码在某个操作完成之前将其置入“完成”状态，那么这个操作就被称为是可取消的
+
+取消操作的原因：
+
+- 用户请求取消
+- 有时间限制的操作
+- 应用程序事件：如应用程序启动了多个搜索线程/任务，当其中一个线程找到了搜索结果时，要自动取消其他的线程
+- 错误：例如存储文件，当磁盘空间已满，就应该取消执行存入数据任务
+- 关闭：如果是缓慢的关闭，则会等待所有任务执行完成，如果强制关闭则必须取消任务了
+
+
+
+需要使用一些协作式的机制
+
+
+
+一种协作机制就是：设置某个“已请求取消”的标志，并且定期的检查
+
+```java
+@ThreadSafe
+public class Demo26 implements Runnable {
+
+    @GuardedBy("this")
+    private final List<BigInteger> list = new ArrayList<>();
+
+    private volatile boolean cancelled = false;
+
+    @Override
+    public void run() {
+        BigInteger p = BigInteger.ONE;
+        //等价于BigInteger p = new BigInteger("1");
+        while (!cancelled) {
+            //获取下一个素数
+            p = p.nextProbablePrime();
+            //写入要锁起来，因为有读取
+            synchronized (this) {
+                list.add(p);
+            }
+        }
+
+    }
+
+    public void cancel() {
+        cancelled = true;
+    }
+
+    public synchronized List<BigInteger> getList() {
+        return list;
+    }
+
+    //使用事例
+    public static void main(String[] args) throws InterruptedException {
+        Demo26 demo26 = new Demo26();
+        new Thread(demo26).start();
+        try {
+            TimeUnit.SECONDS.sleep(1);
+        } finally {
+            demo26.cancel();
+        }
+        System.out.println(demo26.getList());
+    }
+}
+
+```
+
+以上例子就使用了一个简单的“已请求取消”的标志，通过在Run方法中判断标志位来解决。
+
+> 需要注意的点：
+>
+> ​	标志位使用了volatile来修饰，保证了可见性
+
+
+
+当然，这种做法存在一种局限：如果线程被阻塞了，那么永远也不会运行到对标志位的检查的代码那儿去，就会卡死：
+
+使用一个BlockingQueue来存储数据，生产者检查标志位，标志位为false则向队列中put一个素数，消费者处理素数，当主线程检测到消息队列满的时候，同时通知生产者和消费者同时取消任务，然而生产者已经阻塞在了put方法那儿，无法取消操作，造成线程一直卡死在那儿，可能JVM都无法退出了
+
+
+
+
+
+然而一些特殊库的阻塞方法支持中断
+
+>  只有在取消操作中使用中断技术才合适（虽然Java的语言规范中没有指出）
+
+Thread的中断方法：
+
+- public void interrupt()		中断目标线程
+- public boolean isInterrupted()      返回线程中断状态
+- public static boolean interrupted()    取消当前线程的中断状态（唯一方法）
+
+
+
+如果线程中断，那么阻塞库里的Thread.sleep和Object.wait方法都会提前返回
+
+JVM不保证阻塞线程响应中断的速度，但是实际上是非常快的
+
+
+
+
+
+非阻塞线程使用中断就会立即取消操作，如果不触发InterruptException异常，那么中断状态会一直保持，直到明确的清除中断状态
+
+
+
+调用interrupt并不是立即停止目标所做的任务，而是传递了申请中断的消息，置于响应速度则与JVM有关
+
+
+
+如同取消一样，中断也需要策略，被称为中断策略，如：发现中断请求时，应该做些什么，以多快的速度去响应这个中断请求等
+
+最合理的中断策略：线程级取消操作 或 服务级取消操作，轻快退出，在必要时候进行清理，并且通知操作者该线程已经退出
+
+
+
+很多时候会抛出InterruptException异常，在捕获该异常后，应该继续保证当前线程的阻断：`Thread.currentThread().interrupt();`，防止在捕获异常之后线程还在继续执行，没有对中断请求做出处理
+
+
+
+
+
+处理可中断的阻塞方法的阻塞时候可使用的两种操作：
+
+- 向上抛出InterruptException异常，使得当前方法也变成一个可中断的方法
+- 恢复中断状态：标准做法就是再次调用interrupt方法来恢复中断状态
+
+如：
+
+```java
+try {
+  integers.put(2);
+} catch (InterruptedException e) {
+  Thread.currentThread().interrupt();
+}
+```
+
+如果不想处理InterruptedException异常，也可以直接在任务中轮询interrrupt状态来决定线程是否中断
+
+中断是线程层面的操作，并且可以使得一些框架对线程进行一些操作，例如：ThreadPoolExecutor拥有的工作线程被中断时候，框架会检测是否线程池正在关闭，如果正在关闭的话，会对中断线程进行一系列清理操作
+
+
+
+如果任务抛出了异常，只能传达到其他线程的顶部，如果没做处理的话这个异常很有可能会被忽略
+
+
+
+
+
+中断存在的目的：协助取消操作，来取消那些阻塞的方法
+
+
+
+一般阻塞的方法都会抛出InterruptException异常，用来响应中断状态，如果这个状态是你自己产生的，你就需要捕获状态并且完成一系列操作用来提升系统的响应速度，如果不是你产生的，可能是他的父线程在其他地方调用了线程的中断操作，那么直接抛出就好了。
+
+
+
+InterruptException就是阻塞操作对中断的响应，如果是非阻塞操作则不会对中断请求做出响应，如果在你的业务逻辑中存在中断请求，就处理，没有就抛出
+
+```java
+Thread thread = new Thread(() -> {
+    try {
+        queue.put("1");
+        queue.put("2");
+        queue.put("3");
+    } catch (InterruptedException e) {
+        System.out.println("线程中断");
+        e.printStackTrace();
+    }
+    System.out.println("正常执行完成");
+});
+```
+
+如果是这样一个请求（队列长度为1），会阻塞在queue.put("2")这条语句上，当主线程调用了thread.interrupt方法，输出如下：
+
+```java
+线程中断
+正常执行完成
+```
+
+可以看到，中断操作只是一种信号，让其停止当前的阻塞操作，去执行catch语句，然后继续向下执行，最常见的处理方式便是：
+
+```java
+try {
+  TimeUnit.SECONDS.sleep(100);
+} catch (InterruptedException e) {
+  //do something and ...
+  Thread.currentThread().interrupt();
+}
+```
+
+尽量抛出InterruptException异常作为中断响应，除非线程中断是在你自己的业务代码中调用的，你可以了解到中断的逻辑。
+
+
+
+也可以在接受到InterruptException的时候不进行任何处理，在适当的时候再抛出，在catch语句最后使用throw语句。
+
+
+
+对InterruptException的理解：当一个方法抛出 InterruptedException 时，它是在告诉您，如果执行该方法的线程被中断，它将尝试停止它正在做的事情而提前返回，并通过抛出 InterruptedException 表明它提前返回。行为良好的阻塞库方法应该能对中断作出响应并抛出 InterruptedException，以便能够用于可取消活动中，而不至于影响响应。
+
+
+
+中断对于处于Runnable的线程没有任何的影响，调用interrupt的方法仅仅只是将interrupted标志位置为true，那么interrupt对于处于Runnable阶段的程序岂不是费用了？我们需要在线程的run方法中手动实现根据interrupt标志位是否进行提前退出，给了我们更大的灵活性，而不是已检测到interrupt就直接终止线程
+
+
+
+在抛出interruptException后interrupt即被置为false，如果在线程中处理InterruptException，除了在catch中处理完将异常抛出，或者也可以将interrupt置为true，在后面再对interrupt标志位进行判断
+
+使用callable抛出异常使得任务提前结束：
+
+```java
+public static void main(String[] args) throws InterruptedException {
+  FutureTask<String> task = new FutureTask<>(() -> {
+    while (true) {
+      if (Thread.currentThread().isInterrupted()) {
+        throw new InterruptedException();
+      }
+    }
+  });
+
+  Thread thread = new Thread(() -> {
+    task.run();
+  });
+  thread.start();
+
+  TimeUnit.SECONDS.sleep(1);
+
+  thread.interrupt();
+
+  System.out.println("线程一直在执行");
+}
+```
+
+如果不支持调用或传递InterruptException异常，标准的方法就是保持中断请求：在catchInterruptException的地方调用Thread.currentThread().interrupt()；来记录中断状态
+
+
+
+在捕获InterruptException之后不要过早的设置中断状态，**因为每次一设置中断状态就会抛出InterruptException异常，一直循环重复**
+
+
+
+
+
+通常将任务的创建，线程的初始化，线程的消亡都在一个专门的线程中执行
+
+
+
+定时任务：可以通过Thread的join方法来指定超时时间，一旦超时了，线程就会直接死亡。但是无法知道是任务超时而结束的还是因为执行完成而结束的
+
+
+
+
+
+任务：使用Future和任务执行框架实现定时取消
+
+通常使用现有库中的类比自己写要更好
+
+
+
+Future有一个cancel方法，带有一个参数mayInterruptIfRunning
+
+
+
+除非清楚线程的中断机制，否则不要中断线程，那么什么时候可以取消任务呢？在标准的Executor中存在线程的中断策略，实现了一种中断策略使得任务可以通过中断来取消
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/7 17:29
+ * @Desc 类的简单描述
+ */
+public class Demo27 {
+
+    private static ExecutorService executor = Executors.newFixedThreadPool(20);
+
+    //    定时方法
+    public static void timedRun(Runnable r, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException {
+        Future<?> task = executor.submit(r);
+        try {
+            task.get(timeout, unit);
+        } catch (InterruptedException | ExecutionException e) {
+            //    重新抛出就好了
+            throw e;
+        } catch (TimeoutException e) {
+            task.cancel(true);
+        }
+    }
+
+
+    //    测试
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    TimeUnit.SECONDS.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                System.out.println("哈哈，执行成功");
+            }
+        };
+
+        timedRun(runnable, 2, TimeUnit.SECONDS);
+    }
+
+}
+
+```
+
+
+
+处理一些不可中断的阻塞：即使调用了interrupt方法，也不给你抛出异常，只是将interrupt标志位改为true了而已，不会做出任何响应
+
+对于这种不可中断的阻塞，我们需要了解阻塞的原因，以下是几种典型情况的解决方案：
+
+- 同步Socket I/O：因为InputStream和OutputStream中的read和write方法不会响应中断，对于这种情况只能采取关闭底层的Socket，可以使得阻塞的read和write方法抛出SocketException异常
+- JavaIO包的同步IO：在InterruptibleChannel上的线程中的IO操作也可以通过关闭Channel来抛出一个AsynchronousCloseException来实现对IO阻塞操作的停止
+- 获取某个锁：等待内置锁而形成的阻塞是无法响应中断的，但Lock类中提供了lockInterruptibly方法来允许响应中断
+
+
+
+
+
+采用newTaskFor来封装非标准的取消
+
+上述的几种情况都是在取消中不标准的使用中断，也就是非标准的取消
+
+就是一种设计模式（装饰器模式）还读不懂
+
+
+
+
+
+停止基于线程池的服务
+
+如线程池，如果线程池需要关闭，则需要每个线程都自行结束
+
+线程的操作权应该归于线程的所有者（创建线程的类），如线程池是池中线程的所有者，对池中线程的操作都应该由线程池来提供【线程的所有者无法传递】
+
+
+
+项目结构：应用程序--> 服务 --> 工作者线程
+
+只能一级管一级，应用程序不可能直接管理线程，因为线程并不属于应用程序，只属于对于的服务，但是服务可以提供方法让应用程序来操作工作者线程
+
+
+
+实例：日志服务
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/7 20:02
+ * @Desc 日志写入类
+ */
+public class Demo28 {
+
+    private final BlockingQueue<String> queue;
+    public final LoggerThread loggerThread;
+
+    public Demo28(File file) throws FileNotFoundException {
+        queue = new ArrayBlockingQueue<>(10);
+        loggerThread = new LoggerThread(file);
+    }
+
+    public void start() {
+        loggerThread.start();
+    }
+
+    public void log(String log) throws InterruptedException {
+        queue.put(log);
+    }
+
+    public void stop() {
+        loggerThread.interrupt();
+    }
+
+    private class LoggerThread extends Thread {
+        private final PrintWriter printWriter;
+
+        private LoggerThread(File file) throws FileNotFoundException {
+            this.printWriter = new PrintWriter(file);
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    String a = queue.take();
+                    System.out.println(a);
+                    printWriter.println(a);
+                }
+            } catch (InterruptedException e) {
+                //    写入被打断，可以不用处理，在final中关闭流即可
+                System.out.println("捕获到异常");
+            } finally {
+                printWriter.close();
+            }
+        }
+    }
+
+
+    //测试
+    public static void main(String[] args) throws IOException, InterruptedException {
+        File file = new File("E:\\springboot.log");
+        if (!file.exists()) {
+            file.createNewFile();
+        }
+
+        Demo28 demo28 = new Demo28(file);
+
+        demo28.start();
+
+        for (int i = 0; i < 10; i++) {
+            demo28.log("hello world!");
+        }
+
+        TimeUnit.SECONDS.sleep(1);
+
+        demo28.stop();
+
+    }
+}
+
+```
+
+> 注意点：
+>
+> - 测试的时候要休眠主线程，不要直接去中断线程了，可能还没有写进去
+> - 一定要关闭流，上述例子如果没有关闭流，文件会置为空 
+
+
+
+上述例子是不规整的，主要是退出的时候：只是简单的终止了线程，但是有可能线程里面还有没有写入的数据，还必然造成生产者的put方法的堵塞。
+
+
+
+改进建议：增加一个标志位用来记录当前线程是否关闭，如收到请求后，将标志位置为true，每次插入进来都要检查标志位，当标志位为true时候不能插入到队列里面来，再让写入线程将所有的队列消息都写入到本地，当队列为null，直接关闭
+
+
+
+改进：
+
+```java
+private boolean flag;
+
+public void log(String log) throws InterruptedException {
+
+  if (!flag) {
+    queue.put(log);
+  } else {
+    throw new IllegalStateException("logger is shutdown");
+  }
+}
+
+public void stop() {
+  flag = true;
+  while (queue.size() != 0) {
+  }
+  loggerThread.interrupt();
+}
+```
+
+还是有问题：先判断后执行，满足竞态条件
+
+
+
+更优解（千万别再给BlockingQueue上锁了，要不然卡死你）
+
+维持两个标质量：一个是我们上面的flag，另一个是队列里的元素个数
+
+更标准【如果有第二次的话一定要好好看，用了类名.this锁等高级操作】：
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/7 20:02
+ * @Desc 日志写入类
+ */
+
+@ThreadSafe
+public class Demo28 {
+    private final ArrayBlockingQueue<String> queue;
+    public final LoggerThread loggerThread;
+    @GuardedBy("this")
+    private boolean flag;
+    @GuardedBy("this")
+    private int size;
+
+    public Demo28(File file) throws FileNotFoundException {
+        queue = new ArrayBlockingQueue<>(10);
+        loggerThread = new LoggerThread(file);
+    }
+
+    public void start() {
+        loggerThread.start();
+    }
+
+    public void log(String log) throws InterruptedException {
+        synchronized (this) {
+            if (flag) {
+                throw new IllegalStateException("logger is shutdown");
+            }
+            size++;
+        }
+        queue.put(log);
+    }
+
+    public void stop() {
+        synchronized (this) {
+            flag = true;
+        }
+        loggerThread.interrupt();
+    }
+
+    private class LoggerThread extends Thread {
+        private final PrintWriter printWriter;
+
+        private LoggerThread(File file) throws FileNotFoundException {
+            this.printWriter = new PrintWriter(file);
+        }
+
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    synchronized (Demo28.this) {
+                        if (flag && size == 0) {
+                            break;
+                        }
+                    }
+                    String a = queue.take();
+                    System.out.println(a);
+                    synchronized (Demo28.this) {
+                        size--;
+                    }
+                    printWriter.println(a);
+                }
+            } catch (InterruptedException e) {
+                //    写入被打断，可以不用处理，在final中关闭流即可
+                System.out.println("捕获到异常");
+            } finally {
+                printWriter.close();
+            }
+        }
+    }
+
+
+    //测试
+    public static void main(String[] args) throws IOException, InterruptedException {
+        File file = new File("E:\\springboot.log");
+
+        Demo28 demo28 = new Demo28(file);
+
+        demo28.start();
+
+        for (int i = 0; i < 10; i++) {
+            demo28.log("hello world!");
+        }
+
+        TimeUnit.SECONDS.sleep(1);
+
+        demo28.stop();
+
+    }
+}
+
+
+
+```
+
+
+
+
+
+ExecutorService的关闭
+
+Executor里面只有一个execute方法，使用更精确的接口ExecutorService
+
+有两种方法：
+
+- shutdown方法：停止接受外来的任务，并且将队列中的任务执行完
+- shutdownNow方法：停止接受外来的任务，并且将队列中的任务直接返回一个List<Runnable>，有可能存在当前执行的任务执行一半就被关闭了的情况
+
+
+
+
+
+尝试将上述的日志系统的任务交给Executor框架去执行
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/7 22:46
+ * @Desc 类的简单描述
+ */
+@ThreadSafe
+public class LoggerInfoAno {
+    private final ExecutorService executor = Executors.newFixedThreadPool(10);
+    private final PrintWriter writer;
+
+    public LoggerInfoAno(File file) throws FileNotFoundException {
+        this.writer = new PrintWriter(file);
+    }
+
+//    不需要start方法，代理给了Executor
+
+    public void stop() {
+        //直接完成了关闭的工作
+        try {
+            executor.shutdown();
+        } finally {
+            writer.close();
+        }
+    }
+
+    public void log(String log) {
+        executor.submit(() -> {
+            writer.println(log);
+        });
+    }
+
+
+    //    测试
+    public static void main(String[] args) throws FileNotFoundException {
+        File file = new File("E:/springboot.log");
+        LoggerInfoAno ano = new LoggerInfoAno(file);
+
+        for (int i = 0; i < 500; i++) {
+            ano.log("hello LuckyCurve，当前线程：" + Thread.currentThread().getName());
+        }
+
+        ano.stop();
+
+    }
+
+}
+
+```
+
+使用框架真的能够极大的简化开发的工作量，不用自己去维护其中的并发性，都可以直接交给类库去完成（在开发过程中要考虑到并发，流的关闭等问题）
+
+
+
+
+
+
+
+另一种关闭生产者--消费者服务的方式就是使用毒丸对象，当生产者发送毒丸对象后，就停止生产，当消费者接受到毒丸的时候，停止处理事务。如果是先进先出的队列（FIFO）则能保证消费者在关闭之前完成队列中的所有工作
+
+毒丸对象的使用有很大的局限性：只能用在生产者和消费者都已知的条件下才能使用，确保每个生产者至少发送一个毒丸和每个消费者至少接受到一颗毒丸。
+
+如果当生产者和消费者数量太多时候则不适用
+
+【只有在无界队列中，“毒丸”才能安全可靠的工作】
+
+
+
