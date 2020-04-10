@@ -3446,3 +3446,380 @@ public class LoggerInfoAno {
 
 
 
+
+
+事例：只执行一次的服务
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/8 9:21
+ * @Desc 只执行一次的服务
+ */
+public class Demo28 {
+
+    boolean checkMail(Set<String> set, long timeout, TimeUnit unit) throws InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        final AtomicBoolean aBoolean = new AtomicBoolean(false);
+
+        try {
+            for (final String s : set) {
+                executorService.submit(() -> {
+                //    执行一个个检查逻辑
+
+                    if (true/*检查*/) {
+                        aBoolean.set(true);
+                    } else {
+                        aBoolean.set(false);
+                    }
+                });
+            }
+        } finally {
+            executorService.shutdown();
+            executorService.awaitTermination(timeout, unit);
+        }
+        
+        return aBoolean.get();
+
+    }
+}
+
+```
+
+注意finally语句块中的结束线程池
+
+> awaitTermination方法描述：
+>
+> ```
+> * Blocks until all tasks have completed execution after a shutdown
+> * request, or the timeout occurs, or the current thread is
+> * interrupted, whichever happens first.
+> ```
+
+
+
+
+
+shutdownNow的局限性：
+
+会立即结束当前正在执行的任务，并且将没有执行的任务以一个List的集合形式进行返回
+
+局限性：不会返回正在执行的任务
+
+
+
+可以实现手动追踪
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/8 9:39
+ * @Desc 类的简单描述
+ */
+public class TrackingExecutor {
+
+    private final ExecutorService executor;
+    private final CopyOnWriteArraySet<Runnable> set = new CopyOnWriteArraySet<>();
+
+    //不能让Executor内部创建，如果内部创建外面的类就都无法操作了
+    public TrackingExecutor(ExecutorService executor) {
+        this.executor = executor;
+    }
+
+    public List<Runnable> getRunnableTask() {
+        if (!executor.isTerminated()) {
+            throw new IllegalStateException("Executor not end");
+        }
+        //千万不要直接返回set啊，造成里面对象逸出
+        return new ArrayList<>(set);
+    }
+
+    public void execute(final Runnable runnable) {
+
+        executor.execute(() -> {
+            try {
+                runnable.run();
+            } finally {
+                if (executor.isShutdown() && Thread.currentThread().isInterrupted()) {
+                    set.add(runnable);
+                }
+            }
+        });
+    }
+
+    public void shutdownNow() {
+        executor.shutdownNow();
+    }
+}
+
+```
+
+注意finally语句块：
+
+如果仅仅只是currentThread   interrupt 那么有可能是线程池中的某个线程中断了，这种情况不用处理，线程池会自动记录任务并重新启用线程去执行
+
+存在一个小小的风险（根据情况，有时候这种风险不存在）：有可能Runnable执行到了最后的一条语句了，然而此时线程池关闭，那么这个Runnable会被记录下来，在下次线程池启动的时候按照逻辑会自动执行，出现了两次相同的结果（某些情况：指的是任务执行两次和执行一次得到的结果相等，称为“幂等”，就不会在意这个风险）
+
+
+
+
+
+在单线程中如果有未捕获的异常，程序会被终止
+
+但在多线程环境下，线程抛出异常，应用程序看起来仍然可以运行，所以这个失败很可能被忽略，所幸有防止应用监控并防止遗漏线程的方法
+
+
+
+线程非正常退出的后果可能是良性的，也可能是恶性的，取决于实际情况，如果是线程数远远大于CPU的同时处理的线程数，那么挂掉几个线程反而能加快程序运行的速度，但如果在GUI程序中丢失了一个线程，那么GUI程序会直接失去响应
+
+
+
+最可能碰到的异常便是RuntimeException异常，任何代码都可能抛出该异常
+
+不要盲目的认为一个方法一定正常返回，或者是抛出一个在方法中已经声明了的异常，对调用的代码越不熟悉，越要保持这种怀疑
+
+
+
+
+
+当工作线程调用了不熟悉的外部代码时，最好使用完整的try/catch/finally语句来包裹，可以捕获未检查的异常，也可以在finally语句中通知线程池线程非正常退出的情况
+
+
+
+
+
+上面介绍了一种主动方法来检查未知的异常（catch语句），在Thread API里面提供了一个UncaughtExceptionHandler方法也可以来捕获未检查的异常，和上面的是互补的关系
+
+
+
+其实Thread在接受到未捕获的异常后，会调用UncaughtExceptionHandler方法，该方法的默认行为就是将该异常的追踪信息输送到System.err中。
+
+我们也可以重写该方法，通常的响应方式是：将对应的错误信息以及栈追踪写入到日志中，或者采用更直接的方式：尝试重启线程，关闭应用程序，或执行其他修复和诊断工作
+
+使用以前的日志框架来将线程的err写入到本地文件中【写起来好爽】
+
+```java
+public static void main(String[] args) throws FileNotFoundException, InterruptedException {
+  File file = new File("E:/springboot.log");
+  LoggerInfoAno ano = new LoggerInfoAno(file);
+
+  Thread thread = new Thread(() -> {
+    throw new IllegalStateException("haha");
+  });
+
+  thread.setUncaughtExceptionHandler((Thread t, Throwable e)->{
+    ano.log(Level.SEVERE+"Thread terminated with exception : " + t.getName() +e);
+  });
+
+  thread.start();
+
+  ano.log(System.currentTimeMillis()+"");
+
+  TimeUnit.SECONDS.sleep(2);
+
+  ano.stop();
+}
+```
+
+如果不调用sleep方法，那么新建的线程可能还在创建过程中，JVM就已经要关闭了
+
+
+
+文件输出结果
+
+```java
+1586316830448
+SEVEREThread terminated with exception : Thread-0java.lang.IllegalStateException: haha
+```
+
+很爽~
+
+
+
+在java5.0之前，实现处理未知异常的唯一方法便是通过ThreadGroup进行类化，在Java5.0之后允许通过Thread.setUnCaughtException来设置UnCaughtException来处理未捕获的异常。
+
+
+
+JVM会先查看每个线程的异常处理器，如果不存在则在查看ThreadGroup的异常处理器，如果还不存在则再将异常传递到外层的ThreadGroup，直到传递到顶层的ThreadGroup（如果存在，默认情况下操作代码为空），否则就直接打印到控制台
+
+
+
+通常运行时间较长的应用都会需要指定一个异常处理器
+
+
+
+如果要使用ThreadPoolExecutor，则需要在构造函数里面指定ThreadFactory
+
+```java
+public ThreadPoolExecutor(int corePoolSize,
+                          int maximumPoolSize,
+                          long keepAliveTime,
+                          TimeUnit unit,
+                          BlockingQueue<Runnable> workQueue,
+                          ThreadFactory threadFactory)
+```
+
+
+
+查看到ThreadFactory的默认是由一个内部类DefaultThreadFactory来实现的，我们无法去利用这个内部类，所以需要自己去实现ThreadFactory
+
+
+
+
+
+
+
+实现的另一种方式：
+
+```java
+public static void main(String[] args) throws FileNotFoundException, InterruptedException {
+  File file = new File("E:/springboot.log");
+  LoggerInfoAno ano = new LoggerInfoAno(file);
+
+  ExecutorService executor = Executors.newFixedThreadPool(10);
+
+  executor.execute(() -> {
+    Thread.currentThread().setUncaughtExceptionHandler((thread, throwable) -> {
+      ano.log(Level.SEVERE + " Thread terminated with exception ");
+      StackTraceElement[] trace = throwable.getStackTrace();
+      for(StackTraceElement i : trace) {
+        ano.log("\t"+i);
+      }
+    });
+    System.out.println("进入任务主体");
+    throw new IllegalStateException("haha");
+  });
+
+  TimeUnit.SECONDS.sleep(1);
+
+  executor.shutdown();
+
+  ano.stop();
+
+}
+
+```
+
+在每次执行任务当中进行热加载，设置当前线程的UNcaughtException
+
+
+
+
+
+
+
+JVM的关闭：
+
+- 正常关闭
+    - 最后一个非守护的线程结束后
+    - 方法调用了System.exit后
+    - 其他的输入信号（如Ctrl+C）
+- 强行关闭
+    - 操作系统直接结束进程
+    - 调用Runtime，halt
+
+
+
+
+
+关闭钩子（Shutdown Hook）
+
+正常关闭中：JVM首先调用所有已经注册了的关闭钩子。关闭钩子指的是：在Runtime.addShutdownHook注册了的但是没有开始的线程。
+
+此时线程并不会立即停止执行，而是与关闭进程并发执行。
+
+当所有的关闭钩子都执行过后，如果标志位runFinalizersOnExit为true，则JVM运行终结器，然后停止工作。
+
+> 注意：
+>
+> ​	线程并不会被JVM的结束进程影响，只有在JVM关闭后，此时还没有结束的线程会立马被强行结束。
+>
+> ​	如果关闭钩子或者终结器执行失败，那么JVM会直接强制关闭（这种情况下不会运行关闭钩子）
+
+
+
+关闭钩子必须是线程安全的，并且要避免死锁
+
+要考虑到程序所有的运行状态
+
+要尽快的关闭，因为会影响JVM的关闭
+
+
+
+因为关闭钩子是并发执行的，所以关闭钩子不应该依赖于被应用程序或者其他关闭钩子关闭的服务，解决这一问题的最好办法便是对所有的服务都使用同一个关闭钩子（而不是每个服务都定义一个自己的关闭钩子，难免会涉及到别的服务）
+
+
+
+小运用（通过关闭钩子结束日志服务）：
+
+```java
+{
+  Runtime.getRuntime().addShutdownHook(new Thread(()->{
+    System.out.println("关闭钩子执行");
+    LoggerInfoAno.this.stop();
+  }));
+}
+```
+
+加入一个代码块，在创建一个对象的时候就注册钩子。
+
+在主线程中需要使用以下代码来保证正常退出（因为stop方法里面才涉及到对线程池的关闭，此时封装了stop方法到关闭钩子里去了）
+
+```java
+System.exit(1);
+```
+
+
+
+
+
+守护线程
+
+希望创建一个线程来进行辅助工作，但不想影响JVM的关闭，就需要使用守护进程（Daemon Thread）
+
+
+
+启动JVM会启动主线程和其他守护线程（如：垃圾回收线程和其他等等。。），在默认情况下，主线程创建的所有线程都只是普通线程
+
+
+
+守护线程唯一的特殊点在于当JVM关闭时候，当JVM要退出时候，所有的守护线程都会被抛弃（既不会执行finally语句，也不会执行回卷栈（感觉是一种线程的基本操作，在线程回收时候会执行）（目前还没查到资料））
+
+
+
+尽量少用守护线程，操作不好非常危险
+
+> 此外，守护线程通常不能用来代替应用程序管理程序中各个服务的生命周期
+
+
+
+
+
+终结器
+
+有些资源如内存资源可以轻易的由垃圾回收机制回收并释放，但其他的资源，例如文件句柄和套接字句柄，需要手动交换给操作系统，通常定义finalize方法，在普通资源被释放后，调用这些方法来将这些持久化资源释放
+
+
+
+编写正确的终结器是异常困难的，通常使用try/finally 显式的调用close方法可以比终结器更好的释放资源
+
+唯一的例外：资源是通过本地方法获取的
+
+> 避免使用终结器
+
+
+
+本章小结：
+
+通过使用FutureTask和Executor框架可以帮助我们构建可取消的任务和服务
+
+
+
+
+
+
+
+
+
+
+
