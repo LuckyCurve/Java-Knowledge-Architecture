@@ -3821,5 +3821,1444 @@ System.exit(1);
 
 
 
+## 第八章、线程池的使用
+
+
+
+第六章介绍了任务执行框架的作用：
+
+- 简化任务与线程的生命周期管理
+- 将任务的提交与执行解耦开来
+
+第七章讲了使用框架时候与生命周期的一些问题
+
+本章将介绍线程池的配置与调优，以及Executor的注意事项和高级使用等等
+
+
+
+
+
+
+
+
+
+特殊任务的执行策略：
+
+- 依赖性任务
+
+当前提交给线程池的任务依赖于其他任务的完成，如果处理的不好可能会造成问题
+
+- 使用线程封闭机制的任务
+
+如果规定了Executor的长度为1，那么编写任务的时候可以不用采取同步机制，全局变量默认是线程安全的（即线程封闭机制），但是如果修改了线程池的大小，那么封闭性会被破坏
+
+- 对响应时间敏感的任务
+
+GUI程序中提交到线程池中的任务，如果线程池大小很小（假设现在空闲的只有一个），那么GUI程序就会卡主
+
+- 使用ThreadLoacl的任务
+
+ThreadLoacl依赖于：当线程的生命周期受限于任务的生命周期（换言之：一个任务一个线程，执行完后就销毁），才会有意义。但是在线程池环境下，线程会复用，ThreadLocal无意义
+
+
+
+> 线程池对线程的管理：
+>
+> - 条件允许，线程池会复用里面的线程
+> - 当执行需求较低的时候会回收一部分线程，当需求增加的时候创建一部分线程
+> - 如果一个线程抛出了异常，会新创建一个线程来取代这个抛出了异常的线程
+
+
+
+:warning:：只有当任务是同类型的并且独立时，线程池的性能才会被完全的发挥出来
+
+
+
+
+
+在线程池中，如果任务依赖于其他任务，那么可能会产生饥饿死锁。
+
+很容易理解：当线程池不是足够大的时候，当前线程等待别的线程执行，被阻塞，而别的线程又在等待当前任务的线程
+
+还有一种情况就是：所有的线程通过栅栏机制来彼此协调时，如果线程池不够大可能会导致饥饿死锁
+
+
+
+> 每当提交了一个依赖性任务时候，要记得饥饿死锁
+
+
+
+
+
+有时候会出现以下问题：
+
+执行时间长的任务和执行时间短的任务掺杂在一起，并且线程池的大小小于执行时间长的任务数量的话，很有可能造成线程池都在执行执行时间长的任务，而阻塞了执行时间短的任务，使得响应变得糟糕。
+
+解决方法：
+
+- 扩充线程池大小（通常不现实，资源就那么多）
+- 设定阻塞时间：阻塞方法通常都有超时版本和无限时版本，如果任务等待时间超时，就将任务标记为失败，终止任务或者将任务重新放回队列中以待执行（虽然效率上没提升，但能给用户一个失败的提示，增加了响应性）
+
+
+
+
+
+
+
+
+
+线程池的理想大小取决于被提交任务的类型以及部署系统的特征
+
+通常不会写死线程池的大小，而通过某种配置机制来提供，例如：`Runtime.getRuntime().availableProcessors()`方法来动态的计算
+
+
+
+幸运的是：设置线程池的大小并不困难，只需要避免过大和过小
+
+过大：内存压力太大
+
+过小：资源利用率低，系统吞吐量自然下降
+
+
+
+对于计算密集型的任务，在拥有N<sub>CPU</sub>的处理器系统上（现在是能同时运行的线程数，因为有可能是四核八线）【N<sub>CPU</sub>可以直接使用`Runtime.getRuntime().availableProcessors()`方法来获取到】 当线程池的大小为N<sub>CPU</sub>+1的时候通常能达到最优的利用率（即使其中一个线程发生了故障，也会有另一个线程补上，不会导致CPU的时钟周期被浪费）
+
+
+
+对于包含IO操作和其他阻塞操作的任务，线程池的规模应该更大
+
+![image-20200411113316930](images/image-20200411113316930.png)
+
+
+
+当然，当任务需要某种被资源池管理的资源时，例如数据库连接池，任务的执行也会受到数据库连接池里面的链接数目的影响。当然，如果当前线程池是数据库连接池的唯一使用者时，线程池也成为了数据库连接池的利用率的限制
+
+
+
+
+
+
+
+配置ThreadPoolExecutor
+
+ThreadPoolExecutor是一个灵活的稳定的线程池，允许进行各种定制，例如：Executors里面的一些内部类都是定制的ThreadPoolExecutor
+
+如果这些定制化的ThreadPoolExecutor不满足需求，可自定义配置一个执行策略
+
+全参构造函数如下：
+
+```java
+public ThreadPoolExecutor(int corePoolSize,
+                          int maximumPoolSize,
+                          long keepAliveTime,
+                          TimeUnit unit,
+                          BlockingQueue<Runnable> workQueue,
+                          ThreadFactory threadFactory,
+                          RejectedExecutionHandler handler)
+```
+
+最后两个参数有默认实现，也可以自己定制。
+
+
+
+参数的详细解读：
+
+corePoolSize，maximumPoolSize，以及keepAliveTime和unit都负责线程的创建和销毁
+
+corePoolSize：线程池的基本大小，在没有任务执行时线程池的大小，并且只有在线程池满了的情况下才会继续创建线程数量。
+
+maxiMumPoolSize：线程池能同时活动的最大数量，当任务队列满了的时候，会创建线程，但总的线程数的上限便是maximumPoolSize
+
+keepAliveTime和unit：如果某个线程的空闲时间超过了限定的存活时间，并且此时线程池的大小大于corePoolSize，那么该线程将会被回收
+
+
+
+特定的Pool的设定：
+
+newFixedThreadPool：将基本大小和最大大小设置成相同的值，额外创建的线程数不会超时（额外创建线程数永远为0，超时也无所谓）
+
+````java
+public static ExecutorService newFixedThreadPool(int nThreads) {
+  return new ThreadPoolExecutor(nThreads, nThreads,
+                                0L, TimeUnit.MILLISECONDS,
+                                new LinkedBlockingQueue<Runnable>());
+}
+````
+
+
+
+newCachedThreadPool：基本大小为0，最大大小为最大整数，线程的超时时间设置为60s。可以收缩（没任务的时候占有线程为0）
+
+```java
+public static ExecutorService newCachedThreadPool() {
+  return new ThreadPoolExecutor(0, Integer.MAX_VALUE,
+                                60L, TimeUnit.SECONDS,
+                                new SynchronousQueue<Runnable>());
+}
+```
+
+
+
+newSingleThreadExecutor：就是newFixedThreadPool的线程数为1的特例
+
+```java
+public static ExecutorService newSingleThreadExecutor() {
+  return new FinalizableDelegatedExecutorService
+    (new ThreadPoolExecutor(1, 1,
+                            0L, TimeUnit.MILLISECONDS,
+                            new LinkedBlockingQueue<Runnable>()));
+}
+```
+
+
+
+
+
+在高负载的情况下还是有可能存在资源耗尽的情况（只不过几率比不使用线程池的低得多），因为请求的速率远远大于线程池处理任务的速度，就会有大量的请求堆积，并导致任务队列无限制增长（如果该队列可扩张的话，无界队列），并且随着请求的存储，线程池的处理速度会越来越慢
+
+
+
+可以给ThreadPoolExecutor传递一个BlockingQueue。基本的任务排队方法有：无界队列，有界队列和同步移交
+
+newFixedThreadPool和newSingleThreadExecutor默认情况下使用的是无界的LinkedBlockingQueue
+
+
+
+一种稳妥的方式是使用有界队列，如ArrayBlockingQueue，有界的LinkedBlockingQueue，PriorityBlockingQueue。使用有界队列时候要考虑到队列满之后，并且线程池也到达了最大值，则需要指定饱和策略来解决这些问题
+
+
+
+还有一种队列是newCachedThreadPool里面使用的SynchronousQueue，这个队列通常使用在非常大的或者无界的线程池中，前面所说的队列实际上不准确，因为SynchronousQueue不是一个真正的队列，而是一种在线程之间移交对象的机制，必须有一个线程来接收这个在发送的对象（所以要求任何时候都必须有新的空闲线程），否则根据饱和策略处理这个任务（或者丢弃或者重新发送）。
+
+**只有当线程池是无界的或者是可以拒绝任务时，SynchronousQueue才有实际意义**
+
+
+
+
+
+队列里的ArrayBlockingQueue和LinkedBlockingQueue都是FIFO的，SynchronousQueue是无序的，如果需要使用有序队列，则可以使用PriorityBlockingQueue，任务的排序顺序是通过自然顺序或者是任务实现Comparable来定义的
+
+
+
+只有独立的任务排队才是有意义的，如果任务之前相互依赖，很容易产生死锁，建议非独立的任务使用newCachedThreadPool线程池来运行，保证不会导致饥饿死锁
+
+
+
+
+
+饱和策略：对提交到已经关闭的Executor或者是已经满了的Executor，则会用到饱和策略RejectedExecutionHandler，JDK提供的默认饱和策略有：
+
+- AbortPolicy
+
+默认的饱和策略，会抛出一个RejectedExecutionException异常（从submit或者是excute方法里面抛出）
+
+- CallerRunsPolicy
+
+调用者运行：实现了一种协调机制，如果此时线程池已满，那么任务就会返还给提交该任务的线程，让该线程自己去执行，无论是以execute还是以submit来提交任务
+
+- DiscardPolicy
+
+会悄悄丢弃该任务
+
+- DiscardOldestPolicy
+
+抛弃即将执行的（如果是FIFO队列则是最开始提交的）任务
+
+
+
+使用信号量来阻塞
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/11 15:01
+ * @Desc 封装当前线程池为阻塞线程池
+ */
+@ThreadSafe
+public class BoundedExecutor {
+    private final ExecutorService executor;
+    private final Semaphore semaphore;
+
+
+    public BoundedExecutor(ExecutorService executor, Semaphore semaphore) {
+        this.executor = executor;
+        this.semaphore = semaphore;
+    }
+
+
+    public void run(final Runnable runnable) throws InterruptedException {
+        semaphore.acquire();
+        try {
+            executor.submit(runnable);
+            semaphore.release();
+        } catch (RejectedExecutionException e) {
+            semaphore.release();
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        BoundedExecutor executor = new BoundedExecutor(Executors.newSingleThreadExecutor(), new Semaphore(1));
+        for (int i = 0; i < 10; i++) {
+            executor.run(() -> {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                System.out.println("hello world");
+            });
+        }
+    }
+}
+
+```
+
+通过使用同步工具类的方式使得每次只能提交一个
+
+
+
+
+
+线程工厂
+
+Executor默认的线程工厂会创建一个新的，没有任何设置项的线程，我们可以在Executor的构造函数里指定自定义的ThreadFactory，实现里面的newThread方法
+
+简单的一个Demo（其实在前面的未捕获异常处理里面就使用过了）
+
+```java
+package cn.luckycurve.threadsecurity;
+
+import java.util.concurrent.ThreadFactory;
+
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/11 15:18
+ * @Desc 自定义线程工厂，让每个线程的名字都与poolName相同
+ */
+
+public class MyThreadFactory implements ThreadFactory {
+    private final String poolName;
+
+    public MyThreadFactory(String poolName) {
+        this.poolName = poolName;
+    }
+
+    @Override
+    public Thread newThread(Runnable r) {
+        return new Thread(r, poolName);
+    }
+
+}
+
+```
+
+如果程序实行了严格的安全管理，那么则要通过Executor的privilegeThreadFactory工厂来定制自己的线程工厂。通过这种方式创建的Thread所具有的权限继承于创建这个Thread的线程的权限，实现了权限的对接
+
+
+
+
+
+
+
+
+
+在构造函数之后再定制ThreadPoolExecutor
+
+在使用构造函数创建了一个ThreadPoolExecutor对象后，仍然可以使用set方法来改变属性里面的数值，使用Executors的静态工厂方法new出来的对象（除了newSingleThreadExecutor外）都可以改变属性【其实从方法名里面就可以看出，其他的方法都是以ThreadPool结尾，维度Single以Executor结尾】
+
+> 不能修改的原因：
+>
+> ​	定义了一个静态内部类，并将ThreadPoolExecutor转换成了这个类，这个类的继承图如下：
+>
+> ![image-20200411153645477](images/image-20200411153645477.png)
+>
+> ```java
+> static class FinalizableDelegatedExecutorService
+>     extends DelegatedExecutorService {
+>     FinalizableDelegatedExecutorService(ExecutorService executor) {
+>         super(executor);
+>     } 
+> ```
+>
+> 这个类只是继承自ExecutorService，里面没有set犯法，set方法是ThreadPoolExecutor里面的，如果我们也想要定义一个不能被更改的定制化的ThreadPoolExecutor，可以参考这个类
+
+
+
+
+
+扩展ThreadPoolExecutor
+
+ThreadPoolExecutor具有良好的扩展性，主要的扩展方法为：
+
+```java
+protected void beforeExecute(Thread t, Runnable r) { }  
+//在任务开始执行前将调用
+protected void afterExecute(Runnable r, Throwable t) { }
+//在任务执行后调用
+protected void terminated() { }
+//线程池关闭时候调用
+```
+
+
+
+都会自动调用，默认的方法体即为空，需要自己写业务代码。
+
+> 注意事项：
+>
+> 1. 如果beforeExecute方法抛出了RuntimeException异常，那么任务不会执行，并且afterExecute方法也不会被调用
+> 2. 如果任务抛出了一个Exception，afterExecute方法依旧会执行
+> 3. 如果任务抛出了一个Error，afterExecute无法执行
+
+
+
+有点AOP那个味道了
+
+
+
+> :warning:：如果在你的自定义ThreadPoolExecutor类中使用了别的Executor，需要关闭，千万不要重写自定义ThreadPoolExecutor的shutdown方法，要在terminated方法里面添加关闭内部Executor的语句，理由如下：
+>
+> - ThreadPoolExecutor只留了三个方法给你去扩展，其他的不要动（应该是类库设计人员的意愿）
+>
+> - shutdown是非阻塞的，会直接强制关闭，而terminated是阻塞的，会等待任务执行(自己理解，可能有问题)
+
+
+
+实例：使用日志框架记录计算结果：
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/11 16:53
+ * @Desc 通过自定义Executor来记录运行时间
+ */
+public class TimingThreadPool extends ThreadPoolExecutor {
+
+    private final ThreadLocal<Long> startTime = new ThreadLocal<>();
+    private final LoggerInfoAno logger = new LoggerInfoAno(new File("E:/springboot.log"));
+    //总时间
+    private final AtomicLong totalTime = new AtomicLong();
+    private final AtomicLong numTime = new AtomicLong();
+
+    public TimingThreadPool(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) throws FileNotFoundException {
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+    }
+
+    @Override
+    protected void beforeExecute(Thread t, Runnable r) {
+        System.out.println("before");
+        super.beforeExecute(t, r);
+        startTime.set(System.nanoTime());
+        logger.log(String.format("Thread %s: start %s", t, r));
+    }
+
+    @Override
+    protected void afterExecute(Runnable r, Throwable t) {
+        System.out.println("after");
+        try {
+            long endTime = System.nanoTime();
+            long tastTime = endTime - startTime.get();
+            numTime.incrementAndGet();
+            totalTime.addAndGet(tastTime);
+            logger.log(String.format("Thread %s: end %s", t, r));
+        } finally {
+            super.afterExecute(r, t);
+        }
+    }
+
+    @Override
+    protected void terminated() {
+        System.out.println("terminated");
+        try {
+            logger.log(String.format("Terminated: avg time=%dns", (totalTime.get() / numTime.get())));
+            logger.stop();
+        } finally {
+            super.terminated();
+        }
+    }
+
+    public static void main(String[] args) throws FileNotFoundException {
+        TimingThreadPool pool = new TimingThreadPool(1, 1, 1, TimeUnit.SECONDS, new LinkedBlockingDeque<>());
+        for (int i = 0; i < 10; i++) {
+            pool.execute(() -> {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+
+        pool.shutdown();
+    }
+}
+```
+
+
+
+
+
+<hr>
+
+递归算法的并行化
+
+如果所有迭代操作都是独立的，并且不需要等待迭代操作都完成后再继续执行，那么就可以使用Executor框架将串行循环转化成并行循环，如下：
+
+```java
+void process(List<Element> element) {
+  for (Element e : element) {
+    process(e);
+  }
+}
+
+//并行化
+void processInParallel (Executor execute,List<Element> element) {
+  for (final Element e : element) {
+    executor,execute(()->{
+      process(e);
+    });
+  }
+}
+```
+
+当串行循环中的各个操作之间彼此独立，并且每个操作的工作量比管理一个新任务时带来的开销更多，那么这个串行循环就适合并行化
+
+
+
+在递归设计中也时长采用这种做法，前提是：每个迭代操作都不需要后续递归迭代的结果，例如：用递归遍历一棵树，并且统计总的值（举的例子不是很恰当，因为此时的工作量不是很大，如果遍历数）
+
+
+
+使用事例如一些解谜框架，例如推箱子等等，每个线程都去尝试一种做法，如果有唯一解得话找到了一个就可以直接返回，并强制停止整个框架（自定义闭锁或者是使用JDK实现的CountDownLatch来实现所需的闭锁行为），否则筛选整个解空间
+
+![image-20200411175654894](images/image-20200411175654894.png)
+
+主线程启动线程，然后就调用getValue方法，会一直处于阻塞状态，启动的线程会开启运算，直到查询到一个解，CountDownLatch置0，getValue取消阻塞，运行下一条关闭线程池的语句（记得设定线程池的饱和策略为直接丢弃，可能还有任务一直等待执行，任务已经完成了）（如果还在运行的任务的运行时间过长，那么可能中断他们而不是等他们完成）
+
+
+
+当前程序有一个BUG，如果任务无解，那么主线程会永远的阻塞在getValue方法上无法继续执行。
+
+解决思路：记录活动任务的数量，如果为零的话将解答设置成null
+
+或者让用户传入一个超时时间给getValue的参数上去
+
+
+
+
+
+
+
+小结：
+
+Executor是一个灵活且强大的框架，提供了大量可调节的选项，如创建线程关闭线程的策略（before/after Execute），处理队列任务的策略（FIFO，SynchronousQueue，PriorityBlockingQueue），处理过多任务的策略（四种），提供了钩子方法
+
+
+
+
+
+
+
+
+
+## 第九章、图形用户界面应用程序
+
+
+
+
+
+很多平台的GUI程序都是单线程的
+
+很多人都曾经尝试过使用多线程编程，但是又由于竞态条件和死锁导致的稳定性问题而又回到了单线程的事务队列模型中，基于AWT对多线程编程的尝试，Swing在实现时候决定使用单线程模型
+
+
+
+已经过时的技术，略过了，以后有兴趣可以回来看看，毕竟每个技术都有辉煌的时候
+
+
+
+
+
+
+
+
+
+# 第三部分、活跃性，性能和测试
+
+
+
+
+
+## 第十章、避免活跃性危险
+
+
+
+在安全性与活跃性之间存在某种制衡
+
+
+
+如果过度的偏向安全性：
+
+- 过度地使用加锁——可能导致顺序死锁
+- 过度使用线程池和信号量对资源的限制——资源死锁
+
+
+
+死锁是活跃性最低的表现
+
+对死锁的生动描述：每个人都拥有其他人需要的资源，同时又等待其他人已经拥有的资源，并且每个人在获取需要的资源前不会放弃已经拥有的资源
+
+
+
+
+
+数据库系统设计的时候就考虑到了检测死锁以及从死锁中恢复，由于每执行一个事务都要获取多个锁，并在事务执行完成之前不会释放这些锁（合情合理的设计），因此两个事务可能会发生死锁，实际上并不常见。当系统检测到了一组事务处于死锁时候，会选择一个牺牲品，释放现有的资源。
+
+
+
+但JVM不会像数据库系统那样有强大的解决死锁的方法
+
+
+
+
+
+一个类往往只是有可能发生死锁，并不意味着每次一定都发生死锁。但发生死锁往往是在最糟糕的条件下——高负载条件下
+
+
+
+
+
+锁的几种常见形式：
+
+1.锁顺序死锁
+
+![image-20200412100229751](images/image-20200412100229751.png)
+
+> 如果所有线程都以固定的顺序来获取锁，那么在程序中就不会出现锁**顺序死锁**的问题
+
+
+
+
+
+
+
+2.动态的锁顺序死锁
+
+![image-20200412100517378](images/image-20200412100517378.png)
+
+转账模型，锁住两个账户，判断转出账户金额是否充足，开始转账。
+
+BUG：
+
+![image-20200412100601139](images/image-20200412100601139.png)
+
+如果这样调用的话，依旧有可能会产生死锁，看似规定了锁的先后顺序，实则完全没有。
+
+
+
+> 可以通过比较给定对象的hash码来决定锁的顺序
+>
+> 使用`System.identityHashCode()`方法获取的hashCode与对象的hashCode获取的hashCode相同，但是如果对象为null，则返回0（如果是对象的hashCode方法则会直接报错）
+>
+> ```java
+> int fromHash = System.identityHashCode(fromAccount);
+> int toHash = System.identityHashCode(toAccount);
+> 
+> if (fromHash<toHash) {
+>   synchronized(fromHash) {
+>     synchronized(toHash){
+>       //fun()
+>     }
+>   }
+> } else if (toHash<fromHash) {
+>   synchronized(toHash) {
+>     synchronized(fromHash) {
+>       //fun()
+>     }
+>   }
+> } else {
+>   //如果没覆盖HashCode，则两个对象一模一样，依旧会产生死锁，这时候最好的办法就是在类中创建一个Object类型的普通对象lock
+>   synchronized(lock) {		//这时候锁的顺序就无所谓了
+>     synchronized(fromLock) {		//随便锁哪一个
+>       //fun()
+>     }
+>   }
+> }
+> ```
+>
+> 注意HashCode相等的时候不要直接锁this，如果该类中有其他的方法也使用this锁，会很影响活跃性（尽量锁小范围的）
+>
+> 如果在Account类中存在一个唯一的，不可变的，具备可比性的键值（通常为id）可以直接用id的比较来替代对hashCode的比较
+
+
+
+
+
+
+
+3.在协同对象之间发生的死锁
+
+很多方法都是直接锁当前对象，这就导致了内部的一些问题：
+
+例如实际模型中：类A包含了类B的实例化对象
+
+在数据建模中，类A需要有一个List记录包含着的B，类B需要一个字段指向他被包含的对象。
+
+如果此时AB的方法都是锁this，那么在操作类A的时候，可能出现要先获取类A的实例化对象的锁，然后调用了类B的方法要获取类B的实例化对象的锁，在操作类B的时候，获取锁的顺序正好相反，直接爆炸
+
+
+
+> 如果在持有锁的情况下调用了某个外部方法（特别是当该外部方法还是加锁的），那么要特别注意死锁
+
+> 在持有锁时候调用外部方法，很容易出现活跃性问题，要么是当前线程被长时间阻塞，锁无法被释放，亦或者是直接形成循环死锁
+
+
+
+
+
+于是提出了开放调用的概念
+
+
+
+当调用某个方法时不需要持有锁，那么这种调用被称为开放调用（Open Call）
+
+这种通过开放调用来避免死锁的方法，类似于采用封装机制来提供线程安全的方法。
+
+对采用了封装的程序进行安全分析，比没采用封装的程序进行安全分析容易得多
+
+同样的，分析一个完全依赖于开放性调用的程序的活跃性，比分析哪些不依赖于开放性调用的程序的活跃性简单
+
+尽可能的使用开放调用，更容易找出获取锁的路径，更容易保证采用一致的顺序来获取锁
+
+
+
+> 自己理解：说白了就是尽量缩小锁的范围，不要锁方法（锁住了方法该方法就不开放了）
+
+
+
+
+
+有时候，使用同步代码块来取代同步方法以使用开放调用会产生意想不到的结果，因为这会使得某个操作由原子操作变为非原子操作，让原子操作变成非原子操作在许多情况下是可以接受的（这也正是开放调用的核心，尽量将对多个锁的获取不处于同一原子操作内）
+
+然而，某些情况下丢失原子性是非常恐怖的，但也可以构造一些其他的协议来防止线程进入代码的临界区（而不是通过锁）
+
+
+
+
+
+资源死锁
+
+常见形式：例如A，B需要数据库连接池D<sub>1</sub>和D<sub>2</sub>的链接，每个人都持有一个资源，等待别人释放另外一个
+
+另一种基于资源的死锁形式就是线程饥饿死锁：
+
+例如前面提到的使用栅栏的一种实现方式CountDownLatch来实现线程的等待，如果需要等待5个线程同时执行完成，向大小为4的线程池中提交5个任务，那么也会形成死锁
+
+
+
+
+
+
+
+锁的避免与诊断
+
+尽量使用细粒度锁，在使用时候遵循如下建议：
+
+- 找出在什么地方将获取多个锁
+- 并在这些地方进行锁的获取顺序的分析
+
+
+
+通过支持定时的锁：
+
+也可以使用Lock类的tryLock来实现定时锁的功能，取代内置锁，可以在发生意外情况的时候让线程重新获得控制权而不是一直阻塞
+
+
+
+
+
+通过线程存储信息来分析死锁：
+
+JVM提供线程存储（Thread Dump）来帮助识别死锁的发生
+
+线程存储包括个线程中的栈追踪信息，加锁信息等待。可以找出死锁发生的位置以及涉及到的线程
+
+
+
+
+
+死锁是最常见的活跃性危险
+
+其他活跃性危险：
+
+- 饥饿
+
+当线程由于无法访问到他需要的资源而不能继续执行时，称为饥饿
+
+引发饥饿的最常见资源就是CPU时钟周期
+
+在Java中对线程的优先级安排不当，或者占有资源的线程无法结束（无限循环等等）都可能导致饥饿
+
+尽量不要改变线程的优先级，虽然Java提供了Thread API去修改优先级，并将优先级分为十等，与操作系统的线程优先级相映射（可能不是一对一的，每个操作系统都不一样），只是将优先级的操作交给了操作系统，依赖了平台，而Java设计的初衷就是使用JVM来摆脱平台的约束，并且改变线程优先级通常不会起到任何的作用，还可能导致某个线程的调度优先级高于其他线程，导致饥饿。
+
+通过对JVM的语句分析会发现在一些奇怪的地方调用了Thread.sleep或Thread.yield，这是因为该程序视图克服优先级调用问题或响应性问题，试图给低优先级的任务分配一点时间
+
+> 在大多数并发应用程序中，都可以使用默认的线程优先级
+
+- 丢失信号——后面介绍
+- 活锁
+
+该问题不会阻塞线程，但也不能继续执行，因为该线程总是在一直处理相同的操作，并且一直失败，通常发生在事务处理上
+
+当一个事务处理失败后，事务会立马回滚，该任务又会被重新置于任务队列的开头，继续执行仍然错误，虽然线程没阻塞，但仍然会有类似阻塞的状态（通常是由于错误的恢复代码导致的）
+
+
+
+
+
+小结：
+
+活跃性故障是一个非常严重的问题
+
+最常见的活跃性故障就是锁顺序死锁，解决办法就是大力使用开放调用
+
+
+
+
+
+
+
+## 第十一章、性能与可分析性
+
+
+
+线程最主要的目的就是提高资源的利用率，其次，线程可以立即开始一个事务的执行，从而提高了系统的响应性
+
+
+
+本章将介绍方法来提高性能，但在提高性能的同时，也会提高编码的复杂性和增加了安全性与活跃性发生失败的风险
+
+要将系统的安全性放在第一位，这样一个程序才能运行
+
+在并发编程的应用程序中，最重要的考虑因素通常不是将程序的性能发挥到极致
+
+
+
+
+
+对性能的思考：
+
+性能的提升意味着使用相同的资源做更多的事情
+
+资源：例如，CPU时钟周期，内存，网络带宽，IO带宽，数据库请求，磁盘空间以及其他资源
+
+当操作性能受到某种资源的限制时，通常称该操作为资源密集型操作，例如：CPU密集型，数据库密集型等等
+
+与单线程相比，使用并发技术往往会有多余的性能开销，如线程之间的协调（锁，内存同步，信号量），增加的上下文切换，线程的创建与销毁，线程的调度等等，如果过度的使用性能，那么开销的性能很有可能大于吞吐量，响应性，计算能力提升的性能
+
+摘自《Java并发编程实战》
+
+![image-20200412204000934](images/image-20200412204000934.png)
+
+
+
+
+
+想要提高性能，需要做两件事：
+
+- 尽量利用现有资源（如果是计算密集型的，充分利用现有的CPU）
+- 利用新增加的资源（增加新的CPU也需要利用到）
+
+
+
+
+
+
+
+主要从两个方面来衡量性能：
+
+- 多快：程序的运行速度：服务时间，等待时间
+- 多少：程序的处理能力：生产量，吞吐量
+
+
+
+可伸缩性是指：在增加计算资源时，程序的吞吐量或处理能力能够相应的增加
+
+
+
+并发情况下的提升性能的目的是提升程序的吞吐量（与单线程程序提升性能提升运行速度有所不同）
+
+
+
+性能的两个方面——多快和多好通常是非常矛盾的（即使是使用并发编程也解决不了其中的矛盾）
+
+我们熟悉的三层模型（表现层，业务层，持久层，都是相互独立）就是通过将任务分解为多个流水线子任务来增大吞吐量的，这肯定降低了处理速度，因为对象在各个层中传递中会带来额外的开销。
+
+如果我们使用单一的并发系统达到自身的处理极限时，再提高他就会非常的困难，因此我们通常会选择妥协任务的执行时间来增加任务的并发量，以换取在获取更多性能的情况下具有更高的负载
+
+
+
+
+
+>  并发线程通常更注意任务的并发量性能而不是单线程的任务的执行速率
+
+
+
+
+
+避免不成熟的优化，首先使程序正确，然后再提高运行速度
+
+
+
+
+
+当进行决策时，有时候会通过某种形式的成本来降低另一种形式的开销，也会通过开销来换取安全性
+
+
+
+在使得某个方案比其他方案更快之前，首先应该问自己这样一些问题：
+
+- 更快的含义是什么
+- 在什么条件下会更快
+- 这些条件在运行环境中发生的评率，能否通过测试结果来验证你的答案
+- 在不同的条件下能否使用这些代码
+- 隐含的代价，例如：增加了开发风险和维护开销
+
+
+
+
+
+>  对性能的提升可能是并发错误的最大来源
+>
+> 由于并发错误是最难追踪的和消除的错误，不要轻易的使用一些看似聪明的方法来减少同步的使用
+
+
+
+
+
+更糟糕的是，性能调优一般都会牺牲一部分的安全性，但最终可能什么都得不到（如果你处理不好的话），另外，开发人员的直觉调优也是非常危险的举动。
+
+在对性能调优后，需要再次测量性能是否提升了你想象中的那么多，并且通过实际获取的性能和放弃的安全性和稳定性之间做权衡
+
+
+
+> 以测试为基准，不要猜测
+
+
+
+有很多的分析工具，例如可以通过免费的perfbar来给出CPU的忙碌状态信息，我们使用并发编程通常就是要使得CPU一直保持忙碌状态，使用该软件即可验证。
+
+
+
+
+
+amdahl定律
+
+以农业耕作为例子：有些任务是可用资源越多，就可以执行的越快，例如农作物的收割，但是有些任务本质上是串行的，即使增加了再多的资源也无济于事，例如增加再多工人也不会加快农作物的生长
+
+大多数并发程序与农业耕作有很多相似之处，例如：都是由一系列的串行工作和并行工作完成的
+
+amdahl定律表述的是，在增加计算资源的情况下程序理论上实现的最高的加速比
+
+![image-20200413102010032](images/image-20200413102010032.png)
+
+> F：必须被串行执行的部分
+>
+> N：CPU同时运行的线程数
+
+
+
+很好理解，串行的时间无法简化，并行的任务时间可以理解成为原来任务的时间除以N
+
+可以看到，当N无限大的时候，最高的加速比也不过是1/F
+
+
+
+
+
+当串行占比不同的情况下随着资源数的增多利用率的变化曲线
+
+![image-20200413102517353](images/image-20200413102517353.png)
+
+
+
+
+
+
+
+在所有的并发程序中都包含一部分串行部分
+
+常见的隐藏的串行部分：
+
+- 任务的获取（特别是从工作队列中，需要维持串行）
+- 结果的处理，例如日志的写入，也要串行操作
+
+
+
+
+
+
+
+![image-20200413103922285](images/image-20200413103922285.png)
+
+选用更高效的队列，就可以对程序的伸缩性产生明显的影响
+
+这种吞吐量的差异来源于两个队列中不同比例的串行部分
+
+SynchronizedLinkedList直接全部锁死，全部的执行操作都是并行的，而ConcurrentLinkedQueue采用了一种非阻塞队列算法实现了程序的高效性
+
+
+
+
+
+虽然测量串行部分的比例非常困难，但即使在不就行测试的情况下amdahl定律也是非常有用的
+
+
+
+
+
+
+
+接下来讨论线程的开销
+
+
+
+并发带来的性能提升必须超过并发导致的开销（线程开销，安全性和稳定性的开销，编码和维护的开销）
+
+
+
+
+
+频繁的上下文切换将造成大量的开销：
+
+- CPU时钟周期的开销
+
+应用程序，操作系统，JVM共享一个CPU，当发生上下文切换时候，操作系统和JVM会消费一定的CPU时钟周期来完成切换
+
+- 缓存的丢失
+
+CPU的内部缓存就那么大，每个线程在运行时候都会存储一些数据进来，必然会导致以前缓存的数据的丢失。这也是为什么调度器会为每个线程都分配一个最小执行时间，目的就是防止缓存被频繁的刷新
+
+
+
+
+
+
+
+内存同步的性能开销
+
+使用synchronized和volatile会使用一些特殊的指令来达到内存同步的目的，保证可见性。这种操作指令即为：内存栅栏（memory barrier）。内存栅栏可以刷新缓存，使得缓存无效，刷新硬件的写缓冲，以及停止执行通道，内存栅栏还会抑制编译器的优化操作。在内存栅栏中，大部分操作是不允许重排的
+
+
+
+在评估内存同步的性能开销时，区分有竞争和无竞争是有必要的：
+
+synchronized对无竞争的同步就行了优化，虽然此时的额外开销仍不为零，但对整体的性能影响微乎其微（另外，JVM也会优化一些不会发生竞争的锁）
+
+
+
+另外，更完备的JVM还会通过对对象的逸出分析来判断该对象是否是采用了线程封闭技术，如果没有逸出，则会直接取消对这个对象的所有锁操作
+
+
+
+编译器还有可能进行锁粗化操作，例如以下语句：
+
+![image-20200413135138448](images/image-20200413135138448.png)
+
+每次对stooges的操作都要重新获取一次锁，存在多余的开销，JVM可能会将三条add语句和一条return语句一起合并成单个锁的获取/释放操作
+
+
+
+> 不要去担心非竞争同步所带来的的开销，JDK和JVM已经优化的非常快了
+>
+> 我们更应该关注的是发生竞争的地方
+
+
+
+最后，线程之间也可能相互影响，当线程需要同步时候，会通过内存总线来传递数据流，如果有过多的线程在竞争同步带宽，也会受到影响
+
+
+
+
+
+
+
+阻塞
+
+当线程竞争锁失败时候，就会发生阻塞
+
+JVM在实现对线程的阻塞时候，有两种方式：
+
+- 自旋等待（不断尝试获取锁，直到成功）
+- 通知操作系统挂起需要阻塞的线程
+
+性能高低取决于实际的情况，等待时间短的任务，通过第一种方式很容易实现高效，等待时间长的任务，在第二种方式上更高效
+
+有些JVM会通过历史记录对上一个任务进行分析来决定采用哪种方式
+
+但大多数JVM都只是将线程挂起
+
+
+
+
+
+
+
+
+
+如何减少锁的竞争
+
+在并发编程中，对可伸缩性的主要威胁就是独占式的资源锁
+
+根据amdahl定律，锁激烈，串行执行频率增大，最大可伸缩性降低
+
+降低锁的竞争可以提高性能（主要是并发量而不是单个任务的执行速率）和可伸缩性
+
+
+
+影响锁发生竞争的可能性：锁的请求评率和持有锁的时间
+
+
+
+降低锁的竞争程度的三种操作：
+
+- 减少锁的持有时间
+- 降低锁的请求评率
+- 使用带有协议机制的独占锁
+
+
+
+
+
+减少持有锁的时间最好的方式就是减少锁的范围
+
+尽量将与锁无关的操作移出同步代码块，尤其是开销大，耗时长，可能被阻塞的操作，典型的如IO操作
+
+但也不要太过执着将同步代码块拆分成多个同步代码块，（有可能JVM在后期又执行了锁粗化的操作），因为获取锁和释放锁也需要消耗资源，除非可以将一些耗时长的操作移除，才应该使用
+
+
+
+
+
+降低锁的请求频率最好的方式就是减小锁的粒度
+
+采用相互独立的几个锁来取代整个锁的技术称为锁分解，通常分解锁使用的越多，就更容易出现死锁
+
+可以细化锁，让每个锁分别处理外部锁的各种条件，从而降低了锁的请求频率
+
+> 更标准的说法是：如果一个锁需要保护多个相互独立的状态变量，那么可以将这个锁分解成多个（不同的）锁
+
+优化例子：
+
+![image-20200413143838394](images/image-20200413143838394.png)
+
+全部锁的是this，锁的竞争激烈，建议各个方法根据需求使用users或者queries作为锁，减少锁的请求频率
+
+通过锁分解技术可以提高性能和吞吐量
+
+
+
+
+
+
+
+分段锁
+
+在某些情况下，可以将锁分解技术进一步拓展为对一组独立对象上的锁进行分解，这种情况被称为锁分段。例如ConcurrentHashMap就使用了这个策略，使用了一个包含16个锁的数组，每个锁保护所有散列桶的1/16，其中第N个散列桶由 N mod 16 的锁来守护，使得ConcurrentHashMap的并发量最大提高到了原来的十六倍
+
+锁分段的最大劣势在于：获取相同的资源操作空间，需要获取更多的锁，会产生更大的开销，例如对Hash值的重新计算以及重排时，就要操作整个Map，需要获取所有的锁。
+
+
+
+简单实现一个分段锁
+
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/13 15:49
+ * @Desc 模拟锁分段技术
+ */
+@ThreadSafe
+public class StripedMap {
+    //分段锁的数量
+    private static final Integer N_LOCKS = 16;
+    private final Node[] buckets;
+    private final Object[] locks;
+
+    public StripedMap(Integer numBuckets) {
+        buckets = new Node[numBuckets];
+        locks = new Object[N_LOCKS];
+    }
+
+    //通过Key的Hash值找出该Key对应于buckets的下标
+    private Integer hash(Object key) {
+        return Math.abs(key.hashCode() % buckets.length);
+    }
+
+    //读，不用锁，默认使用fianl保持了可见性
+    public Object get(Object key) {
+        int hash = hash(key)
+        synchronized (locks[hash % N_LOCKS]) {
+            //一系列读取操作
+        }
+        return null;
+    }
+
+    public void clear() {
+        for (int i = 0; i < buckets.length; i++) {
+            synchronized (locks[i % N_LOCKS]) {
+                buckets[i] = null;
+            }
+        }
+    }
+
+
+    class Node<K, V> {
+    }
+}
+
+```
+
+
+
+如果要采用分段锁，**一定要表现出在锁上的竞争频率高于在锁保护的数据上的竞争频率**
+
+
+
+
+
+
+
+避免热点域
+
+当每个操作都需要请求多个变量时，锁的粒度很难降低了
+
+常见的优化方式便是将计算结果缓存成“热点域”，但是热点域通常会限制可伸缩性
+
+最常见的热点域便是我们设置的标志量
+
+例如，统计Map的大小，我们通常会设置一个size，默认初值为0，put加一，remove减一。这样在单线程和完全同步的实现中既能降低空间占用率，也能实现快速获取size的目的
+
+但是在多线程环境下，这个是不可取的，会严重影响可伸缩性，所有的put和remove操作都必须回到size标志量这里来进行同步，虽然执行++--的操作有可能只有1微秒，但是如果有同时一万个任务排队，光是这一个地方就需要浪费一秒钟，太影响系统的伸缩性了
+
+
+
+ConcurrentHashMap给每个分段都单独生成一个size，占用的内存基本忽略不计，提升的性能理想情况下却是16倍
+
+
+
+
+
+
+
+
+
+第三种降低竞争锁的方法就是放弃使用占用锁，而使用一些友好的并发方式来进行共享，例如：使用并发容器，读写锁，不可变对象以及原子变量等等
+
+- 读写锁（ReadWriteLock）：实现了多个读取操作以及单个写入操作下的规则。
+- 原子变量：提供了一些方法来降低更新“热点域”时候的开销，原子变量提供的是在基本数据类型或者对象上更细粒度的加锁操作，因此拥有更高的可伸缩性
+
+
+
+
+
+
+
+通过监测CPU的利用率来进一步找出程序的并发性
+
+如果CPU没有得到充分的利用（有些CPU处于忙碌，有些处于空闲），通常有以下的原因：
+
+- 负载不充足：可能你客户端系统发出的负载没能使得服务器达到全速运行的状态
+- IO密集：监测被测试机的磁盘写入和网络IO带宽是否充足
+- 外部性能：如果依赖于数据库，可能是数据库的处理能力不足
+- 激烈的锁竞争
+
+
+
+
+
+对 对象池 说不
+
+Java对象分配发展到如今已经非常的快，甚至比C语言的malloc都快
+
+在并发线程（甚至是平常开发中）不要使用对象池去进行性能优化，虽然会降低垃圾回收线程的开销，但是很容易导致线程阻塞和应用的可伸缩问题，**对象池有其特定的用途，但对于优化性能来说，是非常有局限的。**
+
+
+
+> 通常，对象分配操作的开销比同步的开销更低
+
+
+
+
+
+
+
+实例：对Map的性能分析
+
+单线程条件下，ConcurrentHashMap比HashMap略好，而并发条件下则会好得多
+
+在同步Map的实现中，所有操作都使用的是同一把锁，而ConcurrentHashMap基本上不加锁，而在写入和其他必须要锁的操作下都使用的是分段锁
+
+具体的伸缩性表现：
+
+![image-20200413180907042](images/image-20200413180907042.png)
+
+
+
+
+
+
+
+
+
+
+
+当线程在阻塞和运行这两种状态之间切换时候，就相当于发生了一次上下文切换
+
+发生阻塞的原因之一就是要进行日志录入，一般的日志框架都是对println进行简单的包装，而我们前面写的日志框架就是创建一个独立的线程去完成。在性能上的优劣取决于日志操作的工作量以及上下文切换的开销
+
+尽量避免在获取锁的同步代码块中使用IO等费时的操作，很有可能导致大量线程去竞争锁，导致大量的上下文切换，极大的降低了吞吐量
+
+可以单独列出一个线程池来专门处理IO操作，在同步代码块中只需要发送请求即可，由专门的线程池去后台完成
+
+
+
+
+
+小结：
+
+在并发程序中讨论性能更关注的是吞吐量和可伸缩性上面，而不是服务时间
+
+由Amdahl定律，我们知道决定可伸缩性的重要条件就是代码中必须串行执行的代码比例，我们通常通过以下几个方式来提升可伸缩性：减少锁的持有时间，降低锁的粒度，采用非独占的锁（分解锁，分段锁技术）或非阻塞（算法）的锁
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
