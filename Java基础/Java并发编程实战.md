@@ -5138,21 +5138,31 @@ Java对象分配发展到如今已经非常的快，甚至比C语言的malloc都
 
 
 
+## 第十二章、并发程序的测试
 
 
 
+并发程序与串行程序最大的区别就在于存在一定的不确定性，这种不确定性可能会增加故障出现的数量，因此需要分析
 
 
 
+测试并发程序的挑战在于：潜在错误的发生具有不确定性，因此需要测试更广的范围和消耗更多的时间
 
 
 
+并发测试包含两方面：安全性测试和活跃性测试
 
+安全性：不发生任何错误的行为
 
+活跃性：某个良好的行为中就会发生
 
 
 
+与活跃性相关的是性能测试，主要包括：
 
+- 吞吐量
+- 响应性
+- 可伸缩性
 
 
 
@@ -5160,66 +5170,183 @@ Java对象分配发展到如今已经非常的快，甚至比C语言的malloc都
 
 
 
+例子：实现一个有界缓存队列并对其分析
 
+```java
+/**
+ * @author Lexiang(LuckyCurve)
+ * @date 2020/4/14 11:57
+ * @Desc 使用Semaphore实现一个有界缓存并进行测试
+ */
+@ThreadSafe
+public class BoundedBuffer<E> {
+    //第一个代表占的元素个数，第二个表示空闲的元素个数
+    private final Semaphore availableItems, availableSpaces;
+    @GuardedBy("this")
+    private final E[] items;
+    @GuardedBy("this")
+    private Integer putPosition = 0, takePosition = 0;
 
+    public BoundedBuffer(int length) {
+        availableItems = new Semaphore(0);
+        availableSpaces = new Semaphore(length);
+        items = (E[]) new Object[length];
+    }
 
+    public boolean isEmpty() {
+        //感觉这样也行：return putPosition == 0;
+        return availableItems.availablePermits() == 0;
+    }
 
+    public boolean isFull() {
+        return availableSpaces.availablePermits() == 0;
+    }
 
+    public void put(E e) throws InterruptedException {
+        availableSpaces.acquire();
+        doInsert(e);
+        availableItems.release();
+    }
 
+    //私有插入方法，太厉害了，值得学习
+    private synchronized void doInsert(E e) {
+        Integer i = putPosition;
+        items[i] = e;
+        putPosition = (++i == items.length) ? 0 : i;
+    }
 
+    public E take() throws InterruptedException {
+        availableItems.acquire();
+        E obj = doExtract();
+        availableSpaces.release();
+        return obj;
+    }
 
+    //私有的获取方法
+    private synchronized E doExtract() {
+        int i = takePosition;
+        E obj = items[i];
+        takePosition = ++i == items.length ? 0 : i;
+        return obj;
+    }
+}
 
+```
 
 
 
 
 
+- 基本的单元测试，在实际测试中要使用Junit对方法进行测试
 
+```java
+//简单的单元测试，在开发中应该建立对应的test并使用junit
+public static void main(String[] args) throws InterruptedException {
+    BoundedBuffer<Integer> buffer = new BoundedBuffer<>(10);
+    System.out.println(buffer.isEmpty());
+    System.out.println(buffer.isFull());
+    for (int i = 0; i < 10; i++) {
+        buffer.put(i);
+    }
+    System.out.println(buffer.take());
+    System.out.println(buffer.take());
+    System.out.println(buffer.take());
+    System.out.println(buffer.take());
+}
+```
 
 
 
 
 
+- 对阻塞操作的测试
 
+大多数的测试框架都不是很友好的支持并发性测试
 
+测试方法的阻塞行为（在理论上这个方法在该条件下应该阻塞）
 
+最简单测试阻塞方法就是使用其他线程==等待该方法阻塞后==再中断该测试方法的阻塞，并且要接收一个InterruptException异常来响应中断
 
 
 
+等待该方法阻塞后：并不容易做到，需要估计运行到阻塞的时间，如果时间给少了，很有可能会看到伪测试失败，可以增大等待时间来验证是否为伪测试失败
 
+```java
+//简单的单元测试，在开发中应该建立对应的test并使用junit
+public static void main(String[] args) throws InterruptedException {
+    BoundedBuffer<Integer> buffer = new BoundedBuffer<>(10);
+    Thread thread = new Thread(() -> {
+        try {
+            buffer.take();
+            System.out.println("fail");
+        } catch (InterruptedException e) {
+            System.out.println("success!");
+        }
+    });
 
+    try {
+        thread.start();
+        //尽量给大点，但也不能太大，要不然很浪费时间
+        TimeUnit.SECONDS.sleep(1);
+        thread.interrupt();
+        //防止线程出现意外情况，让他保持运行一分钟
+        thread.join(3600);
+    } catch (Exception e) {
+        System.out.println("测试方法中抛出异常");
+        e.printStackTrace();
+    }
 
+}
 
+```
 
+上述即为实际的测试例子
 
+很多开发人员会使用thread的getState方法来判断线程的状态，如果线程处于WAITING或TIMED_WAITING就认为线程到达阻塞状态
 
+:warning::warning:这里面漏掉了一种阻塞的情况，即JVM有可能让线程进行自旋操作，一直去请求锁，实际上也是处于阻塞状态，但没有被记录下来
 
 
 
 
 
+- 数据的安全性测试
 
 
+需要创建多个线程来分别进行put和take操作，并在执行一段时间后判断测试中是否出现问题
 
+> 摘自《Java并发编程实战》
+>
+> ![image-20200414154845202](images/image-20200414154845202.png)
+>
 
 
 
+理想条件下的测试方法不需要任何的同步机制也能完成同步功能
 
 
 
+对生产者消费者模式进行测试的一些经验：通过一个对顺序敏感的校验和计算函数来计算所有入列元素以及出列元素的校验和【对单个生产者和消费者特别有效】
 
+如果是多生产者消费者模式，则需要对顺序和计算不敏感的校验和函数
 
 
 
+在校验过程中尽量不要使用连续的整数进行校验，因为现在的编译器通常都可以预先计算出这个结果
 
 
 
+可以使用随机数生成器来避免这个问题，但随机数大都是线程同步的，会增加同步代码块的量，对其他的结果造成影响。可以每个线程都有自己的一个随机数生成器
 
 
 
+更好的办法是写一个伪随机数的函数，并且不需要进行同步，如下：
 
+![image-20200414155817070](images/image-20200414155817070.png)
 
+用返回的y做数字校验即可
 
+> ^是异或操作，不是多少次方
 
 
 
@@ -5227,26 +5354,126 @@ Java对象分配发展到如今已经非常的快，甚至比C语言的malloc都
 
 
 
+检测上面写的BoundedBuffer在生产者消费者模型的表现：
 
+```java
+package cn.luckycurve.test;
 
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * @author Lixiang(LuckyCurve)
+ * @date 2020/4/14 16:01
+ * @Desc 类的简单描述
+ */
+public class PutTakeTask {
+    private static final ExecutorService pool = Executors.newCachedThreadPool();
+    private final AtomicInteger putSum = new AtomicInteger(0);
+    private final AtomicInteger takeSum = new AtomicInteger(0);
+    private final CyclicBarrier barrier;
+    //测试的主体
+    private final BoundedBuffer<Integer> bb;
+    //多少次测试  多少对生产者消费者
+    private final Integer nTrials, nPairs;
 
+    public PutTakeTask(int capacity, int nPairs, int nTrials) {
+        bb = new BoundedBuffer<>(capacity);
+        this.nTrials = nTrials;
+        this.nPairs = nPairs;
+        //所有生产者消费者线程，还有一个主线程
+        barrier = new CyclicBarrier(nPairs * 2 + 1);
+    }
 
+    //主测试方法
+    void test() {
+        try {
+            //执行多少对
+            for (int i = 0; i < nPairs; i++) {
+                //生产者线程
+                pool.execute(() -> {
+                    try {
+                        //    生成随机种子
+                        int seed = this.hashCode() ^ (int) System.nanoTime();
+                        int sum = 0;
+                        barrier.await();
+                        for (int j = 0; j < nTrials; j++) {
+                            bb.put(seed);
+                            sum += seed;
+                            seed = random(seed);
+                        }
+                        putSum.getAndAdd(sum);
+                        barrier.await();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                //消费者线程
+                pool.execute(() -> {
+                    try {
+                        int sum = 0;
+                        barrier.await();
+                        for (int j = 0; j < nTrials; j++) {
+                            sum += bb.take();
+                        }
+                        takeSum.getAndAdd(sum);
+                        barrier.await();
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+            }
 
+            //等待所有线程开始执行
+            barrier.await();
+            //等待所有线程执行完成
+            barrier.await();
 
+            //    进行检测
+            System.out.println("检测结果为  ：  "+(putSum.get() == takeSum.get()));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
+    //随机数生成
+    private Integer random(Integer seed) {
+        seed ^= seed >> 6;
+        seed ^= seed >> 2;
+        seed ^= seed << 6;
+        return seed;
+    }
 
 
+    //大任务里面main就少写一点，抽象出一个函数去
+    public static void main(String[] args) {
+        new PutTakeTask(10, 10, 1000).test();
+        pool.shutdown();
+    }
 
+}
 
+```
 
+==太完善的例子了，有时间一定要仔细看==
 
 
 
+> 对这里将异常封装成RuntimeException异常的理解：
+>
+> ​	**RuntimeException异常通常无法处理，默认直接抛出**，直到最顶层。
+>
+> ​	如果这里面出现了异常，确实无法处理，应该封装成这样的
 
+> 这里面使用了barrier，最大程度的保障了所有线程并发执行的可能性，如果没有这个栅栏，难免会有任务提交的先后，最糟糕的情况就是：任务执行不会花费多少时间，导致所有任务串行了
+>
+> 使用两个CountDownLatch也可以达到相同的效果【一个卡开始，一个卡结束】（要保证从任务开始到任务执行都是并发的）
 
 
 
+在测试环境下，线程数量应该多于CPU的核心数，这样会保证同一时间段内总有多个线程在运行，且能增大线程之间的数据竞争，更容易发现问题
 
 
 
@@ -5256,7 +5483,234 @@ Java对象分配发展到如今已经非常的快，甚至比C语言的malloc都
 
 
 
+- 资源管理的测试
 
+
+测试的另一个方式就是判断资源泄露
+
+应该在不需要某些对象的时候即时销毁他们的引用，便于垃圾回收器来释放资源
+
+像BoundedBuffer就需要尤其注意资源的控制，通过限制缓存区的大小（实际上是内部的`E[] items`）保证在生产者的生产力大于消费者的消费力的时候不会一直去消耗资源，而是去阻塞生产，防止资源浪费
+
+可以使用一些堆分析工具，可以很容易的测试出对内存的不合理使用
+
+
+
+
+
+- 产生更多的交替操作
+
+通过产生更多的交替操作来模拟出很多现实中出现的低概率情况
+
+常见方法：在线程访问共享状态的操作时候，使用Thread.yield来产生更多的上下文切换（当然这与实际情况有关，这条语句只是向JVM提供了一条意见，JVM可以将该条语句置空，也可以立即降低线程的优先级），或者使用更可靠的sleep操作（虽然更慢些，但是会更可靠），目的都是为了增加锁的竞争激烈程度，来模拟出是否会出现错误
+
+> 当然，这样会给开发人员带来很大的不便：需要在开发时候加上这些语句，然后在运行打包的时候又要删除
+>
+> 建议通过使用面向切面编程（AOP）的工具来完成，可以降低这种不便性
+
+
+
+
+
+
+
+
+
+前面介绍的是功能测试，保证代码运行的时候不会出错，下面介绍的是性能测试，应该在功能测试的基础之上
+
+
+
+性能测试的两个目标：
+
+- 反应被测试对象在应用程序中的实际用法
+- 根据经验值来调整不同的限值，例如线程数量，缓存容器等等
+
+
+
+
+
+
+
+- 增加计时操作
+
+
+例如在PutTakeTask中使用到的栅栏技术，就可以增加一个计数器
+
+`public CyclicBarrier(int parties, Runnable barrierAction)`使用带Runnable的CyclicBarrier构造器，可以在每次所有线程都await后，放行的时候执行runnable代码
+
+因为使用了两次栅栏（分别是开始的时候和结束的时候），可以和轻易的计算出总耗时
+
+代码实现：
+
+```java
+barrier = new CyclicBarrier(nPairs * 2 + 1, new Runnable() {
+    private boolean started;
+    private long startTime, endTime;
+
+    //这里为什么使用了Synchronized还没想清楚，估计
+    //也是保险起见，反正Synchronized进行了串行的优化
+    @Override
+    public synchronized void run() {
+        long t = System.nanoTime();
+
+        if (!started) {
+            started = true;
+            startTime = t;
+        } else {
+            endTime = t;
+            System.out.println("消费时间：" + (endTime - startTime) / 1000000000.0 + "s");
+            System.out.println("单个线程的任务平均执行时间："+ (endTime - startTime) / (1000000000.0*nPairs*nTrials) + "s");
+        }
+
+    }
+
+    public synchronized void clear() {
+        started = false;
+    }
+
+    public synchronized Long getTime() {
+        return endTime - startTime;
+    }
+});
+```
+
+这里使用的是匿名内部类，如果是一个类实现了Runnable，最后的两个方法就有作用了，这里懒得再去写一个类了，直接在run方法里面一步到位。
+
+运行数据：
+
+```
+消费时间：0.01057957s
+单个线程的任务平均执行时间：1.057957E-6s
+检测结果为：true
+```
+
+可以通过调整线程池的大小，内部队列的长度来看下对性能的影响
+
+![image-20200414204908556](images/image-20200414204908556.png)
+
+
+
+
+
+
+
+算法的比较，虽然BoundedBuffer已经很优秀了，有良好的执行性能和吞吐量，但还是没有ArrayBlockingQueue或者LinkedBlockingQueue那么好。JUC包下的代码实现基本上都采用了已知的最佳状态，其次，这里面的算法还能提供额外的功能
+
+> 性能不高的最主要原因就是存在太多可能发生竞争的操作，拿BoundedBuffer来说，存取操作都需要获取两个信号量，里面的操作还要获取锁，存在了太多的竞争了
+
+
+
+性能的比较：
+
+![image-20200414212729598](images/image-20200414212729598.png)
+
+在我们的理解中，链表的数据结构每次在插入元素和取出元素的时候都要创建新的节点，应该不会太高效，但是实际上是LinkedBlockingQueue的并发量最好
+
+> 这种情况再次证明了：基于传统的性能调优的直觉与可伸缩性的实际需求是背道而驰的
+
+
+
+
+
+
+
+
+
+
+
+
+
+在实际场景中可能存在很多的性能测试陷阱
+
+可能你会针对一个场景写有针对性的代码，并且多次统计执行时间已获取平均响应时间，但在实际过程中，你必须要避免以下几点，才能使你的工作有意义：
+
+- 垃圾回收
+
+垃圾回收的执行没有时序性，无法预测，可能在你这次测试的时候发生了（多增加了一条线程，平均响应速度受到了影响）
+
+解决方法：
+
+```
+调用JVM时候指定参数来判断是否执行了GC，
+1.确保没执行了GC，如果执行了就丢弃这次结果
+2.确保执行了GC，丢弃没执行的样本（更好，更符合现实情况）
+```
+
+
+
+- 动态编译
+
+当某个类第一次加载的时候，JVM会通过解释字节码的方式来执行它。在某个时刻，如果某个方法被执行的足够多，那么动态编译器会将他编译称为机器代码。
+
+这种行为是无法预测的，同时也会带来性能上的损耗
+
+解决办法：
+
+```
+1.使程序运行足够长的时间（至少几分钟），来减小动态编译带来的损耗
+2.使得代码预先执行一段时间，并不统计这一段时间，让JVM有足够的时间去编译他
+```
+
+
+
+- 对代码路径不真实采样
+
+JVM会针对方法在不同地方的调用对方法进行不同的优化。因此，在不同地方即使调用相同的方法，结果也不做数
+
+- 不真实的竞争程度
+
+想要获取有意义的结果，应该尽量的去模拟竞争激烈的情况下的性能表现和可伸缩性，而不是模拟出虽然有大量线程，但是很多线程都没有去竞争那些锁等资源
+
+- 无用代码的消除
+
+编译器的优化可能使得你当前的调用代码与你的执行逻辑完全不一样了，（例如从A点到B点，你希望走一条远路，这样更能合理的测试出走路的平均速度。然而编译器优化使得你直接从A点走到了B点，让你得出了错误的结论）
+
+解决方法：
+
+```
+如果仅仅是存在静态的编译，那么处理这个问题将会相当的简单：只需要查看编译出来的字节码是否出现缺失代码的状况即可
+但是对于动态编译则相当困难（后期执行过程中检查）
+```
+
+测试过程中尽量给JVM加上-server来取代默认情况下的-client。因为server模式能在编译器产生更有效的代码，减少动态编译时候的代码优化的可能性。此外也能模拟出服务端的情况
+
+
+
+如果运算的结果没有进行校验或者输出，那么这个运算的过程很有可能被优化掉
+
+有一个简单的技巧来避免算数优化，同时不会引入过多的开销
+
+```java
+使用该类中的某个对象，计算它的hash值与当前时间是否相等【计算hash值会需要整个类的所有字段，自然就用到了计算字段了】
+if(x.hashCode() == System.nanoTime()) {
+    System.out.println(" ");
+}
+一般不会相等，即使相等了也只是输出了一个空格
+```
+
+
+
+
+
+
+
+小结：
+
+检测并发程序的正确性可能非常困难，很多故障都是低概率事件，并且故障的重现条件非常的敏感，即使调试过后仍然需要大量的时间来触发这种可能性
+
+测试并发程序的性能同样非常困难，与使用静态编译语言C等相比，Java的动态编译，垃圾回收，自动优化都会影响性能的测试
+
+
+
+使用传统的测试技术与代码审查和自动分析工具相结合，提升准确率
+
+
+
+
+
+
+
+ 
 
 
 
