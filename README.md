@@ -12,11 +12,11 @@
 
 [Java基础（读书笔记：《Java编程思想（第四版）》）](Java基础/Java笔记.md)
 
-[Java并发编程实战（读书笔记：《Java并发编程实战》）](Java基础/Java并发编程实战.md)
+[Java并发编程实战（读书笔记：《Java并发编程实战》已完结）](Java基础/Java并发编程实战.md)
 
 ## MySQL数据库
 
-[MySQL数据库（读书笔记：《MySQL必知必会》）](MySQL数据库/MySQL笔记.md)
+[MySQL数据库（读书笔记：《MySQL必知必会》已完结）](MySQL数据库/MySQL笔记.md)
 
 
 
@@ -30,3 +30,4 @@ GitHub访问慢或打开无法加载图片：
 
 - 搭梯子
 - 将此仓库folk到你的GitHub账号上，再通过Gitee
+
