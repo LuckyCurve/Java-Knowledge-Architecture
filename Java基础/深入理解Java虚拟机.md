@@ -1821,3 +1821,512 @@ HandlePromotionFailure设置不允许冒险，那这时就要改为进行一次F
 虚拟机之所以提供多种收集器和大量的调节参数就是为了根据实际需求，根据实际情况来得出最佳的收集器，参数组合
 
 接下来两章将会介绍内存分析工具和具体调优的案例
+
+
+
+
+
+
+
+
+
+## 第四章、虚拟机性能监控能、故障处理工具
+
+
+
+JDK打包的工具，类似于Java.exe，Javac.exe
+
+JDK5之前需要手动开启JMX功能 `-Dcom.sun.management.jmxremote`，大部分工具都是依赖于JMX的，JDK6及以上就是默认开启了
+
+> 需要切换到JAVA_HOME/bin目录下
+>
+> []：可选参数		<>：参数描述
+
+
+
+1.Jps：虚拟机进程状况工具
+
+jps的命令格式为：（基于JDK8）
+
+```
+usage: jps [-help]
+       jps [-q] [-mlvV] [<hostid>]
+```
+
+可以列出正在运行的虚拟机进程，并显示虚拟机执行主类（Main Class，main()函数所在的类）名称以及这些进程的本地虚拟机唯一ID（LVMID，Local Virtual Machine Identifier）。
+
+大部分命令都是支持远程调试的，考虑到运作的机器可能与实际隔阂开来
+
+options的取值：
+
+| 选项 |               作用                |
+| :--: | :-------------------------------: |
+|  -q  |     只输出LVMID省略主类的名称     |
+|  -m  | 输出虚拟机启动时候传给main的参数  |
+|  -l  | 主类的全名，如果是JAR包则是全路径 |
+|  -v  |         启动时候的JVM参数         |
+
+
+
+
+
+2.jstat：虚拟机统计信息监视工具
+
+用于显示本地或者远程虚拟机中的类加载、内存、垃圾收集、即时编译等运行数据，在没有GUI的情况下，常用工具
+
+用法：
+
+```
+Usage: jstat -help|-options
+       jstat -<option> [-t] [-h<lines>] <vmid> [<interval> [<count>]]
+```
+
+参数interval和count表示查询间隔和次数
+
+例如：每250毫秒查询一次进程2764垃圾收集状况，一共查询20次，命令如下
+
+`jstat -gc 2764 250 20`
+
+option可选项众多：
+
+![image-20200501160114700](images/image-20200501160114700.png)
+
+
+
+
+
+3.jinfo：Java配置信息工具
+
+作用：查看和调整虚拟机的各项参数
+
+jinfo相较于jps的虚拟机参数打印，可以打印出默认的参数值
+
+用法：
+
+```
+Usage:
+    jinfo [option] <pid>
+        (to connect to running process)
+    jinfo [option] <executable <core>
+        (to connect to a core file)
+    jinfo [option] [server_id@]<remote server IP or hostname>
+        (to connect to remote debug server)
+```
+
+
+
+
+
+4.jmap：Java内存映射工具
+
+用于生成堆内存快照，还可以查询finalize执行队列、Java堆和方法区的
+详细信息，如空间使用率、当前用的是哪种收集器等
+
+用法：
+
+```
+Usage:
+    jmap [option] <pid>
+        (to connect to running process)
+    jmap [option] <executable <core>
+        (to connect to a core file)
+    jmap [option] [server_id@]<remote server IP or hostname>
+        (to connect to remote debug server)
+```
+
+![image-20200501160918918](images/image-20200501160918918.png)
+
+
+
+
+
+5.jhat：虚拟机堆存储快照分析工具
+
+配合jmap，一般都不愿意用
+
+
+
+
+
+6.jstack：Java堆栈追踪工具
+
+作用：生成虚拟机当前时刻的线程快照，可以进行并发分析
+
+
+
+上面讲述了6个最基本的命令，随着JDK的发展，很多都有了替代品。但学习最基础的命令仍然是有必要的
+
+除了上述的命令行工具外，JDK还提供了几个集成度更高的可视化工具，这类工具主要包括JConsole、JHSDB、VisualVM和JMC四个。
+
+现在VisualVM成为了一个独立的开源项目
+
+
+
+
+
+1.JHSDB：基于服务性代理的调试工具
+
+![image-20200501165407437](images/image-20200501165407437.png)
+
+
+
+改用JDK11 TLS了
+
+运行事例代码：测试JHSDB的调试功能，验证staticObj，instanceObj，localObj存放位置
+
+```java
+package cn.luckycurve.vmdemo;
+
+/**
+ * @author LuckyCurve
+ * @date 2020/5/1 16:59
+ * 测试JHSDB的调试功能，验证staticObj，instanceObj，localObj存放位置
+ * -Xmx10m
+ * -XX:-UseCompressedOops       抑制指针压缩，因为JHSDB对指针压缩的处理存在缺陷
+ */
+public class JHSDB_TestCase {
+    static class Test {
+        static JHSDB_TestCase.ObjectHolder staticObj = new ObjectHolder();
+        ObjectHolder instanceObj = new ObjectHolder();
+
+        void foo() {
+            ObjectHolder localObj = new ObjectHolder();
+-            System.out.println("done");
+        }
+    }
+
+    private static class ObjectHolder{
+        private String message = "hello world";
+    }
+
+    public static void main(String[] args) {
+        Test test = new Test();
+        test.foo();
+    }
+}
+
+```
+
+
+
+1.在17行打上断点，让JVM停留在此刻。（如果没有使用集成IDE，可以使用死循环或者线程挂起来避免代码继续向后运行）
+
+2.命令行jps，查看具体运行的JVM的进程ID
+
+![image-20200501192303400](images/image-20200501192303400.png)
+
+3.使用命令`jhsdb hsdb`来打开JHSDB的Swing程序，并输入进程ID
+
+![image-20200501192421816](images/image-20200501192421816.png)
+
+5.查看堆的内存分布
+
+![image-20200501192519010](images/image-20200501192519010.png)
+
+![image-20200501192535403](images/image-20200501192535403.png)
+
+6.查找堆区内的所有ObjectHolder对象
+
+`scanoops 0x000001f04ac00000 0x000001f04b600000 cn.luckycurve.vmdemo.JHSDB_TestCase$ObjectHolder`
+
+==一定是全限定类名（考虑到类重名的情况）==
+
+![image-20200501192709359](images/image-20200501192709359.png)
+
+7.使用Inspector工具来搜索地址对应的类的详细信息
+
+![image-20200501193036045](images/image-20200501193036045.png)
+
+> 之所以在ObjectHolder里面加入了一个String字段就是为了看下是否是这个类的实例化对象
+>
+> 这里面还包括了Java类型的名字、继承关系、实现接口关系，字段信息、方法信息、运行时常量池的指针、内嵌的虚方法表（vtable）以及接口方法表（itable）等。
+
+8.找出引用这些对象的指针
+
+可以使用Tools菜单下的Compute Reverse Ptrs来完成（有BUG，会卡Swing）
+
+使用JHSDB内置命令行来完成
+
+指令：`revptrs 0x000001f04b3b5250`
+
+==revptrs可根据对象地址查看引用该对象的活跃对象的地址，这里的引用是指通过类全局属性而非局部变量引用==
+
+![image-20200501193518047](images/image-20200501193518047.png)
+
+再使用Inspector来查看这个引用信息
+
+![image-20200501193822365](images/image-20200501193822365.png)
+
+这个对象就是staticObj
+
+结论：Class为类信息，《Java虚拟机规范》要求所有Class信息都应该存储在方法区之中，但方法区如何实现，并没有规范，在JDK7以后的HotSpot虚拟机将静态变量与类型在Java语言一端的映射Class对象存储在了Java堆区当中
+
+
+
+查看第二个对象的情况
+
+![image-20200501201023069](images/image-20200501201023069.png)
+
+就是主类，第二个对象就是staticObj
+
+
+
+
+
+查询第三个对象
+
+![image-20200501201155912](images/image-20200501201155912.png)
+
+无法查询到，看来是无法查询到栈上面的对象引用了
+
+人肉查看栈内存，在Java Thread查找
+
+![image-20200501201647478](images/image-20200501201647478.png)
+
+还好栈不大，一下就能找到
+
+![image-20200501201940269](images/image-20200501201940269.png)
+
+和第三个地址完全吻合。第三个对象就是localObj
+
+实验完毕
+
+
+
+
+
+JConsole：Java监视与管理控制台
+
+它的主要功能是通过JMX的MBean（Managed Bean）对系统进行信息收集和参数动态调整。
+
+。JMX是一种开放性的技术，不仅可以用在虚拟机本身的管理上，还可以
+运行于虚拟机之上的软件中，典型的如中间件大多也基于JMX来实现管理与监控。虚拟机对JMX MBean的访问也是完全开放的，可以使用代码调用API、支持JMX协议的管理控制台，或者其他符合JMX规范的软件进行访问。
+
+
+
+1.启动
+
+直接`jconsole`命令启动，会自动搜索本机的所有虚拟机进程，不需要JHSDB那样通过jps来查看进程id
+
+![image-20200501202715847](images/image-20200501202715847.png)
+
+随便连接进了一个虚拟机进程
+
+![image-20200501202900928](images/image-20200501202900928.png)
+
+
+
+
+
+实验：看内存变化
+
+代码：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/5/2 20:24
+ * 使用JConsole来检测资源占用情况
+ * -Xms100m
+ * -Xmx100m
+ * -XX:+UseSerialGC
+ */
+public class MonitoringTest {
+
+    static class OOMObject {
+        public byte[] placeHolder = new byte[64 * 1024];
+    }
+
+    public static void fillHeap(Integer num) throws InterruptedException {
+        TimeUnit.SECONDS.sleep(5);
+        LinkedList<OOMObject> list = new LinkedList<>();
+        for (int i = 0; i < num; i++) {
+            Thread.sleep(50);
+            list.add(new OOMObject());
+        }
+        System.gc();
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        fillHeap(1000);
+        //防止程序立马退出
+        TimeUnit.SECONDS.sleep(10);
+    }
+}
+```
+
+使用JConsole怎么测都测不准，使用JProfiler了
+
+堆内存变化如图所示：
+
+![image-20200503153311343](images/image-20200503153311343.png)
+
+Eden区：
+
+![image-20200503153328040](images/image-20200503153328040.png)
+
+Survivor：
+
+![image-20200503153344300](images/image-20200503153344300.png)
+
+Gen区：
+
+![image-20200503153400018](images/image-20200503153400018.png)
+
+
+
+> 测得就准的多。
+>
+> 随着分配对象的增多，Eden区逐渐满，当快满的时候，触发GC，将一部分移动到Survivor，更大的一部分直接移动到了Gen中。
+>
+> Eden：Survivor=8:1，且同一时间只能存在一个Survivor
+>
+> 最后手动触发GC，全部回收到了Survivor和Gen，Eden清空
+
+:question:：如果最后要清空Gen，怎么做
+
+把GC操作移动到方法体外面来即可
+
+```java
+public static void main(String[] args) throws InterruptedException {
+    fillHeap(1000);
+    System.gc();
+    //防止程序立马退出
+    TimeUnit.SECONDS.sleep(10);
+}
+```
+
+堆内存变动如图：
+
+![image-20200503153915075](images/image-20200503153915075.png)
+
+Eden：
+
+![image-20200503153930445](images/image-20200503153930445.png)
+
+Survivor：
+
+![image-20200503153942478](images/image-20200503153942478.png)
+
+Gen：
+
+![image-20200503153954216](images/image-20200503153954216.png)
+
+
+
+离开方法区，List已经变成不可达对象，直接被回收
+
+
+
+但接下来测试线程检测的时候，JConsole表现和JProfiler差不多，都可以进行死锁的判断
+
+JConsole:
+
+![image-20200503161808626](images/image-20200503161808626.png)
+
+点击右下角的检测死锁之后：![image-20200503161822597](images/image-20200503161822597.png)
+
+
+
+JProfile：
+
+线程状态：
+
+![image-20200503161912512](images/image-20200503161912512.png)
+
+锁的获取情况以及要获取那些琐：
+
+![image-20200503161928049](images/image-20200503161928049.png)
+
+
+
+
+
+3.VisualVM：多合-故障处理工具
+
+对VisualVM的高度赞扬：功能最强大的运行监视和故障处理程序之一，能进行故障处理，性能分析。Oracle主推
+
+>  VisualVM的性能分析功能比起JProfiler、YourKit等专业且收费的Profiling工具都不遑多让。而且相比这些第三方工具，VisualVM还有一个很大的优点：不需要被监视的程序基于特殊Agent去运行，因此它的通用性很强，对应用程序实际性能的影响也较小，使得它可以直接应用在生产环境中。这个优点是JProfiler、YourKit等工具无法与之媲美的。
+
+
+
+visualVM基于NetBeans平台开发工具，可以通过插件扩展功能（就包括上面的JConsole工具都被以插件形式集成上去了）
+
+在JDK6~8的时候存在，在JDK9中从Oracle中移除
+
+![image-20200503165100876](images/image-20200503165100876.png)
+
+​	1.性能分析
+
+​	2.在线调优（不推荐在生产环境下，对性能影响有点大，如果一定要在生产环境下就使用JDK自带的JMC）
+
+​	3.插件推荐
+
+​		1.BTrace动态日志追踪：在不中断目标程序运行的情况下加入原本并不存在的调试代码
+
+
+
+
+
+4.推荐最后一个工具——JMC（Java Mission Control）可持续在线的监控工具
+
+JMC也是一个独立的程序，是基于HotSpot内嵌的JFR（监控和基于事件的信息收集框架），而且JFR监控过程的开始，停止都是完全动态的，不需要重启应用
+
+JMC一方面作为JMX的控制台，显示来自虚拟机MBean提供的数据，另一方面也作为JFR的分析工具
+
+
+
+MBean的部分与JConsole和VisualVM的效果是一样的，重点讲解JFR部分
+
+
+
+![image-20200503194422747](images/image-20200503194422747.png)
+
+左侧飞行记录仪，指定记录时间（由于是商用的，会弹出警告（对个人用户是免费的））
+
+![image-20200503194505596](images/image-20200503194505596.png)
+
+直接点完成，等待指定时间即可弹出飞行报告（这里即依赖于JFR的记录模式的随时开启和关闭了），且采集过程对性能几乎无影响
+
+![image-20200503194715259](images/image-20200503194715259.png)
+
+
+
+
+
+HotSpot插件推荐
+
+HSDIS插件：JIT生成代码反汇编
+
+当我们想了解HotSpot源码时候，因为其中很大一部分被即时编译器编译成了机器语言，非常不便于调试，于是这款插件出现了
+
+HSDIS的作用是让HotSpot的-XX:+PrintAssembly指令来将即时编译器编译的代码还原为汇编代码输出，还会产生注解，便于调试。
+
+要单独下载
+
+可以和JITWatch一起使用便于代码阅读
+
+
+
+小结：
+
+六个命令行工具
+
+```
+jps
+jstat
+jinfo
+jmap
+jhat
+jstack
+```
+
+四个可视化的故障处理工具
+
+```
+JHSDB
+JConsole
+VisualVM
+Java Mission Control
+```
+
