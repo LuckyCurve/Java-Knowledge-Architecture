@@ -272,6 +272,10 @@ Substrate VM具有轻量级的特性，在运行时候不会占用过多的内�
 
 
 
+> Java与C++之间有一堵由内存动态分配和垃圾收集技术所围成的高墙，墙外面的人想进去，墙里面的人却想出来
+
+
+
 ## 第二章、Java内存区域与内存溢出异常
 
 
@@ -2394,3 +2398,809 @@ Java Mission Control
 
 
 
+
+
+
+
+
+
+# 第三部分、虚拟机执行子系统
+
+
+
+> 代码编译的结果从本地机器码转变为字节码，是存储格式发展的一小步，却是编程语言发展的一大步
+
+
+
+## 第六章、类文件结构
+
+
+
+随着语言的发展，大部分语言建立起了自己的运行虚拟机，将代码编译成二进制恩地机器码（Native Code）进行存储已不是唯一的选择，越来越多的语言选用平台中立的格式作为编译后的存储格式（如.class文件）
+
+
+
+Java虚拟机提供的特性：
+
+实现平台无关性的基石——字节码（Byte Code），当然，字节码的作用远不止此，他还是实现语言无关性的基石
+
+Java虚拟机只是与class文件绑定，并不与Java语言绑定，任何语言编译出来的class文件都可以在Java虚拟机上运行
+
+![image-20200505194935921](images/image-20200505194935921.png)
+
+
+
+
+
+而本章的主要内容就是解析Class文件
+
+
+
+
+
+Java技术能够一直保持着非常良好的向后兼容性，Class文件结构的稳定功不可没
+
+在随后发布的《Java虚拟机规范》中几乎没有对class文件格式进行改动，改动基本上只是在原有结构基础上新增内容，扩充功能，并未对已经定义的内容进行修改
+
+
+
+Class文件是一组以8个字节为基础单位的二进制流，存储密度非常高（没有分隔符）
+
+Class文件里面只有两种类似C语言结构体的伪结构来存储数据，分别是：
+
+- 无符号数：属于基本数据类型，用u1，u2，u4，u8分别代表占位1248的无符号数，无符号数可以用来描述数字，索引引用，数量值或者按照UTF-8编码构成的字符串信息
+- 表：由多个无符号数或者其他表作为数据项来构成的复合数据类型，一般以“_info”结尾
+
+![image-20200505200003311](images/image-20200505200003311.png)
+
+当Class文件内部需要描述同一类型但数量不定的无符号数或表时候，会使用一个前置的容量计数器加若干个连续的数据项的形式，被称为某一类型的“集合”
+
+
+
+
+
+
+
+由于Class文件没有分隔符，所以每一位所表示的含义非常重要
+
+
+
+1.每个Class文件的前四个字节被称为魔数（Magic Number），用来进行身份识别Class文件的魔数在Java被称为Oak的时候就被定了下来，为"0xCAFEBABE"，或许其中根Oak改名为Java有一定联系
+
+
+
+2.紧跟着的四个字节存储的是Class文件的版本号，第5,6个字节存储的是次版本号（Minor Version），第7,8个字节存储的是主版本号（Major Version）。随着JDK的升级，Class文件版本号也进行了升级。版本号存在的一个必要就是——让虚拟机拒绝运行版本号过高的class文件。
+
+
+
+使用JDK11编译一个Java文件，源码如下：
+
+```java
+public class TestClass{
+	private int m;
+	
+	public int inc () {
+		return m+1;
+	}
+}
+```
+
+Class文件如下：
+
+```
+CA FE BA BE 00 00 00 37 00 13 0A 00 04 00 0F 09 
+00 03 00 10 07 00 11 07 00 12 01 00 01 6D 01 00 
+01 49 01 00 06 3C 69 6E 69 74 3E 01 00 03 28 29 
+56 01 00 04 43 6F 64 65 01 00 0F 4C 69 6E 65 4E 
+75 6D 62 65 72 54 61 62 6C 65 01 00 03 69 6E 63 
+01 00 03 28 29 49 01 00 0A 53 6F 75 72 63 65 46 
+69 6C 65 01 00 0E 54 65 73 74 43 6C 61 73 73 2E 
+6A 61 76 61 0C 00 07 00 08 0C 00 05 00 06 01 00 
+17 63 6E 2F 6C 75 63 6B 79 63 75 72 76 65 2F 54 
+65 73 74 43 6C 61 73 73 01 00 10 6A 61 76 61 2F 
+6C 61 6E 67 2F 4F 62 6A 65 63 74 00 21 00 03 00 
+04 00 00 00 01 00 02 00 05 00 06 00 00 00 02 00 
+01 00 07 00 08 00 01 00 09 00 00 00 1D 00 01 00 
+01 00 00 00 05 2A B7 00 01 B1 00 00 00 01 00 0A 
+00 00 00 06 00 01 00 00 00 03 00 01 00 0B 00 0C 
+00 01 00 09 00 00 00 1F 00 02 00 01 00 00 00 07 
+2A B4 00 02 04 60 AC 00 00 00 01 00 0A 00 00 00 
+06 00 01 00 00 00 07 00 01 00 0D 00 00 00 02 00 
+0E 
+```
+
+> 两个字符（十六进制）=一字节
+
+可以看到版本号为37H = 55
+
+
+
+对应关系（完美印证）：
+
+![image-20200505203701632](images/image-20200505203701632.png)
+
+
+
+
+
+3.常量池计数器，版本号之后的两个字节存储的是常量池的入口：常量池的计数器，由于常量池相当大（基本是Class文件空间最大的数据项之一）且存放的常量是不固定的，需要使用常量池计数器来指定容量大小
+
+这里的常量池计数器为0x13 = 19，所以常量池的索引是1~18（确实有点怪，索引不是从0开始的，只存储了18个常量，计数器却是19）【因为此时计数器是从1开始计数的】，和Java里面常见计数器有区别
+
+
+
+
+
+4.常量池：主要存储：
+
+- 字面量
+
+主要是如：文本字符串，被声明为final的常量值等
+
+> new String("hello world")
+>
+> 会在常量池中创建hello world字符串，再在堆中创建字符串
+
+- 符号引用
+
+主要包括以下常量：
+
+1. 被模块导出或者开放的包（Package）
+2. 类和接口的全限定名（Fully Qualified Name）
+3. 字段的方法和描述（Description）
+4. 方法的名称和描述
+5. 方法句柄和方法类型（Method Handler，Method Type，Invoke Dynamic）
+6. 动态调用点和动态常量（Dynamically-Computed Call Site、Dynamically-Computed Constant）
+
+由于不像C/C++具有连接这一步骤，在生成的Class文件中都无法确定各个常量的内存布局（内存地址），只有通过JVM加载过后，这些符号引用最终才能确定内存入口地址
+
+
+
+![image-20200505212239937](images/image-20200505212239937.png)
+
+常量池的具体传送信息：可以根据开头的标志位u1来确定数据类型，而每种数据类型都有指定的存储空间（u1，u2），即可指定出所有的对象数据。
+
+如：
+
+![image-20200505212530416](images/image-20200505212530416.png)
+
+这里的tag表示类型标识，用于识别数据类型，下面的name_index则是索引号，指向了下面的数据类型
+
+![image-20200505212535118](images/image-20200505212535118.png)
+
+下面这个数据类型就是方法名/类名/变量名等标识符。使用2字节的length存储总长度，所以标识符的长度不应该超出2^16^ =  65536长度
+
+> 需要详细对照信息的可以看《深入理解Java虚拟机》 p307页
+>
+> 不过Javap命令和ClassViewer都可以直接看到各个字段的对应信息
+
+
+
+可以使用javap -v命令输出反汇编详细（-v参数表示详细信息）
+
+`javap -v "TestClass.class`
+
+
+
+> 常量池好像有点堆的味道了，存在大量数据被字段表，方发表，属性表所引用
+
+
+
+
+
+
+
+5.访问标志
+
+占两个字节，access_flags
+
+用于识别接口或者类的访问信息，主要如下所示：
+
+![image-20200505215845245](images/image-20200505215845245.png)
+
+例如：标志位为0x0021表示ACC_PUBLIC，ACC_SUPER
+
+实际上0x0021 = 0x0020 | 0x0001
+
+
+
+
+
+6.接下来是类索引，父类索引，接口索引集合
+
+索引的数据都处于常量池中，且每个索引都是一个u2类型的数据（两个字节）
+
+类索引指向的是存放全限定类名的一个索引
+
+父类索引也是指向父类全限定类名的索引
+
+接口索引集合前面存放了一个计数器用于记录实现了多少个父类的方法（而不是重写了多少方法）也是一个u2
+
+接口索引集合存放的是一堆u2数据类型的索引，指向常量池，从左到右读取各个implement的接口的方法实现（如果本身是接口，则从左到右读取extends的）
+
+
+
+
+
+7.再往后走就是字段表集合，同样存在一个计数器，从0开始，记录的即是字段表的数目
+
+> 只有常量池的计数器比较奇葩，从1开始，记录的数量等于常量池里的个数减一
+
+字段表包括类级别变量以及实例级变量，不包括方法的局部变量
+
+主要修饰有：字符的作用域（public、private、protected），是实例变量还是类变量（static修饰），可变性、并发可见性（volatile，是否强制从主内存读写），是否被序列化（transient修饰符）、数据类型、字段名称等等
+
+一般都是布尔类型，要么就是对对常量池的引用
+
+![image-20200506195200918](images/image-20200506195200918.png)
+
+
+
+例如对一个`private int m`的描述
+
+![image-20200506201152196](images/image-20200506201152196.png)
+
+descriptor_index 存储的是0x0006，指向的是常量池里的I字符，表示的是int类型
+
+![image-20200506201541832](images/image-20200506201541832.png)
+
+> 全限定类名：如：`Ljava/lang/Object:`
+>
+> 用L表示对象，；表示全类名的结束
+>
+> 如果是数组，例如被定义为 " java.lang.String "类型的，对应的描述符为：`[[Ljava/lang/String;`
+
+以上是对字段使用描述符的描述过程，如果是对方法的描述符，则遵守如下规则：
+
+> 如int inc();方法的描述符为：`()I`
+>
+> 对boolean equals(Object o)的描述为：`(Ljava/lang/Object;)Z`
+>
+> 方法int indexOf(char[]source，int sourceOffset，int sourceCount，char[]target，int targetOffset，int targetCount，int fromIndex)的描述符为：
+>
+> `([CII[CIII)I`记录效率非常的高，这些内容存储在常量池中，在描述符中存储一个偏移地址指向常量池里即可
+
+后面还有一个attributes集合用来存储额外的信息（以后会讲到）
+
+
+
+字段表中不会出现从父类或者父接口继承而来的字段，即使这些字段对子类是公开的
+
+
+
+
+
+
+
+
+
+8.方法表集合
+
+![image-20200506203254688](images/image-20200506203254688.png)
+
+方法的详细信息：
+
+![image-20200506203334451](images/image-20200506203334451.png)
+
+
+
+方法修饰符：
+
+![image-20200506203839243](images/image-20200506203839243.png)
+
+其余的和前面的字段信息存储采用一样的存储模式，attribute也存储一些额外信息
+
+方法体存储到哪儿去了呢？就存储到了每个方法的attribute域中
+
+![image-20200506204101550](images/image-20200506204101550.png)
+
+这里的Code即是方法inc的方法体
+
+
+
+方法表集合也不会出现父类的方法，会出现例如<clinit>和<init>方法（类构造器，实例构造器）
+
+
+
+
+
+最后一块，也是最麻烦的一块——属性方法表
+
+他会出现在每个field中，每个method中，以及每个class文件的末尾
+
+这里面的限定条件比较宽松，不要求严格的长度限制和顺序限制
+
+里面存储着预设定的属性，如常见的：
+
+|  属性名称  |            含义            |
+| :--------: | :------------------------: |
+|    Code    | Java代码编译成的字节码指令 |
+| SourceFile |       记录源文件名称       |
+|            |                            |
+
+等等。。。
+
+
+
+由于属性表的自定义度极高，每个属性表都有自己的内存布局，只要满足以下要求即可：
+
+![image-20200506210629790](images/image-20200506210629790.png)
+
+name存储的是指向常量池的一个索引（从1开始的），里面存储着这个属性的名字（例如Code等等）
+
+
+
+常见属性解析：
+
+1.Code属性
+
+Code里面存储方法体，存储在方法的attribute中（抽象方法和接口则没有）
+
+![image-20200506211504536](images/image-20200506211504536.png)
+
+>  参数说明：
+>
+> - max_stack：操作数栈深度的最大值
+> - max_locals：局部变量表所需的存储空间，单位是变量槽。对于不满32kb的基础数据类型，每个变量占用一个变量槽，方法参数，抛出的异常都会占用局部变量表，也会包含在内。
+> - code_length和code：存储字节码指令（字节码指令：一条指令对应一个字节码）。（注意：code_length理论上最大值可以为2^32^，但实际上最大值只能为2^16^，为u~2~）。
+
+
+
+
+
+2.Exception属性
+
+![image-20200506214940102](images/image-20200506214940102.png)
+
+依次分析即可
+
+
+
+
+
+字节码指令简介：
+
+字节码组成：操作码、操作数
+
+Java虚拟机面向操作数栈而不是面向寄存器的架构。大多数操作都只有操作码，没有操作数，操作数都存放在操作数栈中。
+
+
+
+字节码劣势：
+
+最多只能存在255个指令，超过一个长度的数据需要分成多个单字节存储起来【Class文件的存储高密度性】（这就导致了Long变量的存储过程不是线程安全的）
+
+
+
+操作码助记符一般都包含其操作所对应的数据类型信息，如iload，fload。
+
+> reference的缩写是a
+
+
+
+由于操作码的限制，Java虚拟机在编译期或运行期将byte和short扩展成带符号的int类型，将boolean和char扩展成相应的int类型，减少了指令的条数
+
+
+
+对指令的加载和存储，数据会在栈帧中的局部变量表和操作数栈中来回传输
+
+
+
+​	Java虚拟机算数指令只存在int、long、float、double
+
+只有除法指令和求余指令会抛出异常，其余的都不会抛出异常（即使是数位溢出）
+
+
+
+由于Java的默认数据类型转换，使得指令可以重用
+
+默认的转换规则（自动小范围向大范围的安全转换）
+
+
+
+与之对应的显式转换（不安全转换）可能导致精度丢失，符号错误
+
+- Float和Double的Nan转换成int的值为0
+
+
+
+虽然类实例和数组都是对象，但Java虚拟机对类实例的创建和数组的创建和操作使用了不同的字节码指令
+
+
+
+Java同步指令的实现
+
+管程（Moniter）
+
+```java
+public void get() {
+    synchronized(this) {
+        System.out.println("hello world!");
+    }
+}
+```
+
+输出的class文件里的Code为：
+
+![image-20200507195659251](images/image-20200507195659251.png)
+
+通过moniterenter和monitorexit实现控制
+
+会发现无论如何monitorexit都会执行
+
+
+
+>  Java虚拟机的重要观点：鼓励自己去实现Java虚拟机，只要能够正确读取Class文件的语义（结果）即可，如何实现无所谓（里面的指令重拍就是一个很好的观点的体现：结果不变即可，实现无所谓）
+
+![image-20200507200556202](images/image-20200507200556202.png)
+
+
+
+![image-20200507200813756](images/image-20200507200813756.png)
+
+
+
+
+
+小结：
+
+这一章讲述了Class文件结构的组成部分
+
+下一章讲述字节码流在虚拟机执行引擎中是如何被==解释执行==的
+
+
+
+
+
+
+
+## 第七章、虚拟机类加载机制
+
+
+
+本章将讲述虚拟机如何加载Class文件，Class文件进入虚拟机后会发生哪些变化
+
+
+
+虚拟机类加载机制：把Class文件加载到内存，并对数据进行校验，解析转换和初始化，最终形成可以被虚拟机直接使用的Java类型的过程。
+
+
+
+Java语言的特点：动态的类加载和动态链接。
+
+
+
+一个类型的生命周期主要包括：
+
+![image-20200508201959017](images/image-20200508201959017.png)
+
+> 这里的类型指的是一个Class文件，可能对应着一个类或者一个接口
+
+
+
+> 在一个类要实现动态绑定的时候，类解析操作可以在类初始化之后执行
+
+
+
+类初始化触发时机：
+
+- 遇到new，getstatic，putstatic，invokestatic这四条字节码指令时候
+- 该类被反射调用的时候
+- 当子类被加载的时候
+- 当该类是主类的时候
+- 当实现类需要调用父类或接口的default方法时候（JDK1.8）
+
+《Java虚拟机规范》中明确指出，只有以上几种情况会触发类初始化。
+
+
+
+Demo：
+
+```java
+public class NotInitialization {
+    public static void main(String[] args) {
+        System.out.println(SubClass.value);
+    }
+}
+
+class SuperClass {
+    static {
+        System.out.println("SuperClass init!");
+    }
+
+    public static Integer value = 123;
+}
+
+class SubClass extends SuperClass {
+    static {
+        System.out.println("SubClass init!");
+    }
+}
+```
+
+输出：
+
+![image-20200508203704882](images/image-20200508203704882.png)
+
+
+
+即使是创建该类数组，也不会触发类的初始化
+
+就复用上面的Demo即可模仿
+
+
+
+
+
+静态常量也不会触发类初始化，因为在类加载的时候就已经记载到CountClass的常量池中去了，对HELLOWORLD的引用也直接指向了常量池中
+
+Demo：
+
+```java
+public class NotInitialization2 {
+    public static void main(String[] args) {
+        System.out.println(CountClass.HELLOWORLD);
+    }
+
+}
+
+class CountClass {
+    static {
+        System.out.println("CountClass init!");
+    }
+    public static final String HELLOWORLD = "hello world";
+}
+```
+
+![image-20200508204720960](images/image-20200508204720960.png)
+
+
+
+
+
+
+
+上面已经讨论了发生类初始化时候“有且仅有”的条件。（为什么没有讨论其他阶段？《Java虚拟机规范》只是对类初始化有严格要求，对其他过程没有限制）
+
+接下来详细讨论每个过程：
+
+
+
+- 加载
+
+加载（Loading）是类加载（Class Loader）的一个过程
+
+做的几件事情
+
+1. 通过类的全限定类名来获取此类的二进制字节流（可以从压缩文件，例如：JAR，WAR中读取）
+2. 将该类的数据结构加载到方法区中去
+3. 在内存（堆）中生成一个代表这个类的java.lang.Class对象，作为方法区的数据访问入口（在前面碰到过）
+
+该阶段可控性最强，因为开发者可以指定自己的类加载器去完成，重写findClass和loadClass方法（仅对非数组类型），对于数组类，不会动用类加载器，会直接交给JVM分配内存（前面也看到了，创建数组不会加载对应的元数据类型，元数据的大小在编译器就已经可以确定了【引用类型和基本数据类型】）
+
+加载阶段结束后，二进制文件流被存储到了方法区之中，格式完全由虚拟机自定义（连方法区的实现都直接交给了虚拟机），并在堆内创建一个Class对象供外界访问
+
+加载阶段发生时候可能混杂连接阶段的一些操作，但两个阶段开始时间仍然保持着固定的先后顺序
+
+
+
+- 验证
+
+验证是连接阶段的第一步，保证Class文件符合《Java虚拟机规范》，保证不会危害到虚拟机自身（会混杂在加载阶段）
+
+之所以存在这个阶段，也有class文件标准开源的一部分原因，如果仅仅只是有Java代码生成的class文件，使用一些危险的操作编译器会直接抛出异常，不会去编译，但class文件可能是直接由人工手撸出来的，带有破坏性的代码，Java虚拟机不得不去检查（Java层面的类继承关系也要进行重新检查，即使编译器已经检查过）。验证阶段在Java虚拟机的类加载过程中占据了相当大的比重。
+
+在Java6之后，Java的设计者们也考虑到了这个问题，于是在编译好的方法体Code中存放了一个StackMapTable属性来存放已经通过java编译器的部分，但是还是存在风险：StackMapTABLE也有可能被篡改
+
+![image-20200508213204357](images/image-20200508213204357.png)
+
+校验阶段还包括：对虚拟机将符号引用转换成直接引用的时候（连接的第三个阶段——解析阶段）的校验
+
+
+
+验证不是必须存在的，如果对运行的Class文件足够放心，可以使用-Xverify：none参数来关闭大部分的验证措施以缩短时间（非常不推荐，毕竟类加载只会发生一次）
+
+
+
+- 准备阶段
+
+为类变量分配空间并设置类变量初始值（零值）的阶段
+
+即使是`private static int value = 123`，value的值也会先置为零，然后在类构造器<clinit>()方法中再将value的值置为123
+
+置零操作也有意外，例如以下情况：
+
+`private static final int value = 123`，value的值会直接被设置成为123
+
+> 置零很好理解，因为方法区的实现（元空间）位于堆区，在堆区分配内存的时候都会执行置零操作（在栈区则不会），所以全局变量（静态和非静态）都会有默认的初值，而局部变量则不赋值会报错。
+
+
+
+
+
+- 解析阶段
+
+将Java虚拟机内对常量池的符号引用改成直接引用的过程，因为类已经分配空间到方法区，常量池也已经定了下来，可以直接替换地址了。
+
+解析发生的时间《规范》里面没有规定死，只要在使用到之间解析即可
+
+
+
+解析动作主要针对类或接口、字段、类方法、接口方法、方法类型、方法句柄和调用点限定符这7类符号引用进行
+
+
+
+
+
+- 初始化阶段
+
+类加载过程中的最后一个阶段，在此阶段，开始真正执行Class文件代码（前面都是在检查，加载Class文件到虚拟机）将控制权交给应用程序
+
+初始化阶段：执行类的<clint>()类构造器，这个方法是由Javac程序自己生成的。
+
+只包括：对所有类变量的赋值动作和静态语句块的语句的执行，且执行的顺序是依赖于语句在源文件中的顺序而定的，即静态代码块可以对类变量进行赋值操作，却无法使用在它之后定义的变量.
+
+```java
+static {
+    a = 1;
+    System.out.println(a);
+}
+
+static Integer a = 1;
+```
+
+这个代码是违法的
+
+
+
+在<clint>()执行之前，父类的<clint>方法必定是执行完了的
+
+（非常容易验证，在static块中输出信息即可）
+
+
+
+如果一个类没有对初始类变量的赋值和静态代码块操作，编译器就不会为这个类去生成<clint>
+
+
+
+Clint方法在多线程下的表现：
+
+阻塞一个线程clint方法，看另一个线程时候会调用
+
+```java
+public class BlockingClassInit {
+
+    public static void main(String[] args) {
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                new BlockingClass();
+            }
+        };
+
+        new Thread(runnable).start();
+        new Thread(runnable).start();
+    }
+}
+
+class BlockingClass {
+    static {
+        //不加的话编译器不让过
+        if (true) {
+            System.out.println(Thread.currentThread() + "init BlockingClass");
+            while (true){
+            }
+        }
+    }
+}
+```
+
+![image-20200509154439890](images/image-20200509154439890.png)
+
+调用类的构造方法会阻塞别的线程调用这个类的构造方法。
+
+当然，如果这个类加载在一个线程中完成，其他线程就不会阻塞了。
+
+
+
+
+
+类加载器（Class Loader）：Java虚拟机设计团队有意将类加载阶段的“通过一个类的全限定类名来获取该类的二进制字节流”这个动作放到了Java虚拟机外部去实现，实现这个动作的代码被称作类加载器。
+
+
+
+对任意一个类，都必须由加载他的类加载器和这个类本身共同确立其在Java虚拟机中的唯一性。即使是同一个CLass文件，如果被两个不同的类加载器加载，也会被认为是两个毫不相关的类，测试Demo：
+
+```java
+public class ClassLoaderTest {
+    public static void main(String[] args) throws ClassNotFoundException, IllegalAccessException, InstantiationException, NoSuchMethodException, InvocationTargetException {
+        //自定义类加载器
+        ClassLoader loader = new ClassLoader() {
+            @Override
+            public Class<?> loadClass(String name) throws ClassNotFoundException {
+                try {
+                    //获取类的class文件
+                    String fileName = name.substring(name.lastIndexOf(".") + 1) + ".class";
+                    InputStream is = getClass().getResourceAsStream(fileName);
+                    if (is == null) {
+                        return super.loadClass(name);
+                    }
+                    //获取文件字节长度
+                    byte[] b = new byte[is.available()];
+                    is.read(b);
+                    return defineClass(name,b,0,b.length);
+                } catch (IOException e) {
+                    throw new ClassNotFoundException(name);
+                }
+            }
+        };
+
+        Class loadClass = loader.loadClass("cn.luckycurve.classloaderdemo.ClassLoaderTest");
+        Object o = loadClass.getDeclaredConstructor().newInstance();
+        System.out.println(o.getClass());
+        Object obj = new ClassLoaderTest();
+        System.out.println(o instanceof ClassLoaderTest);
+        System.out.println(obj instanceof ClassLoaderTest);
+    }
+}
+```
+
+输出结果为：
+
+```java
+class cn.luckycurve.classloaderdemo.ClassLoaderTest
+false
+true
+```
+
+使用自定义的类加载器加载出来的实例与默认类无关（通过instance关键字判断出来的）
+
+
+
+
+
+从JVM角度，类加载器大概分为两块：启动类加载器BootStrap Class Loader（默认，JVM自带），其他类加载器（由Java语言实现）
+
+
+
+从Java开发人员角度，可以分为三层类加载器的结构和双亲委派的类加载结构
+
+JDK8之前，绝大多数Java程序都是用以下三个系统来提供类加载进行加载
+
+- 启动类加载器：用C++实现，无法被Java程序直接引用。如果class类的getClassLoader返回null，就默认使用启动类加载器
+- 扩展类加载器：用Java实现，继承sun.misc.Launcher$ExtClassLoader，负责加载JAVA_HOME\lib\ext目录中的自定义拓展类，不过很快被模块化带来的天然拓展能力所取代
+- 应用程序类加载器：用Java实现，继承sun.misc.Launcher$AppClassLoader，负责加载用户路径上所有的类库，如果开发者没有指定类加载器，通常使用的就是这个
+
+
+
+类加载器的协同关系：
+
+![image-20200509195839371](images/image-20200509195839371.png)
+
+也就是所谓的双亲委派模型
+
+双亲委派模型要求除了顶层的启动类加载器外，所有的类加载器都需要有自己的父类加载器，只不过这种父子关系通常不是由继承（Interitance）来表现的，而是由组合的关系来复用父加载器的代码
+
+双亲委派模型的工作过程：将类加载请求先传递到父加载器（所以所有的类加载请求都会传到启动类加载器），如果父加载器解决不了，再使用子加载器。
+
+双亲委派模型的优势：保证同一个类只能由唯一的类加载器去加载，避免了上面提到的因为加载类的虚拟机不同而造成错误的问题（越基础的类由越上层的加载器进行加载）。
+
+
+
+
+
+Java9中引入的模块化系统是对Java技术的一次重要升级，除了定义了封装隔离机制（想代替传统类路径依赖的Java SE标准类），还定义了以下内容：
+
+![image-20200509201957123](images/image-20200509201957123.png)
+
+从而避免了很大一部分由于类型依赖而引发的运行时异常。
+
+
+
+
+
+小结：
+
+本章介绍了类加载过程的加载、验证、准备、解析和初始化五个阶段的基本操作
+
+下一章我们将探讨Java虚拟机的执行引擎，看看Java虚拟机是如何执行Class文件所定义的字节码的
