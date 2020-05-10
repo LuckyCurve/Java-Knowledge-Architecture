@@ -3204,3 +3204,305 @@ Java9中引入的模块化系统是对Java技术的一次重要升级，除了�
 本章介绍了类加载过程的加载、验证、准备、解析和初始化五个阶段的基本操作
 
 下一章我们将探讨Java虚拟机的执行引擎，看看Java虚拟机是如何执行Class文件所定义的字节码的
+
+
+
+
+
+
+
+## 第八章、虚拟机字节码执行引擎
+
+
+
+执行引擎是Java虚拟机的核心组件之一
+
+> 虚拟机与物理机的区别：
+>
+> - 物理机的执行引擎是直接建立在处理器、缓存、指令集和操作系统层面上的
+> - 虚拟机的执行引擎则是由软件自行实现的，能够执行那些不被硬件直接支持的指令集模式
+
+
+
+《Java虚拟机规范》定义了Java虚拟机执行引擎的概念模型，即所有执行引擎都具有同一外观。在引擎执行字节码操作时候，通常会有两种选择：解释执行（通过解释器执行）、编译执行（通过即时编译器编译成本地代码）【虚拟机中至少有一个种类的执行引擎，可以同时具有，如HotSpot】
+
+
+
+Java虚拟机以方法作为最基本的执行单元，方法调用和执行的背后的数据结构是“栈帧”，存储于虚拟机栈中。其中主要存储方法的局部变量表、操作数栈、动态链接和方法返回地址等信息，对方法的调用和方法的结束对应着一个栈帧进栈和出栈的操作。
+
+
+
+每个方法需要的栈容量和深度在Class文件中的method的code里面已经记录了。
+
+
+
+随着方法的逐级调用，栈中可能存储了大量的栈帧，只有位于顶部的栈帧对应的方法才是运行着的
+
+
+
+栈的逻辑结构：
+
+![image-20200510151318973](images/image-20200510151318973.png)
+
+Class文件里的方法存储：
+
+![image-20200510151421057](images/image-20200510151421057.png)
+
+
+
+
+
+接下来详细介绍栈帧的组成部分：
+
+- 局部变量表
+
+存储的是方法参数和方法内定义的局部变量。在max_locals里确定了该方法局部变量表所需的最大空间
+
+局部变量表是以变量槽为最小单位，前面有讲过，在Class文件的code属性讲解的时候，可以认为一个变量槽为32字节，不足32字节的如byte short boolean reference returnAddress（很古老的虚拟机才有，做异常跳转，现在基本被异常表取代了）等等则占用一个变量槽，如果是double和long则占用两个变量槽。
+
+> 由于long和double占据两个变量槽，无法同时读取写入，很有可能产生并发问题，但在这里不会，这里是线程私有的空间。
+>
+> Java内存模型对使用volatile修饰的long和double的get和set方法在虚拟机层面实现了同步
+
+
+
+当调用一个方法，Java虚拟机会使用局部变量表将实参传递到形参，如果是实例方法（非静态的），则会在局部变量表索引为0的位置存储该方法实例对象的引用，然后就是其余参数，最后则是方法体内部定义的变量顺序。
+
+变量槽是可以重用的，当pc计数器的值脱离了变量的作用域，该变量的变量槽就可以被重用，但存在一定副作用：最糟糕的就是影响系统的垃圾回收行为
+
+
+
+Demo1（不会发生内存回收，即使bytes已经超过了其作用域）：
+
+```java
+public static void main(String[] args) throws InterruptedException {
+        TimeUnit.SECONDS.sleep(1);
+        {
+            Byte[] bytes = new Byte[64 * 1024 * 1024];
+        }
+        System.gc();
+        TimeUnit.SECONDS.sleep(5);
+    }
+```
+
+
+
+Demo2：
+
+```java
+public static void main(String[] args) throws InterruptedException {
+    TimeUnit.SECONDS.sleep(1);
+    {
+        Byte[] bytes = new Byte[64 * 1024 * 1024];
+    }
+    int a = 0;
+    System.gc();
+    TimeUnit.SECONDS.sleep(5);
+}
+```
+
+加入了第6行，发生了垃圾回收
+
+原因分析：尽管bytes脱离了作用域，但是bytes的变量槽没有被复用，GC Roots的一部分——布局变量表，对bytes仍然保持着关联，判定为可达对象，不会回收，而在第六行中使用了`int a = 0`使得bytes的变量槽被重用了，自然对应的堆内存就可以回收了（这里是变量少，可以保证a占用了bytes的变量槽，如果实际使用过程中建议直接使用`bytes = null`）即可
+
+
+
+局部变量表不存在两次赋值的情况，不会像堆上的内存分配，先全部置零，再使用类构造器或者对象构造器去赋初值，如果局部变量表中的变量没有初值就会报错
+
+
+
+
+
+- 操作数栈
+
+通常被称为操作栈，是一个后进先出（Last In First Out，LIFO）的栈
+
+在编译成class文件的时候栈的最大深度就已经存储了，为max_stacks
+
+当两个操作数需要进行操作的时候，会先将这两个操作数压入栈，然后再执行对应的字节码指令从操作数栈中取出数据，然后将计算结果重新压入栈中
+
+
+
+Java虚拟机的解释执行引擎被称作“基于栈的执行引擎”，里面的栈就是操作数栈。
+
+
+
+
+
+- 动态连接
+
+每个栈帧都包含一个指向运行时常量池中该栈帧所属方法的引用，持有这个引用是为了支持方法调用过程中的动态连接（Dynamic Linking）。
+
+
+
+
+
+- 返回地址
+
+方法调用结束就相当于栈帧出栈，出栈后（无论是正常返回还是抛出异常），都会继续重置pc计数器，继续执行。
+
+
+
+一般会把动态连接，方法返回地址与其他附加信息归为一类，称为栈帧信息。
+
+
+
+
+
+方法调用
+
+一切方法的信息全部都以符号的形式存储到了Class文件里面，而不是内存的入口地址，即所谓的直接引用，有些方法需要在类加载过程中才能确定方法的直接引用，有些方法甚至需要到运行阶段才能确定方法的入口地址。
+
+
+
+解析（静态编译的味道）：
+
+在类加载阶段，方法中的一部分符号引用可以转化为直接引用。如果调用目标的程序代码写好，编译器进行编译的那一刻就已经确定了下来，这类方法的调用被称为解析（Resolution）
+
+在Java中完美满足上面要求“编译期可知，运行期不可变”的主要就是：静态方法和私有方法两大类，这两种方法各自的特点决定了它们都不可能通过继承或别的方式重写出其他版本，因此它们都适合在类加载阶段进行解析。
+
+
+
+Java调用方法的五条字节码指令：
+
+![image-20200510204132825](images/image-20200510204132825.png)
+
+
+
+invokestatic和invokespecial调用的方法在解析阶段就可以确定方法的入口地址了，除了静态方法，私有方法，还有实例构造器，父类方法也可以确定下来，当然还有final方法（尽管他在invokevirtual指令中），以上五种方法被称为“非虚方法”（Non-Virtual Method），在类加载的时候就可以将对该方法的符号引用解析为直接引用，其他方法称为“虚方法”（Virtual Method）
+
+> 之所以其他方法（如实例方法）无法确定下来，自我感觉，主要是——多态
+>
+> 如以下代码：
+>
+> ```java
+> Object obj = new String("hello world");
+> obj.hsahcode();
+> ```
+>
+> 在类加载的时候hashcode方法无法解析（因为实际上调用的是String的hashcode方法）
+
+
+
+
+
+分派（动态编译的味道）：
+
+分派调用过程将会揭示多态性特征的一些最基本的体现。关注的是虚拟机层面如何正确的确定目标方法。
+
+静态分配（直接根据当前对象的类型进行分配方法，典型的重载案例）
+
+书上的“简单”Demo：
+
+```java
+public class OverLoadDemo {
+
+    static class SuperObject1 {
+
+    }
+
+    static class SuperObject2 {
+
+    }
+
+    public static void hello(Object o) {
+        System.out.println("hello Object");
+    }
+
+    public static void hello(SuperObject1 superObject) {
+        System.out.println("hello SuperObject1");
+    }
+
+    public static void hello(SuperObject2 superObject) {
+        System.out.println("hello SuperObject");
+    }
+
+    public static void main(String[] args) {
+        Object o1 = new Object();
+        Object o2 = new SuperObject1();
+        Object o3 = new SuperObject2();
+        hello(o1);
+        hello(o2);
+        hello(o3);
+    }
+}
+```
+
+输出：
+
+```
+hello Object
+hello Object
+hello Object
+```
+
+都调用Object版本的理由如下：
+
+`Object o2 = new SuperObject1() `中的Object称为变量o2的静态类型（Static Type），或者是外观类型（Apparent Type），后面的SuperObject1被称为“实际类型”（Actual Type）或者“运行时类型”（Runtime Type）。对象的静态类型在编译器是可知的，而对象的实际类型在编译器不可知的。
+
+编译器在重载时候是通过参数的静态类型而不是实际类型作为标准判断的，可以直接在编译成class文件期间就可以把这个方法的符号引用写入invokevirtual指令中。
+
+依赖于静态类型来决定所执行的方法的分派动作，都称为静态分派，发生在编译期间
+
+
+
+动态分派
+
+与多态的一个重要体现——方法重写有关
+
+Java虚拟机通过变量的实际类型来判断需要调用的方法（在运行时候确定）
+
+使用javap -v 指令来反编译一个类（-v显示详细信息），会发现对方法的调用都是直接使用invokevirtual 静态类型的方法，但是运行出来的结果却不是静态类型的方法，看来是invokevirtual指令的问题：
+
+根据《Java虚拟机规范》，由以下四步：
+
+1. 获取操作数栈栈顶的对象的实际类型（通过操作数栈的对象指针找到对象的堆内存，再通过对象的对象头找到对象所对应的Class对象），计做C；
+2. 从C中查找方法名和参数都符合的方法，如果查找到，则进行权限校验，如果权限校验通过，则返回方法的直接引用，如果权限校验不通过则报错IllegalAccessError异常（正常情况下Javac就不会让编译通过，主要还是担心人为的Class文件破坏）
+3. 按照继承关系从下往上搜索C的父类，并重复进行第二步骤
+4. 始终没有合适的方法，抛出AbstractMethodError异常
+
+>  这些检查步骤都是为了防止人为编写class破坏java虚拟机
+
+我们把这种在运行期间根据实际类型确定执行方法的分派过程称为动态分派
+
+
+
+可以总结出Java的多态是依赖于invokevirtual方法的执行逻辑，而invokevirtual只能执行方法，所以字段是不支持多态的
+
+
+
+Demo如下：
+
+```java
+public class Test {
+
+    public int a = 1;
+
+    static class Test2 extends Test {
+
+        public int a = 3;
+
+        public Test2() {
+        }
+    }
+
+    public static void main(String[] args) {
+        Test test2 = new Test2();
+        System.out.println(test2.a);
+    }
+}
+```
+
+输出的结果时1，字段只支持静态分派
+
+
+
+
+
+现在虚拟机的具体实现一般都是为类型在方法区创建一个虚方法表，使用虚方法表索引来代替元数据查找以此提高性能
+
+![image-20200510222824484](images/image-20200510222824484.png)
+
+虚方法表存放各个方法的实际入口地址（应该是类加载的链接阶段创建的）
+
+> 使用虚方法表可以在获取对象的实际类型之后直接访问实际类型的虚方法表，而不用再去查询对应的Class文件了，提升性能
