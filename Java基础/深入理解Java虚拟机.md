@@ -3568,3 +3568,342 @@ Java虚拟机使用栈的指令集，而不是基于寄存器的指令集
 
 
 
+
+
+## 第九章、类加载及执行子系统的案例与实战
+
+
+
+本章看看所学知识在实际中如何运用
+
+
+
+Tomcat的类加载器架构：
+
+![image-20200512113446389](images/image-20200512113446389.png)
+
+这里的Catalina类加载器加载的就是server类库，也被称为shared类加载器
+
+> common：类库可以被Tomcat和所有Web应用程序共享
+>
+> server：类库只能被Tomcat访问
+>
+> shared：类库只能被Web应用程序共同访问
+>
+> WebApp/WEB-INF：该类库只能被该web应用程序访问
+
+越上面的类加载器加载出来的类，可以被后续的类加载器获取
+
+
+
+
+
+
+
+OSGI（Open Service Gateway Initialive）是OSGI联盟制定的一个基于Java语言的动态爱模块化规范。现在已经成为Java世界中“事实上”的动态模块化标准。最知名的实现可能就是Eclipse IDE了，Eclipse中 安装，更新，删除插件而不需要重新启动程序，正是使用了这项技术。
+
+每个类都会指定Import-package和Export-package。使得类之间的上层模块依赖转变为平级模块依赖，一个模块中只有Export的package才能被访问。实现了独特的类加载：
+
+如 （OSGI每个模块称为一个Bundle）：
+
+BundleA：声明发布了PackageA，依赖java.*包
+
+BundleB：声明依赖PackageA和PackageC，依赖Java.*包
+
+BundleC：声明发布PackageC，依赖PackageA
+
+![image-20200512115455938](images/image-20200512115455938.png)
+
+
+
+
+
+动态代理技术的JVM实现层面研究（建议去开个坑了解下）：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/5/12 14:29
+ * 模拟Spring的动态代理并查看字节码Java是如何实现的
+ * 原始代码逻辑打印hello world，代理类的逻辑是
+ * 在原始方法执行之前打印一句Welcome
+ */
+public class DynamicProxyTest {
+
+    interface IHello {
+        void syaHello();
+    }
+
+    static class Hello implements IHello {
+        @Override
+        public void syaHello() {
+            System.out.println("hello world");
+        }
+    }
+
+    //JDK层面提供的代理类
+    static class DynamicProxy implements InvocationHandler {
+
+        Object originalObj;
+
+        Object Bind(Object originalObj) {
+            this.originalObj = originalObj;
+            return Proxy.newProxyInstance(originalObj.getClass().getClassLoader(),originalObj.getClass().getInterfaces(),this);
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            System.out.println("welcome");
+            return method.invoke(originalObj,args);
+        }
+    }
+
+    public static void main(String[] args) {
+        IHello iHello = (IHello) new DynamicProxy().Bind(new Hello());
+        iHello.syaHello();
+
+    }
+}
+```
+
+
+
+实验：有点看不懂，先省去了。
+
+
+
+
+
+小结：
+
+6~9章讲述了Class文件格式，类加载和虚拟机执行引擎这几部分，都是概念模型
+
+从第十章开始，我们把目光从概念模型转换为具体实现，如何进行内部优化的
+
+
+
+
+
+# 第四部分、程序编译与代码优化
+
+
+
+> 从计算机程序出现的第一天起，对效率的追逐就是程序员天生的坚定信仰
+
+
+
+
+
+## 第十章、前端编译与优化
+
+
+
+在Java技术中泛泛地谈编译是很含糊的表述，因为可能指的是前端编译器把java文件编译成class文件，也有可能是Java的即时编译器（JIT编译器，Just In Time Compiler）在运行期把字节码转换为本地机器码的过程，还有可能是静态的提前编译器（AOT编译器，Ahead Of Time Compiler）直接把程序编译成与目标指令集相关的二进制代码的过程，主要代表性的实现如下：
+
+- 前端编译器：JDK的javac，Eclipse JDT中的增量式编译器（ECJ）
+- 即时编译器：HotSpot的C1、C2编译器，Grual编译器
+- 提前编译器：JDK的Jaotc、GCJ
+
+程序员常见的编译过程就是第一类，也是本章讨论的重点
+
+
+
+Java虚拟机团队把对性能的优化完全关注到了Java虚拟机中，这样可以直接提速其他在Java虚拟机上运行的程序（即时编译器）。而Javac的性能优化基本没有，不过javac不断支持着新出现的语法糖，提高了程序员的编码效率。
+
+即时编译器的优化：程序运行效率的不断提高
+
+前端编译器的优化：程序员编码效率和幸福感的提高
+
+
+
+
+
+了解Javac编译器，使用java语言实现（只是包含了少量C，不像HotSpot大量使用C++）
+
+JDK6将javac加入标准API上
+
+
+
+Javac主要有四个过程：
+
+1. 准备过程：初始化插入式注解处理器。
+2. 解析与填充符号表过程
+3. 插入式注解处理器的注解处理过程
+4. 分析与字节码生成过程
+
+
+
+![image-20200513110627617](images/image-20200513110627617.png)
+
+
+
+Javac源码调试直接看书上的。
+
+
+
+
+
+Java语法糖，可以看做前端编译器提供的“小把戏”，能够提升编程效率，我们应该了解“小把戏”的幕后。
+
+
+
+1.泛型
+
+泛型让程序员能够针对泛化的数据类型编写相同的算法，极大地提升了编程语言的类型系统及抽象能力
+
+Java与C#在同年的同一个大版本更新出了泛型，很多人诟病Java的泛型不如C#的泛型，确实存在缺陷，不过是当时语言现状的权衡，而不是语言设计者不如C#
+
+
+
+Java选择泛型的实现是“类型擦除式泛型”，C#的泛型实现是“具现化式泛型”
+
+C#的泛型无论是在任何时期都是存在的
+
+Java泛型只有在源码中存在，在编译期即被替换为原来的裸类型，并且在相应的地方自动完成了类型转换，所以在运行期看来，ArrayList<>
+
+
+
+Java泛型实实在在存在的限制：
+
+```java
+public class Test<E> {
+
+    public static void main(String[] args) {
+        Object o = new Object();
+        if (o instanceof E) {
+            System.out.println();
+        }
+        E e = new E();
+        E[] es = new E[10];
+    }
+}
+```
+
+第五行，第八行，第九行报错
+
+无法用泛型来进行实例判断，无法创建泛型对象，无法使用泛型创建数组
+
+源于Java使用拆箱和装箱在编译的时候实现了替换（这也降低了效率）
+
+唯一的优势：影响范围小。因为如果要将泛型提升到虚拟机层面上来，那么在JDK5.0之后的代码将无法在JDK5.0之前复用，考虑到Java复杂的技术体系和沉淀，选择了在编译期来进行泛型的自动拆箱和装箱，牺牲了泛型的使用效果和运行速率。
+
+
+
+引入泛型后又出现了一个新的问题：泛型大量使用在容器中，那么老的容器类如何解决呢（因为Java规定JDK必须向后兼容）：
+
+1.原有的类不变，新增一套泛化版本的容器
+
+2.直接把原有的类型泛化
+
+
+
+C#选择第一条路，Java选择第二条路（因为Java的庞大生态）
+
+在JDK1.2时期，Java的态度就选择了第一条路（对线程不安全的容器，直接新增一套线程安全的容器，如Vector 和 HashTable），但是到JDK5，如果选用第一条路，ArrayList Vector HashMap HashTable都需要再实现一套，麻烦，何况这些还广泛使用了。
+
+
+
+使用ArrayList介绍Java泛型是如何实现的
+
+引入裸类型的概念，来保证子类到父类的安全转化
+
+```java
+public static void main(String[] args) {
+    ArrayList<String> list1 = new ArrayList<>();
+    ArrayList list = list1;
+}
+```
+
+保证ArrayList<String>可以类型转换成为list1。
+
+为了实现这个效果，可以让虚拟机运行时候真实构造ArrayList<String>类，继承自ArrayList，或者就把其看做ArrayList，在元素访问修改的时候加入强制转换和类型检查。这就直接导致了容器中不能存储基本数据类型，因为基本数据类型无法和Object之间进行强制转换，只能存储包装类，读取数据的时候进行无数次的拆箱装箱
+
+
+
+还导致了方法无法重载
+
+```java
+//Error
+public void test(List<String> list) {
+
+}
+
+public void test(List<Integer> list) {
+
+}
+```
+
+
+
+14年Oracle建立了Valhalla的语言改进项目改进Java遗留问题，泛型就是主要目标
+
+
+
+
+
+
+
+2.自动装箱、拆箱，循环遍历
+
+这些语法糖比泛型的实现和思想就要简单得多
+
+拆箱装箱主要是依赖：`valueOf()和xxxValue()`方法来实现
+
+循环遍历forEach：底层使用迭代器
+
+变长参数String...：`new String[](变长参数);`
+
+
+
+
+
+3.条件编译
+
+在编译阶段确定一些条件为常量的if语句，并在编译成class文件的时候就优化调这些语句
+
+Source：
+
+```java
+public static void main(String[] args) {
+    if (true) {
+        System.out.println("hello world");
+    } else {
+        System.out.println("world is broken");
+    }
+}
+```
+
+Target：
+
+```java
+public static void main(String[] args) {
+    System.out.println("hello world");
+}
+```
+
+只有条件为常量的if语句可以保证每次都进行优化，如果是其他条件判断，可能连编译都过不了，如：
+
+```java
+//false
+while (false) {
+    System.out.println("hello");
+}
+```
+
+条件编译的实现也是一种语法糖，省去必定不会执行的代码，只支持if语句
+
+
+
+除了本节中介绍的泛型、自动装箱、自动拆箱、遍历循环、变长参数和条件编译之外，Java语言还有不少其他的语法糖，如内部类、枚举类、断言语句、数值字面量、对枚举和字符串的switch支持、try语句中定义和关闭资源（这3个从JDK 7开始支持）、Lambda表达式（从JDK 8开始支持，Lambda不能算是单纯的语法糖，但在前端编译器中做了大量的转换工作），等等。
+
+
+
+实战：Javac过程中对字段的命名规则进行检查。
+
+
+
+小结：
+
+了解了从Java源码编译到字节码的过程，分析了多种语法糖的前因后果。即前端编译器的工作。
+
+在下一章中，将探讨后端编译器的运作和优化过程。
