@@ -341,3 +341,208 @@ public interface TechStackRepo extends CrudRepository<TechStack,Integer> {
 
 
 这里的方法都会根据方法名自动实现
+
+
+
+
+
+## 第四章、保护Spring
+
+
+
+启动Spring Security来保护Spring
+
+引入这个配置之后，会自动进行安全的基本配置
+
+访问网站需要输入用户名和密码：用户名默认为user，密码为控制台输出的一个字符串，也是通过浏览器的JSESSIONID来匹配到服务器中的Session域的，如果清除了Cookie就需要重新登录。
+
+默认安全信息：
+
+- 所有HTTP请求都需要认证
+- 不需要特定的角色和权限
+- 没有登录页面（默认页面是HTTP basic认证的框）
+- 默认只有一个用户user
+
+
+
+增加用户：
+
+1.用户数据量不大，修改次数少。直接存内存：
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        //需要加密方式
+        auth.inMemoryAuthentication().passwordEncoder(new BCryptPasswordEncoder())
+                .withUser("buzz").password(new BCryptPasswordEncoder().encode("222")).roles("USER");
+    }
+
+}
+```
+
+要指定密码加密方式
+
+
+
+具体的加密方式：
+
+•BCryptPasswordEncoder：使用bcrypt强哈希加密。
+
+•NoOpPasswordEncoder：不进行任何转码。
+
+•Pbkdf2PasswordEncoder：使用PBKDF2加密。
+
+•SCryptPasswordEncoder：使用scrypt哈希加密。
+
+•StandardPasswordEncoder：使用SHA-256哈希加密。
+
+
+
+2.存储到数据库中，是使用JDBC来存储的，可以百度下
+
+
+
+都是指定好的，用起来极其不方便
+
+
+
+
+
+自定义用户认证：
+
+依靠Spring Data JPA
+
+对比了下Mybatis+Shiro，突然知道为什么大多数国内的厂商都倾向于Shiro了，Spring Security提供了太多的功能了（然而这些功能大多数情况下都用不上）。
+
+
+
+
+
+
+
+## 第五章、使用配置属性
+
+
+
+
+
+细粒度的自动配置
+
+配置类中的@Bean方法，将返回值注入，很容易测试：
+
+```java
+@Bean
+public String hello(){
+    String a = "hello world";
+    System.out.println(a);
+    return a;
+}
+```
+
+在配置类中加入这一行即可，会明显的看到hello world的输出
+
+![image-20200521103711284](images/image-20200521103711284.png)
+
+Spring完成的自动属性注入
+
+例如Server.port=8080可以在任何一个阶段设置（JVM参数，命令行参数，操作系统环境变量（命名格式需要改变，Spring会自动适配））
+
+
+
+接下来讲述了一些常规的可配置项，
+
+数据库配置：例如spring.datasource
+
+嵌入式服务器配置：例如：Server.port=0（随便选择一个可用端口）在不关心应用在哪个端口启动的情况非常重要，如成为一个服务注册到注册中心去
+
+指定配置文件（在主配置文件里面指定）:
+
+```yaml
+spring:
+  profiles:
+    active: dev
+```
+
+配置文件命名：application-{profiles}.yaml
+
+这是设置的最糟糕的一种方式，会直接使用指定的配置文件（无论是在开发环境还是在生产环境都是一样）。无法享受到生产环境和开发环境不同所带来的便利
+
+可以在IDE中手动指定：
+
+![image-20200521152955643](images/image-20200521152955643.png)
+
+或者使用命令行的方式：
+
+![image-20200521153010111](images/image-20200521153010111.png)
+
+
+
+
+
+日志的级别设置：
+
+```log
+logging:
+  level:
+    root: debug
+  file:
+#    好像路径没用，都直接输出到项目的根目录下面了
+    path: D://
+    name: Test.log
+```
+
+必须使用到root上面去，要不然报错
+
+
+
+配置类的写法：
+
+```java
+@Configuration
+@ConfigurationProperties("greeting")
+@Setter
+public class HelloConfig {
+    private String hello;
+
+    @Bean
+    public String bean() {
+        System.out.println(hello);
+        return hello;
+    }
+}
+
+```
+
+一定要setter注解，要不然属性注入不进去
+
+
+
+只要是被扫描到的，无论是使用Copeonent系列的还是Configuration，里面被标注了bean方法都会被加载，返回值进入到IOC容器中。因为COnfiguration也就相当于是Component的变种（标注在配置类上面）
+
+
+
+
+
+可以根据当前profiles的不同来选择配置（如果指定的是dev，但dev配置没有这个属性，就会再回去读取默认的配置）和指定是否创建bean
+
+```java
+@Configuration
+@ConfigurationProperties("greeting")
+@Data
+@Profile("!dev")
+public class HelloConfig {
+    private String hello;
+    
+    @Bean
+    @Profile("!dev")
+    public String hello() {
+        System.out.println(hello);
+        return hello;
+    }
+}
+```
+
+如果是以下配置`@Profile({"!dev","!dev2"})`，是表示只要满足其中一个条件即可
