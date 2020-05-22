@@ -546,3 +546,386 @@ public class HelloConfig {
 ```
 
 如果是以下配置`@Profile({"!dev","!dev2"})`，是表示只要满足其中一个条件即可
+
+
+
+
+
+
+
+# 第二部分、Spring集成
+
+
+
+Spring应用与其他应用集成的话题
+
+
+
+
+
+## 第六章、创建REST服务
+
+
+
+REST API就是如今常说的前后端分离的后端API，只进行数据传输，而不去管页面的事情。
+
+![image-20200522113509576](images/image-20200522113509576.png)
+
+PUT和Patch的区别（语义层面）：
+
+- PUT应该是对资源的整体覆盖，哪怕是有空字段，也是采取直接覆盖的态度
+- Patch是完成资源的局部更新，更新非null字段
+
+
+
+
+
+@RestController：
+
+- 能够使得组件被扫描发现
+- 控制器中处理方法的返回值要被直接写入响应体（Response Body）中，而不是将值放入模型（Request）中传递给视图进行渲染
+
+
+
+@RequestMapping有个produces属性，指定产生的消息头，可以使用consumes指定接收的消息头
+
+
+
+待验证：Spring提供`@CrossOrigin`注解来突破域限制，加在需要被消费的类上即可
+
+
+
+直接弹出这个错误消息的方法：
+
+![image-20200522151626134](images/image-20200522151626134.png)
+
+```java
+@ResponseBody
+@GetMapping("/{id}")
+public ResponseEntity<String> findById(@PathVariable("id") Integer id) {
+    if (id == 2) {
+        //是直接跳ERROR界面了，不是返回的数据
+        return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    }
+    return new ResponseEntity<>("hello",HttpStatus.ACCEPTED);
+
+}
+```
+
+使用ResponseEntity这个实体类即可。
+
+不过不推荐在REST客户端上这样做，建议统一消息回复即可。
+
+
+
+
+
+指定消息返回的Code（默认是200 OK）：
+
+使用@RequestStatus注解
+
+```java
+@GetMapping("/")
+@ResponseStatus(HttpStatus.ACCEPTED)
+public String hello() {
+    return "hello world";
+}
+```
+
+
+
+
+
+映射到业务层的String对象一般不会为null（无论是从数据库来的还是从前端来的），一般都是empty。
+
+
+
+后面就是：在请求体中动态的插入超链接，如查询所有商品的时候顺便在每个商品后面带上修改商品的URL。Spring提供了这个功能，感觉对于现在实际意义不大。
+
+
+
+小结：
+
+主要就是RestController，ResponseBody，RequestBody的使用。
+
+
+
+
+
+
+
+
+
+## 第七章、消费REST服务
+
+
+
+前面学会了创建REST API提供给客户端去调用，但Spring对另外一个API发起请求并不罕见，特别是在微服务领域的热度的增加。
+
+主要方式：
+
+- RestTemplate：Spring提供的简单的、同步的REST客户端
+- Traversion：对上一章结尾讲述的动态生成的超链接的调用，依旧感觉意义不大
+- WebClient：Spring 5提供的反应式、异步REST客户端（先推迟下，因为反应式的Web框架都没讲）
+
+
+
+
+
+主要就关注RestTemplate即可
+
+RestTemplate可以直接new就行了，但麻烦且资源利用率低，建议写个bean方法直接创建一个RestTemplate注入到容器中
+
+发送一个HTTP请求会有太多的样板代码，于是Spring简化了这些代码，就像JDBCTemplate一样
+
+![image-20200522162151429](images/image-20200522162151429.png)
+
+表7.1中的大多数操作都以3种方法的形式进行了重载。
+
+•使用String作为URL格式，并使用可变参数列表指明URL参数。
+
+•使用String作为URL格式，并使用Map<String,String>指明URL参数。
+
+•使用java.net.URI作为URL格式，不支持参数化URL。
+
+
+
+1.Get请求：
+
+主要有两个方法可以调用：
+
+- getForObject
+- getForEntity
+
+两者区别：getForEntity会包含响应头，响应体的全部信息，即整个RequestEntity对象
+
+而getForObject只会包含响应体里面的信息，在你比较关注响应体的信息的时候建议使用这个
+
+
+
+测试如下：
+
+> 测试环境是因为：在启动项目时候指定使用dev环境，在运行时候无法指定参数，默认使用8080端口，不会产生端口冲突，完美解决。
+
+被调用代码：
+
+```java
+@RestController
+@RequestMapping("/test")
+public class TestController {
+    @GetMapping("/get")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public String hello() {
+        return "hello world";
+    }
+}
+```
+
+
+
+调用代码：
+
+```java
+@Test
+void contextLoads() {
+    String s = restTemplate.getForObject("http://localhost:8090/test/get", String.class);
+    System.out.println(s);
+}
+```
+
+调用成功
+
+
+
+
+
+2.post请求：
+
+有三个：
+
+postForObejct
+
+postForEntity
+
+postForLocation
+
+关系：postForEntity =|= postForObejct（响应数据）+postForLocation（响应地址）+xx
+
+
+
+
+
+被调用代码：
+
+```java
+@RestController
+@RequestMapping("/test")
+public class TestController {    
+	@PostMapping("/post")
+    public String hello2(@RequestBody Data hello) {
+        System.out.println(hello);
+        return hello.getName();
+    }
+```
+
+
+
+调用代码：
+
+```java
+@Test
+void test() {
+    TestController.Data data = new TestController.Data();
+    data.setId(1);
+    data.setName("hello fuben");
+    String s = restTemplate.postForObject("http://localhost:8090/test/post", data, String.class);
+    System.out.println(s);
+}
+```
+
+> 一定要将POST的参数加上RequestBody注解才能有效，如果不加的话就是null了，好像使用了POST就必然会使用RequestBody域了。
+
+
+
+
+
+其他就非常类似了。
+
+
+
+
+
+小结：
+
+客户端使用RestTemplate针对REST API发送HTTP请求
+
+
+
+
+
+
+
+## 第八章、发送异步消息
+
+
+
+前面提到的REST等类似的同步通信并不是唯一的方式。异步消息就是另一种方式。
+
+主要的三种方式：
+
+- JMS（Java Message Service）
+- RabbitMQ
+- kafka
+
+就相当于是增加了中间件嘛
+
+
+
+JMS：
+
+JMS是一个Java的标准，消息代理的通用API，类似于JDBC为数据库提供了通用的接口一样
+
+Spring再次帮我们做了封装——JMSTemplate
+
+默认实现：Apache ActiveMQ，但由于ActiveMQ快被淘汰了，Apache推出了ActiveMQ Artemis方案来作为下一代的ActiveMQ。（好像社区是真的不活跃，Docker Hub都没有对应的镜像，而RabbitMQ的镜像更新时间为37min前）
+
+就了解下，通读下书
+
+主要是对JMSTemplate的使用
+
+在听雷丰阳老师讲SpringBoot的时候就说到了JMS是要不如AMQP的，因为平台相关性太强
+
+
+
+
+
+使用RabbitMQ和AMQP
+
+RabbitMQ可以说是AMQP最杰出的实现了
+
+
+
+RabbitMQ的原理：
+
+直接看我的这篇博客就好了：
+
+https://blog.csdn.net/LuckyCurve/article/details/104534265
+
+实践：引入amqp依赖
+
+
+
+一个最简洁的Demo：
+
+可以登录15672管理界面来查看Exchange，Binding，Queue是否创建成功以及消息发送情况
+
+```java
+@SpringBootTest
+public class RabbitMQTest {
+    @Autowired
+    AmqpAdmin amqpAdmin;
+
+    @Autowired
+    RabbitTemplate rabbitTemplate;
+
+    @Test
+    void test() {
+        //创建Exchange
+        DirectExchange exchange = new DirectExchange("admin.exchange");
+        amqpAdmin.declareExchange(exchange);
+        //创建Queue
+        Queue queue = new Queue("admin.queue");
+        amqpAdmin.declareQueue(queue);
+        //创建Binding
+        Binding binding = new Binding("admin.queue", Binding.DestinationType.QUEUE,"admin.exchange","amqp.haha",null);
+        amqpAdmin.declareBinding(binding);
+    }
+
+    @Test
+    void test2() {
+        String info = "hello";
+        rabbitTemplate.convertAndSend("admin.exchange","amqp.haha",info);
+    }
+
+    @Test
+    void test3() {
+        String info = (String) rabbitTemplate.receiveAndConvert("admin.queue");
+        System.out.println(info);
+    }
+
+}
+```
+
+上面是手动接收，下面是监听功能，要使用`@EnableRabbit`注解：
+
+```java
+@Component
+public class MessageHandler {
+    @RabbitListener(queues = "admin.queue")
+    public void handler(Message message) {
+        byte[] body = message.getBody();
+        System.out.println(new String(body));
+    }
+}
+```
+
+
+
+
+
+kafka：
+
+仅仅只支持主题形式的发送订阅模型，看似比RabbitMQ的功能要少，但是由于其天生涉及出来就支持集群部署，每个节点都负责一个主题（存在多个节点负责一个主题的情况）。每个节点可划分为多个分区。【即单个节点被划分成多个分区，这些分区又被分配到各个代理去处理各个主题的事务】
+
+![image-20200522202911307](images/image-20200522202911307.png)
+
+由于完整的kafka集群需要搭建Zookeeper，且KafkaTemplate的操作与大多数Template大同小异，就不做过多的赘述了。
+
+
+
+
+
+小结：
+
+异步消息需要中间件的支持，能解耦和增大应用的扩展性
+
