@@ -929,3 +929,1289 @@ kafka：
 
 异步消息需要中间件的支持，能解耦和增大应用的扩展性
 
+
+
+
+
+
+
+## 第九章、Spring集成
+
+
+
+使用Spring Integration创建集成流。应用程序可能需要读取或发送Email、与外部API交互或者对写入数据库的数据做出反应。
+
+
+
+使用Spring Integration，要明确需要接收和发送哪些数据到应用程序之外的资源。
+
+
+
+一种常见的资源就是文件系统：
+
+通用集成的依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-integration</artifactId>
+    </dependency>
+```
+
+集成文件资源的一个插件：
+
+```xml
+<dependency>
+    <groupId>org.springframework.integration</groupId>
+    <artifactId>spring-integration-file</artifactId>
+</dependency>
+```
+
+有能力与文件系统进行交互（读取和写入）
+
+
+
+1.声明一个网关：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/5/23 10:51
+ * 为了能够接收到数据并写入集成流中
+ */
+//声明消息网关，告诉Spring Integration在运行时候自动生成接口的实现
+//指定发送到textInChannel的消息通道中
+@MessagingGateway(defaultRequestChannel = "textInChannel")
+public interface FileWriterGateway {
+    /**
+     * @param fileName 用Header注解修饰，表示传递给当前对象的值在消息头中
+     * @param data
+     */
+    void writeToFile(@Header(FileHeaders.FILENAME) String fileName, String data);
+}
+```
+
+
+
+2.集成流
+
+声明集成流有三种方式：
+
+- XML
+- Java配置
+- DSL的Java配置
+
+
+
+因为Integration有很长时间的使用XML的历史。
+
+Spring引入一个XML文件的最简单的方式：在某个注解类的头上加上`@ImportResources("classpath:/filewriter-config.xml")`
+
+
+
+使用Java配置
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/5/23 11:12
+ * 定义一个集成流
+ */
+@Configuration
+public class FileWriterIntegrationConfig {
+
+    //声明一个转换器，用来转换输入的消息
+    @Bean
+    @Transformer(inputChannel = "textInChannel",outputChannel = "fileWriterChannel")
+    public GenericTransformer<String,String> transformer(){
+        return String::toUpperCase;
+    }
+
+    //声明一个文件写入的消息处理器
+    @Bean
+    @ServiceActivator(inputChannel = "fileWriterChannel")
+    public FileWritingMessageHandler filewriter() {
+        FileWritingMessageHandler handler = new FileWritingMessageHandler(new File("D:/files"));
+        //不要期望有答复通道
+        handler.setExpectReply(false);
+        handler.setFileExistsMode(FileExistsMode.APPEND);
+        handler.setAppendNewLine(true);
+        return handler;
+
+    }
+}
+```
+
+没有必要显式的声明通道，如果不存在会自动创建，当然也可以显式声明，使用如下格式
+
+```java
+@Bean
+public MessageChannel channel() {
+    return new DirectChannel();
+}
+```
+
+
+
+
+
+3.使用Spring Integration的DSL配置（逐渐喜欢上了这种方式）
+
+仍然还是要网关信息的，网关相当于是入口函数
+
+不用单独创建多个Bean，而是使用一个bean来创建整个流
+
+使用Spring Integration的DSL：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/5/23 11:12
+ * 定义一个集成流
+ */
+@Configuration
+public class FileWriterIntegrationConfig {
+
+    @Bean
+    public IntegrationFlow flow() {
+        return IntegrationFlows.from(MessageChannels.direct("textInChannel"))
+                .<String, String>transform(new GenericTransformer<String, String>() {
+                    @Override
+                    public String transform(String s) {
+                        return s.toUpperCase();
+                    }
+                }).handle(Files.outboundAdapter(
+                        new File("D:/files")).fileExistsMode(FileExistsMode.APPEND).appendNewLine(true)
+                ).get();
+    }
+}
+```
+
+这里的File指的是文件夹。
+
+甚至不需要显示的声明channel。
+
+
+
+> 目前还不知道咋用，哈哈。项目运行起来的时候会创建指定的D：/files文件夹
+>
+> 目前猜测的工作逻辑：通过网关传入数据，流入一个名为textInChannel的channel中，再由一个转换器从textInChannel取出数据，将其中的数据大写，再经过一个文件消息写入处理器（如果用传统的Java配置类，还在这之间加入了一个filewriterchannel的channel）写入到指定路径中
+
+会用了，在测试方法中调用那个网关即可，（我们银河系真的太厉害了：玩梗）报错是无所谓的
+
+```java
+@Autowired
+FileWriterGateway fileWriterGateway;
+
+@Test
+void test() {
+    fileWriterGateway.writeToFile("haha.txt","happy birthday Java");
+}
+```
+
+~~应该是生产者消费者者模式了，通过网关发布消息到集成流，再就不管了。~~收回这这句话，看到后面channel的时候就知道了，有些channel是执行同步调用的，不是异步调用的。
+
+
+
+
+
+
+
+接下来告一段落，看一下Integration的整体的功能概述
+
+因为Spring Integration继承了大量的使用场景，无法面面俱到。只能对其进行了解如何运行的
+
+
+
+集成流是由一个或多个如下介绍的组件构成的：
+
+- 通道（channel）：将消息从一个元素传递到另一个元素
+- 过滤器（filter）：基于某些断言，条件化地允许某些消息通过流
+- 转换器（transformer）：改变消息的值或者是将消息载荷（body）从一种类型转换成另一种类型
+- 路由器（router）：将消息路由至一个或多个通道，通常会基于消息的头消息进行路由
+- 切分器（splitter）：将传入的消息切分成两个或者多个消息，再将每个消息发送至不同的信道
+- 聚合器（aggregator）：切分器的逆操作，将多个来自不同通道的多个消息合并成一个消息
+- 服务激活器（service activator）：将消息传递给某个Java方法来进行处理，并将返回值发布到输出通道上
+- 通道适配器（channel adaptor）：将通道接收到某些外部系统或传输方式，可以接受输入，也可以写入到外部系统
+- 网关（gateway）：通过接口将数据传递到集成流中
+
+
+
+在上面的文件写入集成流中，我们已经见到了一些组件，如：
+
+FileWriterGateway是一个网关，通过他，我们可以提交需要写入文件的文本
+
+
+
+
+
+组件介绍：
+
+
+
+
+
+channel、在RabbitMQ中被翻译成了信道，尽量关注英文名把
+
+是消息流动的一种方式，是链接其他组成部分的通道
+
+![image-20200523214115096](images/image-20200523214115096.png)
+
+
+
+Spring Integration提供的channel实现：
+
+> 直接参照使用DSL配置创建Channel的MessageChannels里面的方法来讲了
+
+- direct：消息只会发送到一个消费者，它会在与发送者相同的线程中调用消费者。允许事务跨通道
+- queue：会存储到一个FIFO的队列中，如果有多个消费者，只能有一个消费者接收到消息
+- executor：类似于direct，但是通过TaskExecutor实现，即实现了异步调用。不支持事务跨通道
+- rendezvous：类似于queue，但是发送者会一直阻塞通道，直到消费者接受到消息为止，即同步发送者和消费者
+- priority：类似于queue，但是不是基于FIFO的，消息会存在优先级的
+- publishSubscribe：发送到所有消费者中（如果存在多个消费者，他们都会接收到消息）
+- flux：反应式流的发布者消息通道，基于Reactor项目的Flux（第十章详细讨论）
+
+
+
+因为Java配置和DSL的channel都是自动创建的，为direct，如果要使用其他的实现，创建并注入到IOC容器当中来即可，channel名字即为bean的名字即为方法名字（如果没指定的话）。
+
+然后可以在Java配置类和DSL配置中使用如下方法指定：
+
+![image-20200523212304968](images/image-20200523212304968.png)
+
+![image-20200523212342827](images/image-20200523212342827.png)
+
+
+
+特殊的：使用queue，在消费的时候要配置一个poller
+
+![image-20200523212508236](images/image-20200523212508236.png)
+
+表示每秒轮询orderChannel的这条channel。
+
+
+
+
+
+filter、过滤器，位于channel的连接处，可以根据断言决定允许或拒绝进入流程的下一步
+
+![image-20200523214052413](images/image-20200523214052413.png)
+
+只允许偶数继续向前走：
+
+![image-20200523212840489](images/image-20200523212840489.png)
+
+![image-20200523212847599](images/image-20200523212847599.png)
+
+
+
+
+
+
+
+transformer、转换器，简单的将String转换为对应的Integer，复杂的根据ISBN转书籍的详细信息
+
+![image-20200523214041144](images/image-20200523214041144.png)
+
+
+
+都是DSL配置，上面一个是简单的转换，下面是一个稍微复杂的转换
+
+简单：
+
+![image-20200523213404355](images/image-20200523213404355.png)
+
+
+
+复杂：
+
+![image-20200523213416722](images/image-20200523213416722.png)
+
+
+
+转换器实现这个接口：
+
+```java
+@FunctionalInterface
+public interface GenericTransformer<S, T> {
+    T transform(S var1);
+}
+```
+
+
+
+
+
+router、路由器，根据路由断言，实现集成流的分支
+
+![image-20200523214025384](images/image-20200523214025384.png)
+
+
+
+在DSL风格编程中，要使用lambda表达式，可以看下route方法
+
+![image-20200523221019269](images/image-20200523221019269.png)
+
+
+
+> 突然知道为什么那么多人喜欢DSL方式了，因为直接定义流程的，上图的route中后续不同的流程都可以自己去定义，非常的贴合开发者，比自己去理复杂的bean关系方便太多了
+
+
+
+
+
+
+
+splitter、切分器，将一个消息切分成多个消息
+
+![image-20200523221237753](images/image-20200523221237753.png)
+
+
+
+两种基本的使用场景：
+
+- 消息载荷中包含相同类型条目的一个列表，我们希望将它们作为单独的消息载荷来进行处理。例如：消息中携带了一个商品列表，我们可以将其切分成多个消息，每个消息的载荷分别对应一个商品
+- 消息载荷所携带的信息尽管有所关联，但是可以拆分成两个或者更多不同类型的消息。以交给不同的子流程去处理
+
+
+
+只能将切分出来的消息传输到一条channel上，如果需要分到多条channel上，还需要在该channel结尾处加上一个router
+
+DSL配置：split配合route，中间就可以忽略掉channel了，因为会自动生成channel，不用我们管
+
+
+
+
+
+
+
+service activator、服务激活器
+
+突然感觉到了这个组件一般不是我们来写的，一般都是Spring 直接整合好的我们用就行了
+
+![image-20200523224706029](images/image-20200523224706029.png)
+
+
+
+将channel里的消息传递给一个MessageHandler的实现
+
+Spring Integration提供了多个开箱即用的MessageHandler
+
+例如我们前面使用的File Integration就是一个例子
+
+
+
+使雍Java配置的最简单的一个打印Handler：
+
+
+
+![image-20200523225237295](images/image-20200523225237295.png)
+
+DEL：![image-20200523225717783](images/image-20200523225717783.png)
+
+
+
+如果不想让Handler成为终点，可以使用GenericHandler代替MessageHandler
+
+![image-20200523225742850](images/image-20200523225742850.png)
+
+尽量不要使用GenericHandler作为流的终点，如果迫不得已的话，就需要返回null
+
+
+
+
+
+
+
+gateway、通过网关，用户完成和数据流的交互（从集成流中读取和写入数据）
+
+网关会被声明为接口，借助Spring Integration的实现即可（或许注入的时候会报错，不用管）
+
+
+
+例如一个简单的网关：传入String到集成流中，并从集成流中返回全大写的形式
+
+![image-20200523230226094](images/image-20200523230226094.png)
+
+
+
+
+
+简单的网关使用（返回传入的大写的String）：
+
+网关信息：
+
+```java
+@MessagingGateway(defaultRequestChannel = "inChannel",defaultReplyChannel = "outChannel")
+@Component
+public interface UpperCaseGateway {
+    /**
+     * 返回大写String
+     * @param in 传入参数
+     * @return 返回upper String
+     */
+    String upper(String in);
+
+}
+```
+
+集成流定义信息：
+
+```java
+@Configuration
+public class FileWriterIntegrationConfig {
+
+    @Bean
+    public IntegrationFlow flow2() {
+        return IntegrationFlows.from(MessageChannels.direct("inChannel"))
+                .transform(new GenericTransformer<String, String>() {
+                    @Override
+                    public String transform(String s) {
+                        return s.toUpperCase();
+                    }
+                })
+                .channel(MessageChannels.direct("outChannel"))
+                .get();
+    }
+}
+```
+
+
+
+非常简单的一个使用，调用的时候注入网关，调用方法即可
+
+
+
+
+
+
+
+channel adaptor、通道适配器，代表着集成流的入口和出口
+
+感觉网关也有相同的左右哦，暂时还没搞明白
+
+感觉网关像是向一个写好的集成流里面插入和读取数据，而适配器更像是集成流的一部分
+
+![image-20200524110525969](images/image-20200524110525969.png)
+
+通常会使用服务激活器去作为通道适配器，Spring一般都是集成了端点模块，用来作为通道适配器的入口和出口（而不是我们手动编写，当然也支持手动编写）
+
+![image-20200524113603388](images/image-20200524113603388.png)
+
+如果自定义的话建议将自定义的通道适配器注入到IOC中，然后再通过DSL配置的方式引入。
+
+
+
+
+
+
+
+开始时候已经看到了File集成流，现在我们看一下Email集成流，即使用Email作为端点
+
+简而言之，入站通道适配器会使用Email端点模块
+
+![image-20200524114022950](images/image-20200524114022950.png)
+
+
+
+好像实践有点问题，大体上搞明白了
+
+
+
+
+
+小结：
+
+借助Spring Integration定义流，在进入和离开应用的时候对流进行处理
+
+消息网关和通道适配器会作为集成流的入口和出口
+
+消息通道连接流的各个组件
+
+
+
+
+
+
+
+# 第三部分、反应式Spring
+
+
+
+将讨论Spring对反应式的全新支持
+
+第十章：Reactor的基础支持，是支撑Spring5反应式特征的反应式编程库
+
+第十一章：重新介绍REST API，使用Spring WebFlux
+
+第十二章：总结第三部分，实现反应式数据持久化
+
+
+
+
+
+## 第十章、理解反应式编程
+
+
+
+开发应用程序时候，可以编写两种风格的代码（反正没读懂）：
+
+- 命令式代码
+
+由一组任务组成，每次只运行一项任务，每项任务又都依赖于前面的任务，数据会按批次进行处理，在前一项任务还没有完成对当前数据批次的处理时，不能将这些数据交给下一项处理任务
+
+- 反应式代码
+
+定义了一组用来处理数据的任务，但是这些任务可以并行的执行。每项任务处理数据的一部分子集，并将结果交给处理流程中的下一项任务，同时继续处理数据的另一部分子集
+
+
+
+> 反应式编程对于某些场景来说的确是完美的，但在其他场景中可能不是那么适用
+
+
+
+绝大多数开发者都是接触的命令式编程入行的，即顺序批量执行
+
+
+
+直到遇到一个问题：执行任务的时候，特别是IO任务，发生了阻塞，在IO完成之前任何事情都做不了。坦白来说，阻塞线程是一种浪费.
+
+当然，Java支持并发，但管理多线程中的并发极具挑战，而更多线程意味着更多的复杂度
+
+==感觉这里更好理解反应式编程==
+
+相比之下，反应式编程相较于描述一组任务将依次执行的步骤，反应式编程描述了数据将会流经的管道或者流。相对于要求将数据作为一个整体进行处理，反应式流可以在数据可用时候立即进行处理。实际上，传入的数据可能是无限的。
+
+
+
+
+
+反应式流：有Netflix于2013年底开始制定的一种规范，反应式流旨在提供无阻塞回压的异步流处理标准
+
+特征：
+
+- 异步：并发执行任务，从而实现更高的可伸缩性
+- 回压：限制想要处理的数据数量，避免被过快的数据源所淹没
+
+
+
+> Java流与反应式流
+>
+> 相同点：都提供处理数据的函数式API
+>
+> 不同点：
+>
+> Java流通常是同步的，并且只能处理优先的数据集，从本质上来说，只是使用函数来对集合进行迭代的一种方式
+>
+> 反应式流支持异步处理任意大小的数据集，同样也包括无限数据集，通过回压来保证数据传输的速率的控制
+
+
+
+
+
+反应式流规范总结为四个接口：Publisher、Subscribe、Subscription和Processor。
+
+相当于Subscription是消息
+
+![image-20200524154145847](images/image-20200524154145847.png)
+
+
+
+Publisher：
+
+![image-20200524154721907](images/image-20200524154721907.png)
+
+Subscriber通过这个方法订阅Publisher
+
+
+
+Subscriber：
+
+![image-20200524155022149](images/image-20200524155022149.png)
+
+Publisher通过第一个方法将Subscription传递给Subscriber
+
+
+
+
+
+
+
+![image-20200524155306817](images/image-20200524155306817.png)
+
+Subscription可以调用request去请求Publisher发送数据，并带参数n表示愿意接收多少数据。
+
+或者调用cancel方法表明不再对数据感兴趣并取消订阅
+
+
+
+一旦Subscriber请求数据，数据就会开始流经反应式流，Publisher开始调用onNext方法提交个subscriber，如果有错误，就调用onError方法，如果数据传输完成，调用onComplete犯法告知Subscriber结束了
+
+
+
+
+
+至于processor，是Publisher和Subscriber的组合
+
+![image-20200524155918782](images/image-20200524155918782.png)
+
+当作为Subscriber时候，会接收数据并做处理。然后角色转变为Publisher，并将处理的结果发送给订阅了他的Subscriber上。
+
+
+
+上述的就是反应式流的规范，非常简单
+
+Publisher->Processor->Processor->Processor->Subscriber
+
+下面来看看反应式流的实现——Reactor项目
+
+
+
+
+
+<hr>
+
+真真切切感受到了不一样的编程模型带来的乐趣了，只需要构建好数据流经的管道，而不用去描述每一步的步骤了。
+
+
+
+使用反应式编程，我们无法判断数据会在哪个线程上执行。可能在同一个线程，也可能在不同的线程上执行
+
+
+
+转换人名为大写
+
+命令式编译模型
+
+![image-20200524171706713](images/image-20200524171706713.png)
+
+使用反应式编程
+
+![image-20200524171720571](images/image-20200524171720571.png)
+
+
+
+> Mono是Reactor两种核心类型之一，另一个类型是Flux。都实现了反应流的Publisher接口
+>
+> Flux 代表零个，一个或者多个（无限个）数据项的通道
+>
+> Mono代表一种特殊的反应式类型，针对数据项不超过一项的场景进行了优化
+
+
+
+实际上创建了三个Mono，Just创建了一个，发送到转大写的map，又创建了一个，进行字符串拼接，创建了第三个。
+
+而结果调用第三个Mono上的subscribe方法输出。
+
+
+
+
+
+环境搭建：
+
+依赖引入
+
+Reactor是Spring的基础框架，单独封装了
+
+核心框架：
+
+```xml
+<dependency>
+    <groupId>io.projectreactor</groupId>
+    <artifactId>reactor-core</artifactId>
+</dependency>
+```
+
+测试框架：
+
+```xml
+<dependency>
+    <groupId>io.projectreactor</groupId>
+    <artifactId>reactor-test</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+
+
+> 当然，需要SpringBoot来做依赖管理
+
+
+
+
+
+Mono和Flux的探索：
+
+是Reactor提供的最基础的构建块，而这两种类型所提供的操作符则是组合使用他们以构建数据流动管线的粘合剂，共有500多个操作，可以分类为：
+
+- 创建操作
+- 组合操作
+- 转换操作
+- 逻辑操作
+
+大多以Flux操作为主，Mono也会有对应的操作
+
+
+
+
+
+1.创建操作
+
+提供了很多种。
+
+调用Flux或Mono的静态just()方法即可创建Flux，使用subscribe()方法即可消费传入的数据
+
+
+
+简单测试（输出1000个 hello world）：
+
+```java
+@Test
+    void contextLoads() {
+        LinkedList<String> list = new LinkedList<>();
+        for (int i = 0; i < 10000; i++) {
+            list.add("hello world");
+        }
+        //创建Flux
+        Flux<String> flux = Flux.just(list.toArray(new String[0]));
+        //给Flux添加一个订阅者
+        flux.subscribe(new Consumer<String>() {
+            @Override
+            public void accept(String s) {
+                System.out.println(s);
+            }
+        });
+        System.out.println("主线程操作完成");
+    }
+```
+
+即可查看控制台输出了1000行helloworld
+
+:point_right:注意点：list.toArray默认会返回Object数组，不满足需求。使用`list.toArray(new T[0])`即可获取`T[]`。
+
+
+
+这样的测试不太美观，最好的办法是使用Reactor提供的StepVerifier。对于给定的Flux或者Mono，StepVerifier会订阅该反应式类型，在数据流过时候对数据进行断言，从而更准确的判断是否达到了预期
+
+
+
+```java
+@Test
+void test2() {
+    Flux<String> flux = Flux.just("hello", "world", "java");
+    flux.subscribe(System.out::println);
+    StepVerifier.create(flux)
+        .expectNext("hello")
+        .expectNext("world")
+        .expectNext("java")
+        .verifyComplete();
+}
+```
+
+如果与预期不相符（多了或是少了）都会报错，且不会影响后续输出等操作
+
+
+
+如果是上面输出helloworld的断言，如下：
+
+```java
+@Test
+void contextLoads() {
+    LinkedList<String> list = new LinkedList<>();
+    for (int i = 0; i < 10000; i++) {
+        list.add("hello world");
+    }
+    //创建Flux
+    Flux<String> flux = Flux.just(list.toArray(new String[0]));
+    //给Flux添加一个订阅者
+    flux.subscribe(new Consumer<String>() {
+        @Override
+        public void accept(String s) {
+            System.out.println(s);
+        }
+    });
+    System.out.println("主线程操作完成");
+    StepVerifier.create(flux).expectNext(list.toArray(new String[0])).verifyComplete();
+}
+```
+
+
+
+
+
+还可以根据数组创建Flux，实际上也就是我们第一种输出一千个helloworld的办法：
+
+![image-20200524193905886](images/image-20200524193905886.png)
+
+即直接显式的使用fromArray()去代替just()方法
+
+
+
+如果是要根据List、Set或者其他Iterator的实现来创建Flux，可以直接使用
+
+```java
+public static <T> Flux<T> fromIterable(Iterable<? extends T> it) {
+    return onAssembly((Flux)(new FluxIterable(it)));
+}
+```
+
+来，如输出1000行Hello world的版本：
+
+```java
+//输出1000行helloworld的简化版本
+@Test
+void test3() {
+    LinkedList<String> list = new LinkedList<>();
+    for (int i = 0; i < 1000; i++) {
+        list.add("hello world");
+    }
+    Flux.fromIterable(list).subscribe(System.out::println);
+}
+```
+
+
+
+如果是Java Stream，也可以使用Flux.fromStream(javaStream)来实现，一样的。
+
+
+
+如果要在Flux中存储n到m的连续整数，如12345，可以使用`Flux.range(1,5)`，可以自己去测试下
+
+
+
+
+
+如果需要创建一个每隔固定时间发送一个递增数据的Flux
+
+
+
+```java
+@Test
+void test5() {
+    Flux<Long> flux = Flux.interval(Duration.ofSeconds(1)).take(5);
+    flux.subscribe(System.out::println);
+    StepVerifier.create(flux)
+        .expectNext(0L)
+        .expectNext(1L)
+        .expectNext(2L)
+        .expectNext(3L)
+        .expectNext(4L)
+        .verifyComplete();
+}
+```
+
+可以很明显的从控制台看到01234的输出，隔着一秒输出一个，如果interval没有使用take指定最大值，会一直运行下去
+
+
+
+
+
+<hr>
+==关于Flux和Mono的任何操作都会创建一个新的Flux出来==
+
+上面研究完对单个Flux和Mono的操作。
+
+下面了解下如何组合和拆分Flux和Mono
+
+![image-20200524195734507](images/image-20200524195734507.png)
+
+
+
+```java
+@Test
+void test6() {
+    String[] flux1_ = {"霞","卡莎","金克斯"};
+    String[] flux2_ = {"卡特","卡萨丁","维克托"};
+    Flux<String> flux1 = Flux.just(flux1_)
+        .delayElements(Duration.ofMillis(500));
+    Flux<String> flux2 = Flux.just(flux2_)
+        .delaySubscription(Duration.ofMillis(250))
+        .delayElements(Duration.ofMillis(500));
+
+
+    //合并操作
+    Flux<String> flux = flux1.mergeWith(flux2);
+    //这里就是异步操作了，使用反应式编程就别去管同步异步了
+    flux.subscribe(System.out::println);
+
+    StepVerifier.create(flux)
+        .expectNext("霞")
+        .expectNext("卡特")
+        .expectNext("卡莎")
+        .expectNext("卡萨丁")
+        .expectNext("金克斯")
+        .expectNext("维克托")
+        .verifyComplete();
+}
+```
+
+delayElements：每隔多少时间发布一个条目
+
+delaySubscription：在被订阅后经过多少时间开始发布条目
+
+
+
+
+
+
+
+将两个Flux中的对象压缩在一起（按照位置压缩，不会考虑发布时间的，如果A发布了对象，就会等B发布对象），形成一个条目，发送到新的Flux中
+
+![image-20200524202330576](images/image-20200524202330576.png)
+
+```java
+@Test
+void test7() {
+    String[] flux1_ = {"霞","卡莎","金克斯"};
+    String[] flux2_ = {"卡特","卡萨丁","维克托"};
+    Flux<String> flux1 = Flux.just(flux1_);
+    Flux<String> flux2 = Flux.just(flux2_);
+
+    //压缩操作
+    Flux<Tuple2<String, String>> flux = Flux.zip(flux1, flux2);
+    flux.subscribe(System.out::println);
+
+    StepVerifier.create(flux)
+        .expectNextMatches(p-> Objects.equals("霞",p.getT1()) && Objects.equals("卡特",p.getT2()))
+        .expectNextMatches(p-> Objects.equals("卡莎",p.getT1()) && Objects.equals("卡萨丁",p.getT2()))
+        .expectNextMatches(p-> Objects.equals("金克斯",p.getT1()) && Objects.equals("维克托",p.getT2()))
+        .verifyComplete();
+}
+```
+
+
+
+
+
+也可以使用zip方法提供的一个合并函数
+
+![image-20200524202812167](images/image-20200524202812167.png)
+
+```java
+@Test
+void test8() {
+    String[] flux1_ = {"霞", "卡莎", "金克斯"};
+    String[] flux2_ = {"卡特", "卡萨丁", "维克托"};
+    Flux<String> flux1 = Flux.just(flux1_);
+    Flux<String> flux2 = Flux.just(flux2_);
+
+    //压缩操作，使用合并函数来处理
+    Flux<String> flux = Flux.zip(flux1, flux2, (a1, a2) -> a1 + " vs " + a2);
+
+    StepVerifier.create(flux)
+        .expectNext("霞 vs 卡特")
+        .expectNext("卡莎 vs 卡萨丁")
+        .expectNext("金克斯 vs 维克托")
+        .verifyComplete();
+}
+```
+
+也可以使用显式声明内部类来代替lambda表达式
+
+
+
+
+
+如果有两个flux需要合并（根据发布时间来合并，不是压缩），有这样的需求：选定发布第一个条目的Flux，并一直发布此Flux的后续条目，忽略另一个Flux
+
+```java
+@Test
+void test9() {
+    String[] flux1_ = {"霞", "卡莎", "金克斯"};
+    String[] flux2_ = {"卡特", "卡萨丁", "维克托"};
+    Flux<String> flux1 = Flux.just(flux1_);
+    Flux<String> flux2 = Flux.just(flux2_)
+        .delayElements(Duration.ofSeconds(1));
+
+    //选定第一个发布条目的Flux，忽略另一个Flux
+    Flux<String> flux = Flux.first(flux1, flux2);
+
+    StepVerifier.create(flux)
+        .expectNext("霞")
+        .expectNext("卡莎")
+        .expectNext("金克斯")
+        .verifyComplete();
+}
+```
+
+真的就直接忽略了Flux2，项目秒运行完，都没等flux2发布完
+
+
+
+
+
+
+
+转换和过滤反应式流
+
+
+
+过滤反应式流：
+
+![image-20200524222728602](images/image-20200524222728602.png)
+
+```java
+@Test
+void test10() {
+    String[] flux_ = {"霞", "卡莎", "金克斯","卡特", "卡萨丁", "维克托"};
+    Flux<String> flux = Flux.just(flux_);
+    Flux<String> skip = flux.skip(3);
+    StepVerifier.create(skip)
+        .expectNext("卡特")
+        .expectNext("卡萨丁")
+        .expectNext("维克托")
+        .verifyComplete();
+}
+```
+
+
+
+
+
+指定时间过滤
+
+![image-20200524223238839](images/image-20200524223238839.png)
+
+```java
+@Test
+void test11() {
+    String[] flux_ = {"霞", "卡莎", "金克斯","卡特", "卡萨丁", "维克托"};
+    Flux<String> flux = Flux.just(flux_).delayElements(Duration.ofSeconds(1));
+    Flux<String> skip = flux.skip(Duration.ofSeconds(4));
+    StepVerifier.create(skip)
+        .expectNext("卡特")
+        .expectNext("卡萨丁")
+        .expectNext("维克托")
+        .verifyComplete();
+}
+```
+
+
+
+
+
+与Skip相反的操作——take，发布指定数量的条目，然后取消订阅，用法基本和Skip一样
+
+```java
+@Test
+void test12() {
+    String[] flux_ = {"霞", "卡莎", "金克斯","卡特", "卡萨丁", "维克托"};
+    Flux<String> flux = Flux.just(flux_).take(3);
+    StepVerifier.create(flux)
+        .expectNext("霞")
+        .expectNext("卡莎")
+        .expectNext("金克斯")
+        .verifyComplete();
+}
+
+@Test
+void test13() {
+    String[] flux_ = {"霞", "卡莎", "金克斯","卡特", "卡萨丁", "维克托"};
+    Flux<String> flux = Flux.just(flux_).delayElements(Duration.ofSeconds(1)).take(Duration.ofMillis(3500));
+    StepVerifier.create(flux)
+        .expectNext("霞")
+        .expectNext("卡莎")
+        .expectNext("金克斯")
+        .verifyComplete();
+}
+```
+
+Skip和take都是基于时间或者数量的过滤器。
+
+Flux更通用的过滤操作是filter操作，使用起来也很简单
+
+```java
+@Test
+void test14() {
+    String[] flux_ = {"霞", "卡莎", "金克斯","卡特", "卡萨丁", "维克托"};
+    Flux<String> flux = Flux.just(flux_).filter(new Predicate<String>() {
+        @Override
+        public boolean test(String s) {
+            return s.length() > 2;
+        }
+    });
+    StepVerifier.create(flux)
+        .expectNext("金克斯")
+        .expectNext("卡萨丁")
+        .expectNext("维克托")
+        .verifyComplete();
+}
+```
+
+distinct操作过滤重复的消息
+
+![image-20200524225016097](images/image-20200524225016097.png)
+
+```java
+    @Test
+    void test15() {
+        String[] flux_ = {"霞", "霞", "卡莎", "金克斯", "卡特", "卡萨丁", "维克托"};
+        String[] flux2_ = {"霞", "卡莎", "金克斯", "卡特", "卡萨丁", "维克托"};
+        Flux<String> flux = Flux.just(flux_).distinct();
+        StepVerifier.create(flux)
+                .expectNext(flux2_)
+                .verifyComplete();
+    }
+```
+
+
+
+
+
+映射反应式数据
+
+主要通过map和flatmap
+
+![image-20200524225434890](images/image-20200524225434890.png)
+
+```java
+@Test
+void test16() {
+    String[] flux_ = {"1", "2", "3", "4", "5", "6", "7"};
+    Flux<Integer> flux = Flux.just(flux_).distinct().map(s -> Integer.parseInt(s));
+    StepVerifier.FirstStep<Integer> step = StepVerifier.create(flux);
+    for (int i = 1; i < 8; i++) {
+        step.expectNext(i);
+    }
+    step.verifyComplete();
+
+}
+```
+
+map操作是同步执行的
+
+
+
+如果想要异步的转换，使用flatmap（使用有门槛），转换过程中会形成Flux
+
+![image-20200524230023681](images/image-20200524230023681.png)
+
+
+
+使用异步调用
+
+```java
+@Test
+void test17() {
+    String[] flux_ = {"1", "2", "3", "4", "5", "6", "7"};
+    Flux<Integer> flux = Flux.just(flux_)
+        .flatMap(new Function<String, Publisher<Integer>>() {
+            @Override
+            public Publisher<Integer> apply(String s) {
+                Mono<Integer> mono = Mono.just(s).map(s1 -> Integer.parseInt(s1)).subscribeOn(Schedulers.parallel());
+                return mono;
+            }
+        });
+    StepVerifier.FirstStep<Integer> step = StepVerifier.create(flux);
+    List<Integer> integers = Arrays.asList(1, 2, 3, 4, 5, 6, 7);
+    for (int i = 1; i < 8; i++) {
+        step.expectNextMatches(integer -> integers.contains(integer));
+    }
+    step.verifyComplete();
+}
+```
+
+重点代码：第八行的subscribeOn(Schedulers.parallel()声明可以并行运行，要不然和直接调用map没区别了。Schedulers可以指定的并发模型：
+
+![image-20200524231231228](images/image-20200524231231228.png)
+
+使用异步调用测试的时候一定注意，不会按照顺序返回的，直接使用集合的contains方法来验证就好了。
+
+
+
+
+
+
+
+在流上缓存数据，将缓存的数据打包成一组发布到新的Flux上面去
+
+![image-20200524231401935](images/image-20200524231401935.png)
+
+```java
+@Test
+void test18() {
+    String[] flux_ = {"霞", "卡莎", "金克斯", "卡特", "卡萨丁", "维克托"};
+    Flux<List<String>> flux = Flux.just(flux_).buffer(3);
+    StepVerifier.create(flux)
+        .expectNext(Arrays.asList("霞", "卡莎", "金克斯"))
+        .expectNext(Arrays.asList("卡特", "卡萨丁", "维克托"))
+        .verifyComplete();
+}
+```
+
+
+
+
+
+如果需要将Flux发布的所有数据项收集到一个List中，可以使用不指定参数的buffer。
+
+当然也可以使用CollectList操作实现相同的功能，不过此时会返回一个Mono，效率应该高一点。
+
+![image-20200524232245743](images/image-20200524232245743.png)
+
+```java
+@Test
+void test19() {
+    String[] flux_ = {"霞", "卡莎", "金克斯", "卡特", "卡萨丁", "维克托"};
+    Mono<List<String>> list = Flux.just(flux_).collectList();
+    StepVerifier.create(list)
+        .expectNext(Arrays.asList(flux_))
+        .verifyComplete();
+}
+```
+
+
+
+
+
+更有趣的是，使用collectMap来产生一个key由Function计算出来的，value为原来条目
+
+```java
+@Test
+void test20() {
+    String[] flux_ = {"霞", "卡莎", "金克斯"};
+    Mono<Map<Integer, String>> mono = Flux.just(flux_).collectMap(s -> s.length());
+    StepVerifier.create(mono)
+        .expectNextMatches(map -> map.size()==3 && map.get(1).equals("霞"))
+        .verifyComplete();
+
+}
+```
+
+
+
+
+
+有时候我们需要知道Flux上的条目是否满足要求（无论是全部满足还是部分满足），不可能使用filter全部过滤出来吧，消耗太大了
+
+![image-20200524233543358](images/image-20200524233543358.png)
+
+使用all或者any来保证满足条件
+
+```java
+@Test
+void test21() {
+    String[] flux_ = {"霞", "卡莎", "金克斯"};
+    Flux<String> flux = Flux.just(flux_);
+    Mono<Boolean> mono1 = flux.all(s -> s.contains("霞"));
+    Mono<Boolean> mono2 = flux.any(s -> s.contains("霞"));
+    StepVerifier.create(mono1).expectNext(false).verifyComplete();
+    StepVerifier.create(mono2).expectNext(true).verifyComplete();
+}
+```
+
+
+
+
+
+==数据是不会因为被消费而消除的，例如Flux被拿走了3个条目，订阅Flux的仍然可以获取到全部的条目==
+
+
+
+
+
+小结：
+
+反应式流的基本概念和规范
+
+Reactor对反应流的规范的抽象
