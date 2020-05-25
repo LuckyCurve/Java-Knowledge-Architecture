@@ -2215,3 +2215,261 @@ void test21() {
 反应式流的基本概念和规范
 
 Reactor对反应流的规范的抽象
+
+
+
+
+
+
+
+## 第十一章、开发反应式API
+
+
+
+使用Spring WebFlux来编写程序
+
+
+
+
+
+传统的基于Servlet的Web框架，如Spring MVC，本质上都是阻塞和多线程的。每个连接都会使用一个线程，在处理请求的时候，会在线程池中拉取一个工作者线程来对请求进行处理，同时，请求线程是阻塞的，直到工作者线程完成为止。（主要的性能消耗：从线程池中拉取线程，将线程还回到线程池中）
+
+
+
+带来的后果：在大量请求下无法有效的拓展。以前流量少或许还无所谓，现在消费Web应用的客户端越来越多，可拓展性比以往任何时候都更加重要
+
+
+
+异步的Web框架能够以更少的线程来获取更高的可拓展性，通常只需要与CPU核心数相同的线程，通过使用所谓的事件轮询机制，能够使用一个线程去处理多个请求，每次连接的成本更低
+
+
+
+![image-20200525102424195](images/image-20200525102424195.png)
+
+
+
+Spring5引入了一个非阻塞的，异步的Web框架，很大程度上是基于Reactor的。就是Spring WebFlux
+
+![image-20200525102700287](images/image-20200525102700287.png)
+
+
+
+左侧是Spring MVC技术栈，在Spring2.5时候引入的。是建立在Servlet API之上的，因此需要Tomcat等Servlet容器才能执行
+
+
+
+右侧的Spring WebFlux不绑定Servlet API，是构建在Reactive HTTP API之上的，但Reactive HTTP API与Servlet API非常类似，但不会与Servlet API有耦合，所以底层不一定要是Servlet容器，可以是任意的非阻塞Web容器，如Netty，Tomcat，Jetty或任意Servlet3.1以上的容器
+
+
+
+当然，左上角的注解是共用的
+
+
+
+右上角的方框代表另一种编程规范，使用函数式编程规范来定义控制器，而不是使用注解
+
+
+
+
+
+开始使用，导入依赖
+
+选中Spring Reactive Web，即
+
+```java
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webflux</artifactId>
+</dependency>
+```
+
+![image-20200525104840422](images/image-20200525104840422.png)
+
+直接启动Application.class，会发现WebFlux默认使用的是netty而不是Tomcat
+
+
+
+> Netty是一个异步的，事件驱动的服务器，非常适合Spring WebFlux这类反应式的Web框架
+
+
+
+还有不同的是Spring WebFlux应该接收和返回Mono和Flux这类反应式类型，而不是传统的POJO对象
+
+
+
+理想情况下的反应式流：
+
+![image-20200525105547147](images/image-20200525105547147.png)
+
+
+
+说白了就是在原来的POJO对象外面加一个FLux或者是Mono即可
+
+
+
+使用Flux返回对象JSON格式，外层会默认嵌套一个数组
+
+使用Mono就直接返回对象本身了。
+
+
+
+和使用 Spring MVC的感觉差不多，只不过传输的对象更像是使用了Flux或者Mono修饰了
+
+
+
+用起来确实有点爽
+
+
+
+
+
+下面了解Spring 5 的新函数式编程风格创建反应式API（好像是为了取代注解模式）
+
+
+
+Spring MVC基于注解的编程模型的缺陷：
+
+- 注解的定义和实现有区别
+- 有学习压力
+
+感觉都是强扯淡的理由。。。就是为了引出函数式编程模型
+
+主要是为了在不使用注解的情况下将请求映射到处理器代码上
+
+感觉很麻烦，是使用一个配置类来实现请求映射模型的
+
+
+
+
+
+下面到了测试反应式controller
+
+更喜欢直接测试Service层，就使用上面的Reactor提供的测试工具。然后Controller使用Postman测试下就好了。
+
+
+
+
+
+在程序内部消费反应式的REST API
+
+如果是非反应式的REST API，使用Spring3.0提供的RestTemplate就可以了。但是反应式API怎么消费呢，其实前面已经提到过了，使用Spring 5提供的WebClient，使用起来与RestTemplate有很大的不同。RestTemplate会有多个方法处理不同类型的请求，而WebClient不同
+
+通用使用模式：
+
+- 创建WebClient实例
+- 指定请求的HTTP方法
+- 指定URL和头信息
+- 提交请求
+- 消费响应
+
+
+
+Demo：
+
+要消费的API：
+
+```java
+@RestController
+@RequestMapping("/hello")
+public class HelloController {
+    /**
+     * //GetMapping这里最好不要使用/了
+     * 如果这时候再使用/的话，就需要访问/hello/才可以
+     */
+    @GetMapping("/")
+    public Mono<Data> hello() {
+        Data data = Data.builder().id(1).username("LuckyCurve").build();
+        return Mono.just(data);
+    }
+}
+```
+
+消费过程（加上了结果验证）：
+
+```java
+@Test
+void contextLoads() {
+    //就消费了一个响应式Rest API了
+    Mono<Data> mono = WebClient.create("http://localhost:8080").get()
+        .uri("/hello/").retrieve().bodyToMono(Data.class);
+    Data data = Data.builder().id(1).username("LuckyCurve").build();
+    StepVerifier.create(mono)
+        .expectNext(data)
+        .verifyComplete();
+}
+```
+
+也可以直接在uri中指定成`http://localhost:8080/hello/`，结尾一定要带上/
+
+retrieve会执行请求，最后调用bodyToMono/Flux取出数据（如果最后没有使用数据的话，即使是请求失败也不会出现任何异常）
+
+
+
+如果是对一个站点进行频繁的访问，可以：
+
+```java
+@Bean
+public WebClient webClient() {
+    return WebClient.create("http://localhost:8080");
+}
+```
+
+然后在需要的地方`@Autowired`，再按照上述方法使用
+
+
+
+在订阅之前指定timeout即可
+
+![image-20200525162523219](images/image-20200525162523219.png)
+
+```java
+@Test
+void test() {
+    LinkedList<Data> list = new LinkedList<>();
+    for (int i = 0; i < 5; i++) {
+        Data data = Data.builder().id(i).username("LuckyCurve").build();
+        list.add(data);
+    }
+    Flux<Data> flux = Flux.just(list.toArray(new Data[0]));
+
+    Mono<List> mono = webClient.post().uri("/hello/post").body(flux, Data.class)
+        .retrieve().bodyToMono(List.class);
+
+    mono.subscribe(new Consumer<List>() {
+        @Override
+        public void accept(List list) {
+            System.out.println(list);
+        }
+    });
+}
+```
+
+也可以这样（不想构建Flux或者Mono）：`Mono<List> mono = webClient.post().uri("/hello/post").bodyValue(list)
+        .retrieve().bodyToMono(List.class);`
+
+
+
+
+
+小结：
+
+Spring WebFlux提供了一个反应式的Web框架
+
+使用WebClient进行消费反应式的REST API
+
+
+
+
+
+
+
+## 第十二章、反应式持久化数据
+
+
+
+是讲述的Spring Data对反应式编程的支持
+
+由于实际中（仅限国内）还是普遍使用Mybatis的，这部分就先跳过了，为了保存章节的完整性，在这里列出。
+
+
+
