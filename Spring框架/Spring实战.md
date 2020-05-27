@@ -2473,3 +2473,902 @@ Spring WebFlux提供了一个反应式的Web框架
 
 
 
+
+
+
+
+
+
+
+
+# 第四部分、云原生Spring
+
+
+
+拆分单体应用模型，介绍Spring Cloud和微服务的开发
+
+十三章讨论服务发现
+
+十四章讨论配置管理
+
+十五章讨论断路器模式，让服务面对失败更有弹性
+
+
+
+
+
+
+
+
+
+
+
+## 第十三章、服务注册与发现
+
+
+
+> 内容简介：
+>
+> - 思考微服务（感觉已经被国内教程洗脑了，看下作者的思路）
+> - 创建服务注册中心
+> - 注册和发现服务
+
+
+
+具体的讲，你会看到Spring Cloud套件中一些最有用的组件
+
+
+
+
+
+我们现在开发的大都是单体应用程序，很多功能集成在一块儿
+
+
+
+单体应用的弊端：
+
+- 难以理解
+- 难以测试
+- 容易出现库冲突
+- 较于低效：如果想要拓展，只有将整个应用程序部署到更多的服务器上，即使应用中使用很少的部分也会部署多地
+
+
+
+微服务的优势：
+
+- 微服务易于理解：每个功能就是一个模块
+- 易于测试
+- 库不兼容的情况少
+- 能够独立拓展
+- 可以使用不同的语言平台，实际上使用Java编写的微程序和使用C#编写的微程序进行协同是完全合理的
+
+
+
+但是也有缺陷：如网络延迟（很多次的远程调用会积累并降低应用的速度）
+
+
+
+应该随着应用规模的增大再考虑微服务，比较单体架构已经存在了这么多年了，肯定有他的优势的地方
+
+
+
+
+
+
+
+搭建服务注册中心
+
+Spring Cloud是一个非常大的伞形项目，由多个独立的子项目构成
+
+有一个子项目叫做Spring Cloud Netflix、他按照Spring的编码风格重新提供了Netflix的多个组件，这些组件就包括了Netflix的服务注册中心Eureka
+
+>  据说Eureka最早是亚里士多德在浴缸里发现浮力时候发出的欢呼，因此就语义而言很适合做注册中心
+
+
+
+Eureka会担任所有服务的注册中心，目的是让其他的服务能够相互发现
+
+
+
+模型图（Other Service想要消费Some Service）：
+
+![image-20200526161458895](images/image-20200526161458895.png)
+
+没有使用RestTemplate那种硬编码去消费，而是根据名字去Eureka查找some service，Eureka会返回所有已经注册了的some service实例
+
+
+
+other service会选择哪一个someservice进行消费呢？为了避免一个some service被频繁的消费，需要做负载均衡。此时NetFlix的另一个项目Ribbon的用武之地了
+
+
+
+使用Ribbon代替other service做出选择使用哪一个some service
+
+
+
+Ribbon是一个客户端负载均衡器，不在Eureka上，相当于是去中心化了
+
+那对比与中心化的负载均衡器，Ribbon又有什么优势呢？
+
+主要可以根据当前客户端定制负载均衡算法，而不用所有的服务都是用相同的负载均衡算法
+
+
+
+
+
+先创建注册中心，项目命名为service-registry，只需要一个依赖，导入server哈：
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+</dependency>
+```
+
+会自动添加版本管理信息，如下：
+
+```java
+<properties>
+    <java.version>1.8</java.version>
+    <spring-cloud.version>Hoxton.SR4</spring-cloud.version>
+</properties>
+    
+......
+    
+    
+<dependencyManagement>
+    <dependencies>
+    	<dependency>
+    		<groupId>org.springframework.cloud</groupId>
+    		<artifactId>spring-cloud-dependencies</artifactId>
+    		<version>${spring-cloud.version}</version>
+	    	<type>pom</type>
+   			<scope>import</scope>
+	    </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+
+
+使用注解开启Eureka服务器
+
+```java
+@SpringBootApplication
+@EnableEurekaServer
+public class ServiceRegistryApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ServiceRegistryApplication.class, args);
+    }
+
+}
+
+```
+
+此时启动项目，访问http://localhost:8080/即可看到（不用引入web模块的，先前还一直以为有依赖关系）
+
+![image-20200526164352011](images/image-20200526164352011.png)
+
+
+
+可以查看服务注册情况
+
+由于还没有实例来注册，显示No instances available
+
+
+
+此时控制台每隔三十秒就打印一个异常，不用担心，Eureka正在运行，添加一些配置来消除这些异常
+
+
+
+Eureka相信服务器数量较多会更安全的理念，因此Eureka的默认行为是与其他Eureka服务器建立关联，尝试获取其他Eureka服务器的服务注册中心，甚至还会将自身注册为其他Eureka服务器的服务
+
+在生产环境中时非常有价值的，但在开发环境中只需要一个单独的Eureka就足够了。上述的异常就是：Eureka服务器会每隔三十秒就尝试与另外的Eureka服务器建立关系，以注册自己并共享注册中心的信息。在日志中出现的异常就是抱怨自己处于孤独状态
+
+```
+com.netflix.discovery.shared.transport.TransportException: Cannot execute request on any known server
+```
+
+
+
+配置文件：
+
+```yaml
+eureka:
+  instance:
+#   告诉Eureka他正在运行在哪个主机上，是可选的，没输入的话Eureka会通过获取环境变量来得知
+    hostname: localhost
+  client:
+#    是否从其他的Eureka实例获取注册信息，默认是true，报错的来源，但在生产环境下可以保证高可用
+    fetch-registry: false
+#    Eureka本身也是个微服务，是否将自身注册进eureka，默认是true
+    register-with-eureka: false
+#    包含了zone名称和该zone下一个或多个Eureka服务器之间的映射关系
+#    defaultZone是一个特殊的key，如果没有指定所需的zone，就会使用这个zone，
+#    因为现在只有一个Eureka，映射到默认zone的URL就是服务器本身，使用SpEL来获取本身URL
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka
+
+```
+
+
+
+通常将端口号设置成8761防止默认端口被占用
+
+
+
+等待90s，刷新页面：
+
+![image-20200526171327199](images/image-20200526171327199.png)
+
+产生原因：
+
+依然是Eureka对生产环境的优化
+
+Eureka会对已经注册上来的实例每隔三十秒发送一次注册更新的请求，如果Eureka在三个周期内没有接受到服务器的响应，就会注销服务。
+
+在本例中：Eureka假定出现了网络问题，进入自我保护模式，所以不会注销服务实例
+
+在生产环境中自我保护模式是很好的，可以保证不会因为Eureka网络问题而导致没有得到回应，从而所有还在活跃的服务被注销了，但在开发环境中可以禁用自我保护模式
+
+```yaml
+eureka:
+  server:
+    enable-self-preservation: false
+```
+
+> 在开发环境中以上配置是极其有用的
+
+但是会得到另一条异常：
+
+![image-20200526185415336](images/image-20200526185415336.png)
+
+不就毫无意义了吗？不是这样的
+
+在开发环境中禁止自我保护是非常有用的。因为在开发环境下，我们会频繁的启动或关闭服务实例，如果是处于自我保护模式下的Eureka，会在关闭服务时候将已停止的注册项记录保留下来。这样当另一个服务访问已经不可用的服务时就会产生问题，禁用自动保护模式可以防止这个问题，但是代价就是看到上面的红字提醒（建议在开发时候关闭，在线上运行的时候必须开启，保证可用性）
+
+多个Eureka之间的协同还没有做，以后有时间可以学习下
+
+关于自我保护机制，参考：https://www.cnblogs.com/xishuai/p/spring-cloud-eureka-safe.html
+
+
+
+
+
+注册和发现服务：
+
+创建名字为ingredient-service的项目，引入Eureka client的starter
+
+![image-20200526190959611](images/image-20200526190959611.png)
+
+依赖详细信息（依然携带Spring Cloud的版本号）：
+
+```xml
+<properties>
+    <java.version>1.8</java.version>
+    <spring-cloud.version>Hoxton.SR4</spring-cloud.version>
+</properties>
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+    </dependency>
+</dependencies>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-dependencies</artifactId>
+            <version>${spring-cloud.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+里面就包括了Eureka的客户端库以及Ribbon负载均衡器
+
+当使用默认配置启动的时候，会默认尝试去连接本地8761端口号的Eureka Service（如果在尝试几次没连接上之后，就无法启动），默认的Application Name为**UNKNOWN**
+
+实际上Client还要加上
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+```
+
+要不然就虽然不会报错但是会直接shutdown掉
+
+`Completed shut down of DiscoveryClient`
+
+![image-20200526192103603](images/image-20200526192103603.png)
+
+
+
+
+
+配置文件：
+
+```yaml
+spring:
+  application:
+#    设置Eureka中服务的名字（注册名），默认是UNKNOWN
+    name: ingredient-service
+
+server:
+#  避免潜在的端口冲突
+  port: 0
+
+eureka:
+  client:
+    service-url:
+#      代替使用默认读取本地的配置，指定多个，如果因为某种原因失败，他会使用下一个服务器进行注册
+#      最终，如果出现故障的服务器重新恢复在线状态，他将会从对等的端上复制注册信息
+      defaultZone: http://192.168.56.1:8761/eureka,http://www.luckycurve.cn/eureka
+```
+
+
+
+
+
+
+
+如何消费服务呢
+
+有两种方式消费从Eureka中查找到的服务：
+
+- 支持负载均衡的RestTemplate
+- Feign生成的客户端接口
+
+选择哪种方式完全取决于个人喜好
+
+
+
+1.RestTemplate：
+
+只需要在注入RestTemplate的时候加上`@LoadBalanced`即可
+
+```java
+@Bean
+@LoadBalanced
+public RestTemplate() {
+    return new RestTemplate();
+}
+```
+
+
+
+> @LoadBalanced注解的作用：
+>
+> - 告诉Spring Cloud，这个RestTemplate要通过Ribbon来查找服务
+> - 也相当于是有了一个限定注入符（qualifier），如果存在多个RestTemplate，可以指定注入有负载均衡的那一个
+>
+> ![image-20200526201948246](images/image-20200526201948246.png)
+
+
+
+
+
+在调用的时候就不用指定具体的主机名和端口号了，在主机名和端口号的位置上使用服务名，即提供服务的`spring.application.name`
+
+
+
+即使是来消费的Service也需要以Eureka Client的方式注册到Eureka里面去。
+
+
+
+
+
+小结：
+
+借助自动配置和`@EnableEurekaServer`注解，很容易创建出服务注册中心
+
+微服务可以使用名字将它们自身注册到Eureka中，这样可以被其他服务发现
+
+在客户端，作为客户端负载均衡器，Ribbon能够根据名称查找服务并选择实例
+
+无论是作为服务消费者还是服务提供者，都需要注册进Eureka中，因为只有在产生消费的时候才会有明确的消费者和提供者之分
+
+
+
+
+
+## 第十四章、配置管理
+
+
+
+借助配置服务器，我们可以在一个地方管理所有的应用配置，避免任何重复
+
+
+
+简单思考下单独配置微服务的问题，以及为什么中心化的配置会更好
+
+- 配置不需要和应用程序代码一起打包和部署。这样在配置变化的情况下就不需要重启应用了
+- 对多个微服务，如果属性出现变更，那么这些变更只需要在一个地方执行一次就可以作用到所有的微服务上了
+- 敏感配置可以进行加密，并且能够与应用程序代码分开维护
+
+
+
+
+
+创建配置服务器
+
+Spring Cloud Config Server提供支持。与Eureka类似，可以将Config Server看做是另一个微服务，为应用中的其他服务提供配置数据
+
+Config Server暴露REST API供消费
+
+运行原理如图：
+
+![image-20200526211430593](images/image-20200526211430593.png)
+
+如果是私密数据，可以使用Gogs等客户端搭建在自己的服务器上
+
+
+
+如果要保证数据完全私密，可以使用右下角提出的HashiCorp Vault
+
+
+
+
+
+创建Config Server
+
+```xml
+<properties>
+    <java.version>1.8</java.version>
+    <spring-cloud.version>Hoxton.SR4</spring-cloud.version>
+</properties>
+
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-config-server</artifactId>
+    </dependency>
+</dependencies>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-dependencies</artifactId>
+            <version>${spring-cloud.version}</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+
+
+开启自动配置
+
+```java
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigServerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigServerApplication.class, args);
+    }
+
+}
+```
+
+
+
+然后即可访问如下URL：
+
+![image-20200527102046032](images/image-20200527102046032.png)
+
+
+
+master可以不带，默认就是master
+
+
+
+
+
+在Gitee上面添加配置文件application.yaml
+
+```yaml
+server:
+    port: 0
+
+eureka:
+    client:
+        service-url:
+            defaultZone: http://192.168.56.1:8761/eureka
+```
+
+再访问localhost:8888/application/default
+
+可以看到如下页面：
+
+![image-20200527103405413](images/image-20200527103405413.png)
+
+配置已经出现在了source之中
+
+
+
+例如有了新的需求：不将application.yaml放在根目录下，而是放在config文件夹下
+
+则需要更改config-server的配置文件为:
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          #          指定配置存放路径，先去gitee上创建一个空仓库，以后填充
+          uri: https://gitee.com/LuckyCurve/cloud-config.git
+          search-paths: config
+```
+
+如果有多个路径，用，隔开即可
+
+也可以使用通配符，如：
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          #          指定配置存放路径，先去gitee上创建一个空仓库，以后填充
+          uri: https://gitee.com/LuckyCurve/cloud-config.git
+          search-paths: config,more*
+```
+
+匹配/comfig和所有以more开头的子目录的配置
+
+
+
+
+
+需求变换：不想使用默认的master分支：
+
+创建了dev分支，并修改配置文件如下
+
+```yaml
+server:
+    port: 0
+
+spring:
+    application:
+        name: dev
+
+# 这是dev分支独有的内容
+eureka:
+    client:
+        service-url:
+            defaultZone: http://192.168.56.1:8761/eureka
+```
+
+增加了一行注释，但怕读不出来，于是修改了applicationname
+
+> 但一般好像不会再中心化配置中加入applicationname，这里就当是演示了。
+>
+> 一般都在消费共享配置的yaml中提供config server的地址和applicationname
+
+
+
+给config-server配置文件增加：
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          default-label: dev
+```
+
+其实直接修改访问config-server的url即可
+
+这里的修改其实就相当于把http://localhost:8888/application/default/master的默认是/master换成了/dev
+
+
+
+
+
+消费配置：
+
+
+
+依赖引入：
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+```
+
+==任何的服务消费者都必须引入web模块，因为要向REST API发起请求==
+
+
+
+配置文件：
+
+```yaml
+spring:
+  application:
+    name: dev initialize5555
+
+  cloud:
+    config:
+#      默认是localhost:8888
+      uri: http://192.168.56.1:8888
+
+```
+
+
+
+测试：
+
+```java
+@Value("${spring.application.name}")
+String info;
+
+@Test
+void contextLoads() {
+    System.out.println(info);
+}
+```
+
+> 发现是config-server提供的配置，而不是本地的配置
+
+
+
+可以将Eureka的配置直接放置在config-server里面，以免每个微服务都需要去配置Eureka的注册信息。
+
+
+
+
+
+
+
+提供特定应用的属性，因为有些属性可能是某个应用程序私有的，不需要或者不应该与其他应用共享
+
+是通过应用的application name来选定特定的配置，如在本地定义了application name 为user-service，就会去接收user-service.yaml的配置文件
+
+不管服务应用的名称是什么，都会接收application.yaml的配置文件，不过优先级相比于`application.name`的优先级较低
+
+
+
+搞了几个小时，算是采坑之旅吧  、、、
+
+总结：优先级：${application.name}-${profiles}>${application.name}>application
+
+这里的application.name 我们配置的`spring.application.name`
+
+:warning:：但是这里的profile却是：`spring.cloud.config.profile`，不是我们熟悉的spring.profiles.active，巨坑，搞了好久。
+
+
+
+最终：
+
+
+
+1、存放在git仓库的数据，用于结果测试（都标注了名字）：
+
+```yaml
+server:
+    port: 0
+    
+identify: application.yaml
+```
+
+```yaml
+server:
+    port: 9999
+    
+identify: client.yaml
+```
+
+```yaml
+server:
+    port: 10000
+    
+identify: client-dev.yaml
+```
+
+
+
+2、config server端配置：
+
+```yaml
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          #          指定配置存放路径，先去gitee上创建一个空仓库，以后填充
+          uri: https://gitee.com/LuckyCurve/cloud-config.git
+          username: luckycurvec@gmail.com
+          password: ily025123
+#          指定存放路径，默认是根目录
+          search-paths: config
+#          指定配置文件存放的分支，默认是master
+          default-label: dev
+
+server:
+  #  Config的推荐默认端口号，配置客户端就默认获取8888
+  port: 8888
+```
+
+
+
+
+
+3、消费端的配置文件（直接读取的是client-dev.yaml，如果想读取其他两个可以适当删去一些配置）：
+
+```yaml
+spring:
+  application:
+    name: client
+
+#这里的配置只对于本地有效，对cloud的配置无效
+  profiles:
+    active: dev
+
+
+  cloud:
+    config:
+#      默认是localhost:8888
+      uri: http://192.168.56.1:8888
+#      指定cloud的profile，大坑
+      profile: dev
+
+```
+
+
+
+
+
+
+
+保证属性的私密性：
+
+如密码和安全token
+
+Config Server提供两种方式支持私密的配置属性：
+
+- 在Git存储的属性文件中使用加密后的值
+- 使用HashiCorp Vault作为Config Server的后端存储代替Git
+
+
+
+感觉主要来第一种把
+
+
+
+给Config Server设置秘钥来对Git中加密的数据进行解密
+
+支持对称秘钥和非对称秘钥
+
+有点麻烦，还得对JDK安装单独的插件，挖个坑有时间填
+
+
+
+Vault需要自己搭建Vault服务器来保密存储
+
+
+
+
+
+Spring Cloud Config Server提供两种方式去刷新：
+
+- 手动刷新：Config Server启用一个"/actuator/refresh"端口，对每个服务的这个端点发送HTTP POST请求将会强制配置客户端从Config Server的后台检索最新的配置
+- 自动刷新：涉及到另一个项目：Spring Cloud Bus、Git仓库上的提交触发Config Server客户端服务的刷新操作。
+
+
+
+各有优缺点：
+
+能更基准的控制、后者每次push就会触发，对有些项目过于危险
+
+
+
+
+
+1.手动刷新：
+
+需要利用到Actuator的一个特性，而这个特性只有配置为Spring Cloud Config Server客户端的应用才有效。
+
+其实上述说的端点就是由Actuator提供的
+
+
+
+在Config Client再加入一个依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-actuator</artifactId>
+</dependency>
+```
+
+原来只有一个Config Client和一个Web依赖（消费者都必须带有一个Web Starter用于发送请求）
+
+
+
+修改配置文件让actuator暴露出refresh接口
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+
+
+
+在需要重新加载的Controller类上加上 `@RefreshScope`注解
+
+
+
+测试：
+
+1、部署项目
+
+2、修改git配置文件
+
+3、向http://localhost:10000/actuator/refresh发送post请求，可以使用curl命令行来发送
+
+端口情况：Config Server：8888	Config Client： 10000
+
+4、访问项目的接口，查看读取的配置文件是否更新了（成功）
+
+
+
+
+
+自动通知客户端刷新配置文件：
+
+![image-20200527205107601](images/image-20200527205107601.png)
+
+
+
+原理：
+
+在Git仓库上搭建钩子，当收到push请求的时候，Config Server会对hook的POST请求做出响应，借助某种消息代理以广播的形式进行变更，通知到对应的Config Client，让它们通过Config Server的新值刷新它们的环境
+
+
+
+环境搭建就略去了
+
+
+
+
+
+小结：
+
+Spring Cloud Config Server提供了中心化的配置数据源
+
+通过Git或者Vault仓库维护
+
+除了全局属性，还可以提供给特定的应用特定的profile特定的配置
+
+Spring Cloud Config Client提供手动或自动刷新得到的属性值，前者通过Actuator来实现，后者通过Spring Cloud Bus和Git webhooks来实现
+
+
+
+
+
+
+
