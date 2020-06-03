@@ -402,3 +402,790 @@ public static List<Apple> filter(List<Apple> apples,String color,Integer weight,
 
 
 
+使用更高级的抽象：根据选择标准建模。
+
+在这里我们根据Apple的某些属性来返回一个boolean值。我们把这一动作称作谓词（即返回一个boolean类型的函数）
+
+于是我们可以定义一个选择建模标准：
+
+```java
+public interface ApplePredicate{
+    boolean test(Apple apple);
+}
+```
+
+然后就可以用这个接口的实现来表示不同的选择标准
+
+![image-20200602110421048](images/image-20200602110421048.png)
+
+
+
+刚才做的与策略设计模式有关——它让你定义一族算法，将他们封装起来，称为策略。然后在运行时候选择一个算法
+
+
+
+继续更高程度的封装：
+
+![image-20200602110654390](images/image-20200602110654390.png)
+
+所有的条件筛选都可以自定义，只要将算法的实现传入到ApplePredicate中即可
+
+
+
+但现在仍然有点遗憾，你需要将代码封装到ApplePredicate的test的方法中，然后返回ApplePredicate对象，而不是直接传递方法
+
+非常具体的体现：
+
+![image-20200602111044569](images/image-20200602111044569.png)
+
+虽然上述思想很优秀，但是会非常啰嗦，需要声明很多只要实例化一次了的类。接下来是如何改进
+
+
+
+上述传递方法是通过实例化一个类的方式来实现的，然而在Java8中方法是可以被作为参数来进行传递的。
+
+改进1：使用匿名类来改进，本质上仍然是传递的对象，但是可以少显式的声明一个类，还是比较舒服的。
+
+缺点：
+
+- 很笨拙，占用大量代码空间
+- 用起来比较费解，如下一个经典的Java谜题
+
+![image-20200602112000810](images/image-20200602112000810.png)
+
+答案是5，this指的是Runnable对象
+
+尽管匿名类已经在一定程度上解决了创建多个接口实现的问题，但仍然有大量的重复代码。有优化的空间
+
+
+
+使用Lambda表达式
+
+感觉Java就是帮我们把传入的方法封装成一个匿名类的对象，然后再传给方法的
+
+
+
+更高的抽象——将List类型抽象化，而不是仅仅局限于Apple，于是可以的带下述代码：
+
+![image-20200602112656592](images/image-20200602112656592.png)
+
+
+
+手敲了一遍：
+
+```java
+/**
+     * 直接来最高程度的抽象了
+     */
+public static <T> List<T> filter(List<T> list, Predicate<T> p) {
+    LinkedList<T> list1 = new LinkedList<>();
+    for (T t : list) {
+        if (p.test(t)) {
+            list1.add(t);
+        }
+    }
+    return list1;
+}
+
+public static void main(String[] args) {
+    List<Integer> list = Arrays.asList(1, 2,50, 3, 5);
+    List<Integer> filter = filter(list, a -> a % 2 == 0);
+    System.out.println(filter);
+}
+```
+
+体验还是非常好的。
+
+
+
+行为参数化是非常有用的——可以吧一个行为（一段代码）封装起来，并通过传递和使用创建的行为将方法的行为参数化
+
+Java API中其实有很多地方都是用到了行为参数化了，大量的与匿名类一起使用（Java8之前）：
+
+- 用Comparator来排序
+- 用Runnable来执行一个代码块
+
+
+
+排序：可以使用Java8在List中添加的默认方法sort，也可以使用Collections中的sort方法，但是现在不推荐使用了
+
+Comparator接口概述（去除掉了默认方法）：
+
+```java
+@FunctionalInterface
+public interface Comparator<T> {
+    int compare(T o1, T o2);
+}
+```
+
+如果需要对Apple进行重量排序：有小到大，可以使用：
+
+```java
+ArrayList<Apple> apples = new ArrayList<>();
+apples.sort(new Comparator<Apple>() {
+    @Override
+    public int compare(Apple o1, Apple o2) {
+        return o1.getWeight().compareTo(o2.getWeight());
+    }
+});
+```
+
+使用包装类默认的比较函数，产生的结果是由小到大的排序
+
+如果是想让默认排序变成由大到小，可以对`o1.getWeight()`的结果进行取反操作即可
+
+
+
+上述可以使用Lambda表达式来取代：
+
+```java
+apples.sort((o1, o2) -> o1.getWeight().compareTo(o2.getWeight()));
+```
+
+IDEA还推荐简化为：
+
+`apples.sort(Comparator.comparing(Apple::getWeight));`
+
+从大到小：
+
+`apples.sort((o1, o2) -> o1.getWeight().compareTo(o2.getWeight())*-1);`
+
+
+
+Runnable执行代码块：
+
+就不过多赘述了，多线程里面使用的非常多，也是我目前使用Lambda表达式使用的最多的地方
+
+
+
+
+
+小结：
+
+- 行为参数化。就是一个方法接收多个不同的行为作为参数，并在内部使用他们
+- 行为参数化可以使得代码更好的适应不断变化的需求
+- 传递代码，在Java8之前是依赖于对象的，无论是普通类的对象还是匿名类的对象都一样，在Java8之后可以直接传递方法，无论是通过`::`语法还是Lambda表达式
+- Java API就包含了些许将不同行为进行参数化的方法。如排序，启动线程
+
+
+
+
+
+## 第三章、Lambda表达式
+
+
+
+在上一章中你了解到了使用行为参数化来解决不断变化的需求
+
+但是使用匿名类对象来传递行为方法显得过于的繁琐了，Java8为了解决这个问题，提出了Lambda表达式，可以让你很简洁的传递一个行为（仅仅只是通过方法的方式，而不是通过实例化对象的方式来进行传递）
+
+最后还会介绍方法引用——常与Lambda表达式联用的一个有用的新功能
+
+
+
+可以把Lambda理解成为一个可传递的匿名函数的一种方式。这个函数没有名称，但有参数列表，返回类型，函数主体，返回类型，还有可能拥有可以跑出的异常列表
+
+> 总感觉Java对方法与函数的定义有点重合了
+>
+> 百度了一下，主要的两点区别：
+>
+> 非静态方法可以使用this关键字，一个方法可以处理包含在一个类里面的数据
+>
+> 相当于对象里面的函数就叫做了方法，或者说：方法就是面向对象版的函数
+
+所以这里将Lambda称为匿名函数而不是匿名方法是很有道理的，因为Lambda不属于任何一个类，这在Java中时不常见的，所以Java领域中几乎使用了方法这个词来取代了函数
+
+可传递的特点：可以作为参数传递给方法或:question:==存储在变量中==（还没见到过，画个重点）
+
+
+
+Lambda表达式鼓励我们使用行为参数化的风格
+
+
+
+Lambda表达式的三部分：
+
+- 参数列表
+
+用（）包裹起来的部分
+
+- 箭头
+
+将参数列表和主体隔离开来
+
+- Lambda主体
+
+
+
+Demo：
+
+```java
+//返回一个int，隐含了return语句
+(String s) -> s.length()
+    
+//将Apple类型的参数传入，返回重量是否大于150的boolean值
+(Apple a) -> a.getWeight() > 150
+    
+//接收两个int型数据，无返回值
+(int x, int y) -> {
+	System.out.println("Result:");
+	System.out.println(x+y);
+}
+
+() -> 42
+    
+(Apple a1, Apple a2) -> a1.getWeight().compareTo(a2.getWeight())
+```
+
+通用的语法类型为：
+
+```java
+(parameters) -> expression
+    或者
+(parameters) -> {
+    statement;
+}
+```
+
+的语法格式
+
+>  还是建议在参数前面带上参数类型的
+
+
+
+那么在哪里可以使用到Lambda表达式呢？上述的接口都是函数式接口
+
+第一个遇到的函数式接口：`Predicate<T>`
+
+```java
+@FunctionalInterface
+public interface Predicate<T> {
+    boolean test(T t);
+}
+```
+
+依旧是省去了default方法，毕竟default方法与我们也不想干（设计default方法的目的就是为了在接口中屏蔽某些方法，对于实现类来说）
+
+
+
+还有：
+
+Comparator和Runnable等等
+
+```java
+public interface Comparator<T> {
+	int compare(T o1, T o2);
+}
+public interface Runnable{
+	void run();
+}
+public interface ActionListener extends EventListener{
+	void actionPerformed(ActionEvent e);
+}
+public interface Callable<V>{
+	V call();
+}
+public interface PrivilegedAction<V>{
+	V run();
+}
+```
+
+> 接口可以拥有很多默认方法（在实现类没有对其实现的时候，其主体为方法提供的默认提供实现的方法），**只要接口只定义了一个抽象方法，那么它仍然是一个函数式接口**
+
+
+
+函数式接口可以用来做什么呢？回到我们的Lambda表达式中来
+
+Java允许你将整个Lambda表达式作为函数式接口的实例，当然是用匿名类也可以完成同样的事情，但只是显得比较笨拙而已
+
+Demo（就不写能测通的代码了，伪代码）：
+
+```java
+//使用Lambda表达式和匿名类，让Runnable输出hello world
+Runnable r1 = () -> System.out.println("hello world");
+
+Runnable r2 = new Runnable() {
+    @Override
+    public void run() {
+        System.out.println("hello world");
+    }
+};
+```
+
+
+
+
+
+抽象描述符：
+
+函数式接口的抽象方法的签名基本上就是Lambda表达式的签名，我们把这种抽象方法叫做函数描述符
+
+现在只需要了解Lambda可以被赋予给一个变量（即函数式接口）或者是传递一个接受函数式接口作为参数的方法就行了，至于编译器是如何对Lambda方法做参数检查的，在以后再讲述，当然Lambda表达式的签名要与函数式接口的抽象方法一样（入参和返回参数类型一致即可，或者可以转换，无论是自动拆箱装箱、向上转型都可以）
+
+> 建议在函数式接口上加上注解`@FunctionalInterface`
+>
+> 可以做到简单的检查，例如接口中有多个抽象方法就会报错
+>
+> 不是必须的，但是推荐使用
+
+
+
+
+
+Demo：处理文件的时候经常需要打开，关闭操作，显得多余，尝试构建模板代码
+
+依旧是硬性要求：尝试读取文件的第一行
+
+```java
+private static final String FILEPATH = "E:/info.txt";
+
+	/**
+     * //读取资源的一行
+     */
+public static String processFile() throws IOException {
+    //使用了Java7中带资源的try，不需要关闭
+    try (BufferedReader br = new BufferedReader(new FileReader(FILEPATH))){
+        return br.readLine();
+    }
+}
+```
+
+> 确实，代码中不应该出现硬编码，都应该声明为常量
+
+
+
+来开始行为参数化来保证高可用，避免频繁的复用try/catch代码
+
+保证对BufferReader的操作不是死的（Lambda大展身手的时候了）
+
+很显然，这里需要一个`(BufferReader br)->String`的函数式接口，然而官方不一定会总是替我们准备好，我们需要自己声明一个函数式接口，
+
+```java
+@FunctionalInterface
+public interface BufferedReaderProcessor {
+    /**
+     * 要做的事情
+     * @param br 
+     * @return
+     * @throws IOException
+     */
+    String process(BufferedReader br) throws IOException;
+}
+```
+
+开始重构processFile方法
+
+```java
+/**
+ * 开始重构
+ */
+public static String processFile(BufferedReaderProcessor processor) throws IOException {
+    try (BufferedReader br = new BufferedReader(new FileReader(FILEPATH))){
+        return processor.process(br);
+    }
+}
+```
+
+测试使用：
+
+传递Lambda：`System.out.println(processFile((BufferedReader br) -> br.readLine()));`
+
+可以改进成传递方法：`System.out.println(processFile(BufferedReader::readLine));`
+
+:question:这里感觉蛮疑惑的，讲道理readLine是非静态方法，按道理来说应该是使用`对象名::方法名`来调用，但这里使用类名调用也成功了
+
+
+
+查看Java8中提供的几个函数式接口：
+
+具体的可以查看`java.util.function`
+
+提供的还是比较丰富的，基础的数据类型接口基本都有，可以找找
+
+下面是几个比较通用的：
+
+Predicate：
+
+```java
+@FunctionalInterface
+public interface Predicate<T>{
+	boolean test(T t);
+}
+```
+
+> 接口里的方法默认被public abstract修饰，不需要显式的去进行public声明
+
+
+
+常见的使用场景：
+
+```java
+/**
+ * 通用的List过滤器，为什么List不提供呢
+ */
+public static <T> List<T> filter(List<T> list, Predicate<T> p) {
+    ArrayList<T> result = new ArrayList<>();
+    for (T t : list) {
+        if (p.test(t)) {
+            result.add(t);
+        }
+    }
+    return result;
+}
+
+/**
+ * 测试使用
+ */
+public static void main(String[] args) {
+    List<String> list = Arrays.asList("hello", "world", "Java");
+    //使用Lambda表达式给对象赋值，可能显得比较啰嗦，但是实际情况仍然存在
+    Predicate<String> pr = (String a) -> a.length() > 4;
+    for (String s : filter(list, pr)) {
+        System.out.println(s);
+    }
+}
+```
+
+
+
+
+
+Consumer：
+
+当你只需要执行某些操作的时候就可以使用这个接口
+
+```java
+@FunctionalInterface
+public interface Consumer<T> {
+    void accept(T t);
+}
+```
+
+
+
+常见使用场景：
+
+```java
+/**
+ * 自动循环遍历整个List，传入对List的操作即可
+ */
+public static <T> void forEach(List<T> list, Consumer<T> p) {
+    for (T t : list) {
+        p.accept(t);
+    }
+}
+
+/**
+ * 测试使用
+ */
+public static void main(String[] args) {
+    List<String> list = Arrays.asList("hello", "world", "Java");
+    //使用Lambda表达式给对象赋值，可能显得比较啰嗦，但是实际情况仍然存在
+    Consumer<String> consumer = (String a) -> System.out.println(a.length() > 4 ? a : "\n");
+    forEach(list, consumer);
+}
+```
+
+
+
+
+
+Function：
+
+接受一个对象，返回一个对象，相当于是可以囊括所有函数式接口了，除了void好像无法作为返回值之外
+
+```java
+@FunctionalInterface
+public interface Function<T, R> {
+    R apply(T t);
+}
+```
+
+
+
+在我们进行抽象的时候尽量保证泛型的存在，从而提高方法的复用性
+
+```java
+/**
+ * 集合内内容的转换
+ */
+public static <T, R> List<R> map(List<T> list, Function<T, R> function) {
+    ArrayList<R> result = new ArrayList<>();
+    for (T t : list) {
+        result.add(function.apply(t));
+    }
+    return result;
+}
+
+/**
+ * 测试使用
+ */
+public static void main(String[] args) {
+    List<String> list = Arrays.asList("hello", "world", "Java");
+    List<Integer> list1 = map(list, (String a) -> a.length());
+    System.out.println(list1);
+}
+```
+
+
+
+因为泛型中是无法指定基础数据类型的，只能使用其对应的封装类
+
+Java8为了避免自动装箱和拆箱带来的性能损耗，也选择了可以接收基本数据类型的函数式接口
+
+![image-20200603110140658](images/image-20200603110140658.png)
+
+例如这些类就分别对应着Consumer<Integer>等等
+
+基础数据类型+Consumer/Function/Predicate
+
+Function还有对应的To关键字来指定输入和输出
+
+
+
+Java8中提供的函数式接口：
+
+![image-20200603112020699](images/image-20200603112020699.png)
+
+![image-20200603112028601](images/image-20200603112028601.png)
+
+主体上就是这么多了
+
+
+
+默认的函数式接口都不支持异常抛出，想要抛出异常，可以自定义函数式接口、或者是在代码块内部使用catch语句来消费掉本该抛出的异常
+
+
+
+
+
+Lambda表达式的语法检查
+
+
+
+Lambda的类型是根据使用Lambda表达式的上下文推断出来的：主要是（或者说只能是）接收它的方法的参数，或者接收它的值的局部变量中推断出Lambda表达式的目标类型
+
+主要是检查需要的函数式接口中的方法的签名与Lambda表达式的签名（主要是参数信息和返回值信息）是否一致
+
+
+
+因此，同一个Lambda表达式可以与不同的函数式接口连接起来，只要套门的抽象方法签名能够兼容
+
+```java
+private static final String FLAG = "hello world";
+
+public static void main(String[] args) {
+    Callable<String> callable = () -> FLAG;
+    Supplier<String> supplier = () -> FLAG;
+}
+```
+
+只要Lambda满足抽象方法签名即可
+
+
+
+原来这里利用到了Java7中的菱形运算符：
+
+```java
+List<String> list = new ArrayList<>();
+```
+
+可以根据上下文即左边的 推断出适当的参数类型出来
+
+
+
+Lambda的void兼容规则：
+
+```java
+//Consumer接收T返回void
+Consumer<String> consumer = (String a) -> list.add(a)
+```
+
+尽管list.add方法会返回一个Boolean，但上述代码仍然是正确的，Lambda表达式可以根据方法签名很清楚的知道你的需求
+
+
+
+==Lambda有时候显式的写出类型更易读，有时候去掉他们更易读，具体选用哪种看程序员自身，没有哪种法则更好的说法==
+
+>当Lambda仅有一个类型需要推断的参数时，参数两边的括号也可以省略
+
+
+
+
+
+如果Lambda表达式使用了方法中的局部变量，那么该局部变量应该是不可变的或者是事实不可变的，以下例子就会报错
+
+```java
+int num = 59;
+Runnable r = () -> System.out.println(num);
+num = 10;
+```
+
+`Variable used in lambda expression should be final or effectively final`
+
+主要是对基础数据类型和其封装类的限制，如果上升到对象层面就基本不会出现以上情况了
+
+```java
+ArrayList<Integer> num = new ArrayList<>();
+Runnable r = () -> System.out.println(num);
+num.add(2);
+```
+
+
+
+
+
+方法引用——可以被视为某些Lambda的快捷写法
+
+重复使用现有的方法定义
+
+方法引用应该被视为仅仅调用特定方法的Lambda的一种快捷写法
+
+基本思想：如果一个Lambda代表的仅仅是去直接调用这个方法，那最好还是直接使用名称来调用它，而不是用一些固定的代码去描述调用过程
+
+![image-20200603155731055](images/image-20200603155731055.png)
+
+可以将方法引用看作是仅仅涉及单一方法的Lambda语法糖
+
+
+
+方法引用的分类：
+
+- 指向静态方法的引用，直接`类名::方法名`
+- 指向任意类型实例方法的方法引用，例如`String::length`
+- 指向现有对象的方法引用，例如存在实例化对象string，使用`string::length`
+
+第二种和第三种看起来有点矛盾，其实不是的。
+
+第二种的意思：
+
+```java
+(String s) -> s.length();    
+	可以等价，因为已经在
+String::length
+```
+
+第三种的意思：
+
+```java
+String string = "hello world";
+() -> string.length();
+	可以等价
+string::length
+```
+
+
+
+实战：忽略字符大小对其进行排序
+
+```java
+public static void main(String[] args) {
+    List<String> list = Arrays.asList("a", "A", "Z", "W", "w");
+    //优化前
+    list.sort((o1,o2)->o1.compareToIgnoreCase(o2));
+    System.out.println(list);
+    //优化后
+    list.sort(String::compareToIgnoreCase);
+}
+```
+
+
+
+> 有些蛮夸张的用法（感觉要是实际开发中老老实实使用Lambda表达式把，剩余的能使用方法引用的就交给编译器去发挥）
+>
+> ```java
+> Function<String,Integer> stringToInt = (a) -> Integer.parseInt(a);
+> Function<String,Integer> stringToInt2 = Integer::parseInt;
+> 
+> BiPredicate<List<String>,String> contains = (list,element) -> list.contains(element);
+> BiPredicate<List<String>,String> contains2= List::contains;
+> ```
+>
+> 编译器都可以识别得到，不用太过担心
+
+
+
+
+
+复合Lambda表达式的有用方法
+
+Java8提供的函数式接口都提供了允许你进行复合的方法，意味着你可以把多个简单的Lambda表达式复合成复杂的表达式，比如把两个Lambda表达式（两个谓词）之间来一个or操作，诀窍在于这些操作都是对应的接口里面的默认方法
+
+各种骚操作，有点小厉害：
+
+
+
+比较器复合：
+
+```java
+ArrayList<Apple> list = new ArrayList<>();
+list.add(new Apple(55, "green"));
+list.add(new Apple(15, "green"));
+list.add(new Apple(45, "green"));
+list.add(new Apple(100, "green"));
+list.add(new Apple(100, "Red"));
+list.add(new Apple(90, "green"));
+list.add(new Apple(95, "green"));
+list.add(new Apple(37, "green"));
+
+//按重量反序
+list.sort(Comparator.comparing(Apple::getWeight).reversed());
+System.out.println(list);
+
+//比较器链，让两个一样的weight的Apple可以排序
+list.sort(Comparator.comparing(Apple::getWeight).reversed().thenComparing(Apple::getColor));
+System.out.println(list);
+```
+
+
+
+
+
+谓词复合，
+
+在Java8中谓词的主要体现就是Predicate接口，接收一个T，返回一个Boolean
+
+主要是三个方法：and、or和negate，对应着的正是与或非
+
+和Mybatis Plus里面的Wrapper一样都是从左到右确定优先级的。
+
+
+
+
+
+函数复合：
+
+即Function接口代表的Lambda的表达式的复合，主要通过compose和andThen两个默认方法来是吸纳的
+
+andThen相当于将两个Function简单的链接起来，让指令流执行的时候能够顺序执行
+
+```java
+Function<Integer, Integer> fun1 = a -> a + 1;
+Function<Integer, Integer> fun2 = a -> a * 2;
+//使用andThen方法连接着两个Function
+System.out.println(fun1.andThen(fun2).apply(10));
+//使用compose方法来连接两个Function
+System.out.println(fun1.compose(fun2).apply(10));
+```
+
+输出结果分别为：`22   21`
+
+fun1.andThen(fun2)：就会先执行fun1方法再执行fun2方法
+
+fun1.compose(fun2)：先执行fun2方法，再执行fun1方法
+
+感觉就目前使用而言还是andThen使用的会更多一点
+
+
+
+
+
+小结：
+
+- Lambda表达式可以裂解为匿名函数，拥有参数列表，函数主体，返回类型，有可能还会有异常列表（如果接口有声明抛出了异常的话）
+- 只有在接收函数式接口的地方才可以使用Lambda表达式
+- 方法引用可以让你重用现有的方法并直接传递他们
+- Comparator，Predicate和Function等函数式接口都提供了一组默认实现了的方法——复合方法
+
+
+

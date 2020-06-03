@@ -93,3 +93,44 @@ public class OverLoadPro {
 
 参考资料：[Class伪指令集网站](https://blog.csdn.net/weixin_40234548/article/details/81533673)
 
+
+
+
+
+## 3、
+
+学到Lambda表达式的时候就感觉到了，会默认创建一个类（有点匿名类的意思了），并把Lambda的方法体注入到类中去，并返回类的实例化对象。
+
+既然Java支持动态类型检查，可以查看下该对象的实际类型：
+
+选用我们最常见的Runnable函数式接口，分别使用Lambda和匿名类的方式来实例化该接口，并输出对象的实际类型
+
+Demo：
+
+```java
+public static void main(String[] args) {
+    Object o = "hello";
+    System.out.println(o.getClass().getName());
+
+    Runnable runnable1 = new Runnable() {
+        @Override
+        public void run() {
+            System.out.println("hello world");
+        }
+    };
+    System.out.println(runnable1.getClass().getName());
+
+    Runnable runnable2 = () -> System.out.println("hello world");
+    System.out.println(runnable2.getClass().getName());
+}
+```
+
+输出：
+
+```
+java.lang.String
+cn.luckycurve.demo.character3.InternalFunctionInter$1
+cn.luckycurve.demo.character3.InternalFunctionInter$$Lambda$14/0x0000000100066840
+```
+
+获取两个Runnable的类加载器的名称，发现都是`app` ，而Object o的类加载器无法获取，使用时候会报错。
