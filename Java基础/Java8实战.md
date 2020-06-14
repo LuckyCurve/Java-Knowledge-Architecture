@@ -1378,3 +1378,97 @@ map操作：对流中的每一个元素应用函数
 >
 > 映射是去创建一个新版本而不是去修改原有的版本
 
+~~map操作好像只能完成一个对象对应另一个对象的这个事情，而不能对应成多个对象~~
+
+Map做一对多的时候无法将生成的多个流合并。
+
+如果存在这个需求：给定一个单词列表，统计所有出现的字母，返回一个字符，那么又要该怎么做呢，这里显然可能出现一个单词对应多个字母的问题
+
+
+
+第一次尝试
+
+```java
+public static void print() {
+    List<String> list = Arrays.asList("hello", "world");
+    list.stream().map(a -> a.split(""))
+        .map(Arrays::stream)
+        .distinct()
+        .forEach(System.out::println);
+}
+```
+
+经过String的split("")方法，单个单词会被分隔称为单个字母的数组
+
+你可能会去尝试使用Arrays这个工具类里面的stream方法，会为数组中的每个元素生成一个流
+
+但这样流里面存放的就是`Stream<String>`了，而不是我们期望的`String`
+
+
+
+
+
+我们需要使用flatmap了，相当于处理压缩多个流的特殊方法：
+
+```java
+public static void print2() {
+    List<String> list = Arrays.asList("hello", "world");
+    list.stream().map(a -> a.split(""))
+        .flatMap(Arrays::stream)
+        .distinct()
+        .forEach(System.out::println);
+}
+```
+
+示意图：
+
+![image-20200604194840333](images/image-20200604194840333.png)
+
+
+
+
+
+Lambda表达式碰到个复杂的东西真的是头疼：
+
+如果有两个指定列表，分别存储元素[1,2,3]和[3,4]，如果想要使用Lambda表达式返回如下指定的数据：[(1, 3), (1, 4), (2, 3), (2, 4), (3, 3), (3, 4)]
+
+使用Lambda表达式：
+
+```java
+public static void test() {
+    List<Integer> list1 = Arrays.asList(1, 2, 3);
+    List<Integer> list2 = Arrays.asList(3, 4);
+    //返回数对，如（1,3），（1,4）形式
+    //思路：先考虑从list1中一个元素与list2中所有元素组成一个List
+    list1.stream().
+        flatMap(i -> list2.stream().map(j -> {
+            HashMap<Integer, Integer> map = new HashMap<>();
+            map.put(i, j);
+            return map;
+        }))
+        .forEach(System.out::println);
+}
+```
+
+使用常规方式：
+
+```java
+public static void test2() {
+    List<Integer> list1 = Arrays.asList(1, 2, 3);
+    List<Integer> list2 = Arrays.asList(3, 4);
+    ArrayList<HashMap<Integer, Integer>> list = new ArrayList<>();
+    for (Integer i : list1) {
+        for (Integer j : list2) {
+            HashMap<Integer, Integer> map = new HashMap<>();
+            map.put(i, j);
+            list.add(map);
+        }
+    }
+    System.out.println(list);
+}
+```
+
+
+
+
+
