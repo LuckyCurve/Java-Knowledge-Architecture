@@ -1472,3 +1472,86 @@ public static void test2() {
 
 
 
+查找与匹配：
+
+
+
+匹配：
+
+Stream API提供了一系列方法来进行判断，应该都是返回的Boolean类型
+
+都是终端操作：
+
+```java
+List<String> list = Arrays.asList("hello", "luckyCurve");
+if (list.stream().anyMatch(i -> i.length() > 9)) {
+    System.out.println("有长度大于9的字符串，但无法知道是谁");
+}
+```
+
+与此类似的方法有：allMatch和noneMatch
+
+都具有短路性，即如果allMatch碰到了一个不满足的就直接返回false了
+
+很多操作都具有短路的特性
+
+
+
+
+
+查找：
+
+主要方法：findAny和findFirst
+
+不过方法会返回一个Optional类，Optional类主要是为了避免null值（对null进行单独处理，赋予默认值或者其他操作），以下为Optional的几种操作：
+
+- `isPresent();` optional包含值时候返回true，否则false
+- `ifPresent(Consumer<T> block);` 在值存在的时候执行指定代码块
+- `get();`  值存在时候返回值，否则抛出异常
+- `orElse(T other);`
+
+测试代码：
+
+```java
+ArrayList<Integer> src = new ArrayList<>();
+for (int i= 0; i < 999999; i++) {
+    src.add(i);
+}
+Optional<Integer> any = src.stream().findAny();
+System.out.println(any.get());
+System.out.println(any.get());
+System.out.println(any.get());
+```
+
+
+
+会发现findAny方法也是返回第一个元素，那么和FindFirst方法有什么区别呢？
+
+答案在并行，findFirst会严格按照并行需求返回第一个元素，而如果不关心返回的元素是哪一个，建议使用findAny方法。
+
+
+
+
+
+
+
+
+
+Java8中的并发支持也不是非常的到位：
+
+```java
+ArrayList<Integer> src = new ArrayList<>();
+for (int i= 0; i < 999999; i++) {
+    src.add(i);
+}
+
+ArrayList<Integer> distinct = new ArrayList<>();
+src.parallelStream().forEach(distinct::add);
+```
+
+以上代码就会报错
+
+
+
+
+

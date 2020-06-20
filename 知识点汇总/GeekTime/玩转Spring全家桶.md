@@ -1388,3 +1388,551 @@ Mybatis Code Helper的使用：
 
 
 
+
+
+11、Redis
+
+Spring对Redis的支持：
+
+- 客户端：Jedis/Lettuce
+- RedisTemplate
+- Repository支持
+
+
+
+Jedis注意事项：
+
+- Jedis实例不是线程安全的
+- 一般都是使用JedisPool取出Jedis实例
+
+
+
+使用SpringBoot整合Jedis被坑惨了（Redis可能没有Username不要设置，要不然会报错的）：
+
+配置文件：
+
+```yaml
+redis:
+  host: www.luckycurve.cn
+```
+
+主要这两个方法：
+
+```java
+@Bean
+@ConfigurationProperties("redis")
+public JedisPoolConfig config() {
+    return new JedisPoolConfig();
+}
+
+//在bean注销的时候执行方法
+@Bean(destroyMethod = "close")
+public JedisPool pool(@Value("${redis.host}") String host) {
+    return new JedisPool(config, host, 6379, 5000, "123456");
+}
+```
+
+在JedisPoolConfig中指定host即可，其他的常规池化配置一般都是8.
+
+:warning:大坑：配置Jedis的时候不要指定用户名为root，设置Redis登录的时候就没有设置用户名，直接使用带PASSWORD不带Username的JedisPool构造函数就可以了。
+
+> 在JedisPool中的bean注解中指定了destoryMethod属性，可以在被容器清理的时候自动调用close方法，还是比较实用的
+
+
+
+操作：
+
+```java
+@Override
+public void run(ApplicationArguments args) {
+    log.info(config.toString());
+
+    //模拟一个Coffee
+    Coffee coffee = Coffee.builder().id(1).price(Money.of(CurrencyUnit.of("CNY"), 20.0))
+        .name("latte").build();
+    try (Jedis jedis = pool.getResource()) {
+
+        //存储到一个名为menu的Hash里面 Hash的Key为name，money为金额
+        jedis.hset("menu", coffee.getName(),
+                   Long.toString(coffee.getPrice().getAmountMinorLong()));
+
+        Map<String, String> menu = jedis.hgetAll("menu");
+        log.info("menu:{}", menu);
+
+        //查看latte的价格
+        String price = jedis.hget("menu", "latte");
+        log.info("latte:{}",Money.ofMinor(CurrencyUnit.of("CNY"),Long.parseLong(price)));
+    }
+}
+```
+
+
+
+
+
+Redis的部署方式：
+
+- 哨兵
+
+一般是两个哨兵监控一个master，当两个哨兵同时发现master宕机之后就可以进行master的故障迁移
+
+在Jedis中使用JedisSentinelPool来处理的Redis哨兵
+
+- 集群
+
+使用到的是RedisCluster
+
+Jedis对其提供了支持——JedisCluster
+
+
+
+
+
+Spring的缓存抽象：
+
+什么时候需要缓存，应该缓存在哪儿呢：
+
+- 如果长久不变的（大概一天），并且能够接受变化带来的延迟：直接缓存在JVM内部，设置一个过期时间
+- 具备一致性，读写比大于1:10：分布式Redis缓存
+- 数据存在频繁的写操作（例如读写比为1:1）：不缓存
+
+
+
+常用注解：
+
+- @EnableCaching：开启缓存
+- @Cacheable：从缓存取出数据，如果不存在则查询并将数据存储到缓存内部
+- @CacheEvict：缓存清理
+- @CachePut：直接覆盖
+- @Caching：打包以上多个操作
+- @CacheConfig：设置操作，如设置缓存名字
+
+用起来很简单：主类上标记`@EnableCaching`注解，在需要加载的ServiceImp上加上注解：
+
+```java
+@Service
+@Slf4j
+@CacheConfig(cacheNames = "coffee")
+public class CoffeeServiceImpl implements CoffeeService {
+
+    @Resource
+    private CoffeeMapper coffeeMapper;
+
+    @CachePut(key = "#record.id")
+    @Override
+    public int updateByPrimaryKeySelective(Coffee record) {
+        return coffeeMapper.updateByPrimaryKeySelective(record);
+    }
+    
+    @CachePut(key = "#id")
+    @Override
+    public Coffee selectByPrimaryKey(Long id) {
+        log.info("into function Coffee's selectByPrimaryKey");
+        return coffeeMapper.selectByPrimaryKey(id);
+    }
+}
+```
+
+> ==要指定成相同的key，这样在缓存更新的时候才能更新到对应的==
+>
+> 有些说要在`@EnableCaching(proxyTargetClass = true)`
+>
+> 目前不指定为true也没有出什么问题
+
+
+
+但是这样的默认缓存的TTL（生存时间）都是-1，即永久存在的
+
+可以使用如下配置：
+
+```yaml
+spring:
+  cache:
+    redis:
+#      单位：毫秒
+      time-to-live: 50000
+#      不缓存null
+      cache-null-values: false
+```
+
+
+
+总配置如下：
+
+```yaml
+mybatis:
+  mapper-locations: classpath:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+
+spring:
+  cache:
+    redis:
+#      单位：毫秒
+      time-to-live: 50000
+#      不缓存null
+      cache-null-values: false
+  redis:
+    host: www.luckycurve.cn
+    port: 6379
+    password: 123456
+  datasource:
+    password: 123456
+    username: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/coffee2?serverTimezone=UTC
+
+#debug: true
+```
+
+
+
+其他用法：
+
+Spring Boot Redis使用了Lettuce来代替了Jedis作为底层客户端的实现，并提供了三个配置：
+
+- RedisStandaloneConfiguration
+- RedisSentinelConfiguration
+- RedisClusterConfiguration
+
+三个配置类来作为单机的，哨兵的，集群的配置
+
+
+
+一般在配置文件项后面加上Properties就可以找到对应的文件配置类
+
+例如redis的配置类为RedisProperty等等
+
+
+
+类型转换的普遍运用还是使用实现Convertor<Class1,Class2>的接口来实现从Class1转换到Class2的实现，一般都是成对的实现。然后通过Web的配置或者是ConfigurationExtension来使用。
+
+
+
+
+
+## 11、Reactor
+
+
+
+简单使用：
+
+```java
+Flux.range(1, 6)
+    .doOnRequest(i -> log.info("Request num:{}", i))
+    .doOnComplete(() -> log.info("publisher complete 1"))
+    .map(i -> {
+        log.info("Publisher:{},{}", Thread.currentThread(), i);
+        return i;
+    })
+    .doOnComplete(() -> log.info("publisher complete 2"))
+    .subscribe(i -> log.info("Subscribe:{},{}", Thread.currentThread(), i),
+               e -> log.error("error:{}", Thread.currentThread(), e),
+               () -> log.info("Subscribe Complete"));
+
+TimeUnit.SECONDS.sleep(5);
+```
+
+输出结果：
+
+```log
+Request num:9223372036854775807
+Publisher:Thread[main,5,main],1
+Subscribe:Thread[main,5,main],1
+Publisher:Thread[main,5,main],2
+Subscribe:Thread[main,5,main],2
+Publisher:Thread[main,5,main],3
+Subscribe:Thread[main,5,main],3
+Publisher:Thread[main,5,main],4
+Subscribe:Thread[main,5,main],4
+Publisher:Thread[main,5,main],5
+Subscribe:Thread[main,5,main],5
+Publisher:Thread[main,5,main],6
+Subscribe:Thread[main,5,main],6
+publisher complete 1
+publisher complete 2
+Subscribe Complete
+
+Process finished with exit code 0
+
+```
+
+结果分析：
+
+doOnRequest方法会在开始时候执行Lambda表达式，会直接请求到整型的最大值以拉取所有的数
+
+doOnComplete会在完成时候执行指定的lambda表达式
+
+
+
+Reactor的错误处理：
+
+代码如下：
+
+```java
+public void errorReturn() {
+    Flux.range(0, 6)
+        .doOnRequest(i -> log.info("Request num:{}", i))
+        .doOnComplete(() -> log.info("publisher complete 1"))
+        .map(i -> {
+            log.info("Publisher:{},{}", Thread.currentThread(), i);
+            return 10 / (i - 3);
+        })
+        .onErrorReturn(-1)
+        .doOnComplete(() -> log.info("publisher complete 2"))
+        .subscribe(i -> log.info("Subscribe:{},{}", Thread.currentThread(), i),
+                   e -> log.error("error:{}", e.toString()),
+                   () -> log.info("Subscribe Complete"));
+}
+```
+
+主要是模拟除零错误，输出结果为：
+
+```
+Request num:9223372036854775807
+Publisher:Thread[main,5,main],0
+Subscribe:Thread[main,5,main],-3
+Publisher:Thread[main,5,main],1
+Subscribe:Thread[main,5,main],-5
+Publisher:Thread[main,5,main],2
+Subscribe:Thread[main,5,main],-10
+Publisher:Thread[main,5,main],3
+Subscribe:Thread[main,5,main],-1
+publisher complete 2
+Subscribe Complete
+```
+
+会发现到3的时候出现异常，直接返回我们指定的-1，而后就没有再继续做下去了
+
+因为没有publish完，所以没有publisher complete 1输出。
+
+
+
+
+
+加上异常捕获：
+
+```java
+public void errorResume() {
+    Flux.range(0, 6)
+        .doOnRequest(i -> log.info("Request num:{}", i))
+        .doOnComplete(() -> log.info("publisher complete 1"))
+        .map(i -> {
+            log.info("Publisher:{},{}", Thread.currentThread(), i);
+            return 10 / (i - 3);
+        })
+        .onErrorResume(e -> {
+            log.error("Exception:{}",e.toString());
+            return Mono.just(-1);
+        })
+        .doOnComplete(() -> log.info("publisher complete 2"))
+        .subscribe(i -> log.info("Subscribe:{},{}", Thread.currentThread(), i),
+                   e -> log.error("error:{}", e.toString()),
+                   () -> log.info("Subscribe Complete"));
+}
+```
+
+日志打印：
+
+```
+Request num:9223372036854775807
+Publisher:Thread[main,5,main],0
+Subscribe:Thread[main,5,main],-3
+Publisher:Thread[main,5,main],1
+Subscribe:Thread[main,5,main],-5
+Publisher:Thread[main,5,main],2
+Subscribe:Thread[main,5,main],-10
+Publisher:Thread[main,5,main],3
+Exception:java.lang.ArithmeticException: / by zero
+Subscribe:Thread[main,5,main],-1
+publisher complete 2
+Subscribe Complete
+```
+
+会因为onErrorResume去处理异常并可选的返回一个值，并终止程序
+
+
+
+限制Request的Number，不要全取（这就实现了下游数据对上游数据的反压）
+
+```java
+public void limit() {
+    Flux.range(0, 6)
+        .doOnRequest(i -> log.info("Request num:{}", i))
+        .doOnComplete(() -> log.info("publisher complete 1"))
+        .map(i -> {
+            log.info("Publisher:{},{}", Thread.currentThread(), i);
+            return i;
+        })
+        .doOnComplete(() -> log.info("publisher complete 2"))
+        .subscribe(i -> log.info("Subscribe:{},{}", Thread.currentThread(), i),
+                   e -> log.error("error:{}", e.toString()),
+                   () -> log.info("Subscribe Complete"),
+                   s -> s.request(4));
+}
+```
+
+当然，先干掉所有异常，要不然就中断了
+
+```
+Request num:4
+Publisher:Thread[main,5,main],0
+Subscribe:Thread[main,5,main],0
+Publisher:Thread[main,5,main],1
+Subscribe:Thread[main,5,main],1
+Publisher:Thread[main,5,main],2
+Subscribe:Thread[main,5,main],2
+Publisher:Thread[main,5,main],3
+Subscribe:Thread[main,5,main],3
+```
+
+发布和订阅都没有完成。
+
+
+
+就上述代码实现并发（本来全部在主线程上执行的）：
+
+```
+	public void limit() throws InterruptedException {
+        Flux.range(0, 6)
+                .publishOn(Schedulers.parallel())
+                .doOnRequest(i -> log.info("Request num:{}", i))
+                .doOnComplete(() -> log.info("publisher complete 1"))
+                .map(i -> {
+                    log.info("Publisher:{},{}", Thread.currentThread(), i);
+                    return i;
+                })
+                .doOnComplete(() -> log.info("publisher complete 2"))
+                .subscribe(i -> log.info("Subscribe:{},{}", Thread.currentThread(), i),
+                        e -> log.error("error:{}", e.toString()),
+                        () -> log.info("Subscribe Complete"),
+                        s -> s.request(4));
+    }
+```
+
+最主要的就是第4行，也非常简单
+
+> publishOn要放在最前面，要不然会出现一些诡异的事情
+
+只有最后的Subscribe方法才会导致动作的发生
+
+
+
+
+
+通过Reactive方式操作Redis
+
+主要还是Spring Data Redis的底层框架实现Lettuce支持Reactive方式
+
+引入这个依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+</dependency>
+```
+
+配置文件：
+
+```yaml
+logging:
+  pattern:
+    #    console: '%d{yyyy-MMM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{15} - %msg%n'
+    console: '%msg%n'
+spring:
+  redis:
+    host: www.luckycurve.cn
+    password: 123456
+` # 如果不加上就会报如下错误
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+
+```
+
+错误：
+
+```
+Error creating bean with name 'redisReferenceResolver': Unsatisfied dependency expressed through constructor parameter 0: Could not convert argument value of type [org.springframework.data.redis.core.ReactiveStringRedisTemplate] to required type [org.springframework.data.redis.core.RedisOperations]: Failed to convert value of type 'org.springframework.data.redis.core.ReactiveStringRedisTemplate' to required type 'org.springframework.data.redis.core.RedisOperations'; nested exception is java.lang.IllegalStateException: Cannot convert value of type 'org.springframework.data.redis.core.ReactiveStringRedisTemplate' to required type 'org.springframework.data.redis.core.RedisOperations': no matching editors or conversion strategy found
+```
+
+
+
+具体操作：
+
+1.存储String类型，但Starter没有提供ReactiveStringRedisTemplate，需要我们自己注入：
+
+```java
+/**
+     * Spring没有提供ReactiveStringRedisTemplate，只是提供了
+     * ReactiveObjectRedisTemplate，使用起来不方便
+     */
+@Bean
+ReactiveStringRedisTemplate redisTemplate(ReactiveRedisConnectionFactory factory) {
+    return new ReactiveStringRedisTemplate(factory);
+}
+```
+
+
+
+2.使用ReactiveStringRedisTemplate：
+
+```java
+    @Autowired
+    ReactiveStringRedisTemplate redisTemplate;
+
+    public static final String KEY = "Coffee Menu";
+```
+
+
+
+3.核心代码：
+
+```java
+public void reactiveRedis() throws InterruptedException {
+    ReactiveHashOperations<String, Object, Object> hashOps = redisTemplate.opsForHash();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    //模拟Coffee
+    List<Coffee> list = Arrays.asList(Coffee.builder().id(1).name("latte").price(20L).build(),
+                                      Coffee.builder().id(2).name("DIY").price(99999999L).build());
+
+    //使用Reactive形式操作数据
+    Flux.fromIterable(list)
+        //默认就是单线程形式
+        .publishOn(Schedulers.single())
+        .doOnComplete(() -> log.info("list publish ok"))
+        .flatMap(i -> {
+            log.info("KEY:{},name:{},price:{}", KEY, i.getName(), i.getPrice());
+            return hashOps.put(KEY, i.getName(), i.getPrice().toString());
+        })
+        //设置KEY的超时时间
+        .concatWith(redisTemplate.expire(KEY, Duration.ofMinutes(10)))
+        .doOnComplete(() -> log.info("list save ok"))
+        //Error处理过程
+        .onErrorResume(e -> {
+            log.info("Exception:{}", e.toString());
+            return Mono.just(false);
+        })
+        .subscribe(r -> log.info("Boolean:{}", r),
+                   e -> log.error("Exception:{}", e.toString()),
+                   latch::countDown);
+    log.info("Writing");
+    //    变异步为同步
+    latch.await();
+}
+```
+
+使用了single单独创建了一个线程去运行以下代码，为了防止程序过早结束，需要转异步为同步，等待。
+
+> 如果使用了ReactiveStringRedisTemplate，里面存储的两个Object：
+>
+> ```
+> ReactiveHashOperations<String, Object, Object>
+> ```
+>
+> 
