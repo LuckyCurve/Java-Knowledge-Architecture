@@ -485,6 +485,8 @@ public void invoke() {
 
 如果要第三个方法需要支持事务，只需要注入当前类的抽象接口，并调用抽象接口的insertWithExp方法即可。
 
+如果没有指定异常，则所有异常都会触发回滚，回滚过程中会捕获异常并将此异常重新抛出
+
 
 
 ## 8、实现持久层错误的定制
@@ -1935,4 +1937,446 @@ public void reactiveRedis() throws InterruptedException {
 > ReactiveHashOperations<String, Object, Object>
 > ```
 >
-> 
+
+
+
+目前Reactor还不支持传统关系型数据库，不过Spring官方孵化项目R2DBC
+
+支持以下数据库：
+
+- Postgres
+- H2
+- Microsoft SQL Server
+
+不支持MySQL和Oracle。
+
+只能通过WebFlux实现在Web层面上使用Reactor，但在数据库层面上往往都是只能进行传统的编程式模型的操作了。
+
+
+
+
+
+
+
+## 12、使用AOP打印数据访问层摘要
+
+
+
+![image-20200621102102115](images/image-20200621102102115.png)
+
+Introduction用的非常少
+
+AOP的代理：
+
+- JDK的动态代理：一般是基于接口的代理，最常见的就是Service层接口
+- CGLIB代理：没有接口，例如Controller层或者是因为Service只有唯一的实现，没有写Service接口的情况
+
+
+
+Spring的事务逻辑就是基于AOP实现的，在方法执行开始时候通过AOP实现事务的开启，在方法执行结束之后就进行事务的commit或者rollback
+
+如果@Transactional没有指定rollbackFor，则所有的异常都会触发回滚，触发回滚会重新抛出此异常。
+
+
+
+自己实现AOP拦截
+
+声明式常用注解：
+
+- @EnableAspectJAutoProxy：开启AspectJ的支持
+- @Aspect：声明当前这个类是一个切面，但是当前这个类不会变成一个Bean
+- @PointCut：与上述PointCut概念一致
+- @Before：
+- @After/@AfterReturning/@AfterThrowing：这里完美契合事务的提交和回滚
+- @Around：直接封装方法的前后执行
+- @Order：指定切面的执行顺序，和CommandLineRunner的@Order一致
+
+
+
+重点就在于PointCut
+
+官方给的一些Example：
+
+The following examples show some common pointcut expressions:
+
+- The execution of any public method:
+
+  ```
+  execution(public * *(..))
+  ```
+
+- The execution of any method with a name that begins with `set`:
+
+  ```
+  execution(* set*(..))
+  ```
+
+- The execution of any method defined by the `AccountService` interface:
+
+  ```
+  execution(* com.xyz.service.AccountService.*(..))
+  ```
+
+- The execution of any method defined in the `service` package:
+
+  ```
+  execution(* com.xyz.service.*.*(..))
+  ```
+
+- The execution of any method defined in the service package or one of its sub-packages:
+
+  ```
+  execution(* com.xyz.service..*.*(..))
+  ```
+
+
+
+
+
+> 感觉如果使用MyBatis的话可以直接使用如下配置来打印SQL到控制台：
+>
+> ```yaml
+> logging:
+>   level:
+>     cn:
+>       luckycurve:
+>         mybatisgeneratorhello:
+>           mapper.*: debug
+> ```
+
+
+
+
+
+简单使用AOP：计算Mapper层面上各个方法的耗时
+
+要引入aop的starter，要不然找不到@Aspect注解
+
+开启AOP：`@EnableAspectJAutoProxy`
+
+切面方法：
+
+```java
+@Aspect
+@Component
+@Slf4j
+public class MapperAspect {
+
+
+    //使用Around做切面增强
+    @Around("mapperOps()")
+    public Object logTime(ProceedingJoinPoint point) throws Throwable {
+        long startTime = System.currentTimeMillis();
+        String name = "-";
+
+        try {
+            //获取方法名字
+            name = point.getSignature().toShortString();
+            //让方法继续执行
+            return point.proceed();
+        } finally {
+            long endTime = System.currentTimeMillis();
+            log.info("{}:{}ms", name, endTime - startTime);
+        }
+    }
+
+    //拦截所有这个包下的方法
+    @Pointcut("execution(* cn.luckycurve.mybatisgeneratorhello.mapper..*(..))")
+    public void mapperOps() {
+
+    }
+}
+```
+
+即可对所有的mapper包下的类的方法打印执行时间。
+
+打印结果：
+
+```
+CoffeeMapper.count():60ms
+CoffeeMapper.insertSelective(..):20ms
+CoffeeMapper.count():2ms
+CoffeeMapper.count():3ms
+```
+
+如果要详细一点可以在15行指定成toLongString方法
+
+
+
+
+
+## 13、Spring对Web的支持
+
+
+
+SpringMVC的核心：DIspatcherServlet，核心组件：
+
+- Controller
+- xxxResolve：各种解析器
+  - ViewResolve：视图解析器
+  - HandlerExceptionResolve：异常解析器
+  - MultipartResolve：主要用于上传文件的解析
+- HandlerMapping：请求映射处理URL->Controller的逻辑
+
+
+
+几个关于请求的注解：
+
+- @RequestBody：指定从请求头的报文体中获取对象
+- @ResponseBody：将返回的对象写入到响应头的报文体中
+- @ResponseStatus：指定HTTP请求的响应码
+
+
+
+MVC的总体处理流程：
+
+![image-20200626104246468](images/image-20200626104246468.png)
+
+这里的Front Controller就是我们说的DispatcherServlet
+
+
+
+DispatcherServlet的核心方法：doService，内部调用doDispatch方法进行Handler前的预处理，Handler的执行，Handler后的处理解析视图等操作了。
+
+
+
+主要请求映射关系：
+
+DispatcherServlet的doService方法：
+
+doDispatch方法：
+
+mappedHandler = this.getHandler(processedRequest)方法：
+
+HandlerExecutionChain handler = mapping.getHandler(request)：
+
+Object handler = this.getHandlerInternal(request)：实际上是调用了AbstractHandlerMethodMapping类的protected HandlerMethod getHandlerInternal(HttpServletRequest request) throws Exception方法获取到映射到的方法
+
+获取到对应的HandlerMethod方法，完成
+
+
+
+
+
+SpringMVC的controller的参数和返回对象可以是：1.3.6节
+
+https://docs.spring.io/spring/docs/current/spring-framework-reference/web.html#mvc-ann-modelattrib-methods
+
+
+
+
+
+
+
+##  14、理解Spring ApplicationContext
+
+
+
+ApplicationContext也就是我们说的容器Container
+
+其中包含POJO对象，配置信息
+
+并同时管理了所有组件的生命周期
+
+实现IOC功能的关键，在标注需要注入的对象头上SpringApplicationContext会将对象注入进去
+
+
+
+ApplicationContext常用的接口及其实现：
+
+- BaseFactory：最基本的一个接口
+  - DefaultListableBeanFactory
+- ApplicationContext：通常直接使用其实现类，扩展了BeanFactory
+  - ClassPathXmlApplicationContext：将Classpath目录下的xml加入到容器当中
+  - FileSystemXmlApplicationContext：从文件系统中的xml加入容器当中
+  - AnnotationConfigApplicationContext：基于注解的配置
+
+一般都直接使用ApplicationContext的实现类
+
+
+
+Web的上下文有点不同，关系图谱如下：
+
+![image-20200625092311852](images/image-20200625092311852.png)
+
+> 这里会出现一个关于AOP的问题，对Web层面的AOP（直接增加到了Servlet WebApplicationContext）是无法干涉到Root WebApplicationContext中的组件的，很有可能导致增强无法生效
+
+
+
+对Spring AOP在ApplicationContext的理解：
+
+- 测试Bean，很普通：
+
+```java
+@AllArgsConstructor
+@Slf4j
+public class TestBean {
+    private String context;
+
+    public void hello() {
+        log.info("Hello:{}", context);
+    }
+}
+```
+
+- 切面配置（对默认Aspect不会加入到Container中有理解了）：
+
+```java
+@Aspect
+@Slf4j
+public class TestAspect {
+    /**
+     * 拦截所有以testBean开头的bean
+     */
+    @AfterReturning("bean(testBean*)")
+    public void printAfter() {
+        log.info("after hello()");
+    }
+}
+```
+
+- 配置类：
+
+```java
+@Configuration
+//开启AspectJ的支持
+@EnableAspectJAutoProxy
+public class TestConfig {
+    @Bean
+    public TestBean testBeanX() {
+        return new TestBean("X");
+    }
+
+    @Bean
+    public TestBean testBeanY() {
+        return new TestBean("Y");
+    }
+
+    @Bean
+    public TestAspect testAspect() {
+        return new TestAspect();
+    }
+}
+```
+
+- XML配置文件：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/aop https://www.springframework.org/schema/aop/spring-aop.xsd">
+
+<!--    开启AOP切面增强-->
+    <aop:aspectj-autoproxy/>
+
+<!--    加入一个Bean-->
+    <bean id="testBeanZ" class="cn.luckycurve.contexthierarchydemo.context.TestBean">
+        <constructor-arg name="context" value="Z"/>
+    </bean>
+
+    <bean id="testAspect" class="cn.luckycurve.contexthierarchydemo.aspect.TestAspect"/>
+</beans>
+```
+
+
+
+测试类：
+
+```java
+@Override
+public void run(ApplicationArguments args) throws Exception {
+    AnnotationConfigApplicationContext context1 = new AnnotationConfigApplicationContext(TestConfig.class);
+    ClassPathXmlApplicationContext context2 = new ClassPathXmlApplicationContext(new String[]{"applicationContext.xml"}, context1);
+
+
+    //测试context1中是否有被增强
+    log.info("-----------------AnnotationConfig---------------------------------------");
+    context1.getBean("testBeanX", TestBean.class).hello();
+
+
+    context1.getBean("testBeanY", TestBean.class).hello();
+
+    log.info("-------------------ClassPathXml-----------------------------------------");
+
+    context2.getBean("testBeanX", TestBean.class).hello();
+
+
+    context2.getBean("testBeanY", TestBean.class).hello();
+
+    context2.getBean("testBeanZ", TestBean.class).hello();
+
+}
+```
+
+主要是看看AOP增强对两个容器：
+
+主要有三个点：
+
+- 配置类的15行的bean注解
+- 配置文件第七行的AOP增强
+- 配置文件14行的切面配置
+
+
+
+主要是为了验证父容器的切面对子容器中Bean的影响
+
+也就是开启1，关闭23，结果如下：
+
+```
+-----------------AnnotationConfig---------------------------------------
+Hello:X
+after hello()
+Hello:Y
+after hello()
+-------------------ClassPathXml-----------------------------------------
+Hello:X
+after hello()
+Hello:Y
+after hello()
+Hello:Z
+```
+
+发现从父容器里面继承的bean依旧会增强，但是子容器无法使用父容器的增强
+
+
+
+如果要子容器使用父容器的增强又该怎么办呢？开启2即可。
+
+```
+-----------------AnnotationConfig---------------------------------------
+Hello:X
+after hello()
+Hello:Y
+after hello()
+-------------------ClassPathXml-----------------------------------------
+Hello:X
+after hello()
+Hello:Y
+after hello()
+Hello:Z
+after hello()
+```
+
+就都可以增强了
+
+
+
+至于3，为了验证子容器的增强对父容器中继承的bean有无影响，则开启23，结果如下：
+
+```
+-----------------AnnotationConfig---------------------------------------
+Hello:X
+Hello:Y
+-------------------ClassPathXml-----------------------------------------
+Hello:X
+Hello:Y
+Hello:Z
+after hello()
+```
+
+尽管父容器中的bean也满足增强的要求（以testBean开头），但是不会进行增强。
+
+
+
+这就是底层AOP为什么时而生效，时而不生效的原因了
