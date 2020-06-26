@@ -2166,6 +2166,158 @@ https://docs.spring.io/spring/docs/current/spring-framework-reference/web.html#m
 
 
 
+MVC层面自定义类型转换和验证
+
+依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+
+<!--        做校验用的-->
+<dependency>
+    <groupId>org.apache.commons</groupId>
+    <artifactId>commons-lang3</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.joda</groupId>
+    <artifactId>joda-money</artifactId>
+    <version>1.0.1</version>
+</dependency>
+
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <optional>true</optional>
+</dependency>
+```
+
+转换就没使用Convertor了，也可以使用
+
+> Spring MVC框架的 Formatter<T> 与 Converter<S，T> 一样，也是一个可以将一种数据类型转换成另一种数据类型的接口。不同的是，Formatter<T> 的源数据类型必须是 String 类型，而 Converter<S，T> 的源数据类型是任意数据类型。
+>
+> 在 Web 应用中由 HTTP 发送的请求数据到控制器中都是以 String 类型获取，因此在 Web 应用中选择 Formatter<T> 比选择 Converter<S，T> 更加合理
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/6/26 22:13
+ * MVC层面的类型转换
+ */
+@Component
+public class MoneyFormatter implements Formatter<Money> {
+    /**
+     * 默认处理CNY金额
+     * 可以处理的格式为：CNY 20.0 或者是20.0
+     * 简单的校验
+     */
+    @Override
+    public Money parse(String s, Locale locale) throws ParseException {
+        if (NumberUtils.isParsable(s)) {
+            return Money.of(CurrencyUnit.of("CNY"), NumberUtils.createBigDecimal(s));
+        } else if (StringUtils.isNotBlank(s)) {
+            String[] split = StringUtils.split(s, " ");
+            if (split.length == 2 && NumberUtils.isParsable(split[1])) {
+                return Money.of(CurrencyUnit.of(split[0]), NumberUtils.createBigDecimal(split[1]));
+            } else {
+                throw new ParseException(s, 0);
+            }
+        }
+        throw new ParseException(s, 0);
+    }
+
+    @Override
+    public String print(Money money, Locale locale) {
+        return money.getCurrencyUnit().getCode() + " " + money.getAmount();
+    }
+}
+
+```
+
+只要将其注册到ApplicationContext中即可，自动配置会完成的
+
+Controller的简单演示
+
+注意嗷，没有加上RequestBody注解，也可以行得通
+
+```java
+/**
+     * 这里是要求表单的处理，没有使用@RequestBody注解
+     * 是通过RequestParam一个个取出并绑定到request中去的
+     */
+@GetMapping("/addRequest")
+public Money getMoney(@Valid MoneyRequest request) {
+    return request.getPrice();
+}
+```
+
+DTO对象MoneyRequest：
+
+```java
+@Data
+public class MoneyRequest {
+    @NotBlank
+    private String name;
+    @NotNull
+    private Money price;
+}
+```
+
+请求生效，验证完成
+
+例如我们要介入MVC的Binding步骤，可以使用如下Controller层代码：
+
+```java
+@GetMapping("/addRequest")
+public Money getMoney(@Valid MoneyRequest request, BindingResult result) {
+    if (result.hasErrors()) {
+        //直接打印日志，返回一个null
+        log.warn("Binding Errors:{}",result);
+        return null;
+    }
+    return request.getPrice();
+}
+```
+
+
+
+
+
+
+
+SpringMVC的MultiportFile例子(Controller层）：
+
+```java
+@GetMapping("/addFile")
+public String uploadFile(MultipartFile file) {
+    if (!file.isEmpty()) {
+        return "success";
+    }
+    return "fail";
+}
+```
+
+使用PostMan测试：
+
+![image-20200626225203534](images/image-20200626225203534.png)
+
+需要注意的几个点：
+
+- 选择Body里的form-data表单格式，并将key指定成file格式
+- 注意key的命名
+
+
+
+
+
 
 
 ##  14、理解Spring ApplicationContext
