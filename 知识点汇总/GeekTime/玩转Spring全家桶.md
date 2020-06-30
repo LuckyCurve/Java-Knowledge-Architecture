@@ -2166,7 +2166,7 @@ https://docs.spring.io/spring/docs/current/spring-framework-reference/web.html#m
 
 
 
-MVC层面自定义类型转换和验证
+### MVC层面自定义类型转换和验证
 
 依赖：
 
@@ -2317,6 +2317,112 @@ public String uploadFile(MultipartFile file) {
 
 
 
+
+DispatcherServlet中的视图解析逻辑：
+
+- initStrategies()
+  - initViewResolvers()默认加载所有ViewResolver，是否加载所有由DispatcherServlet的detectAllViewResolvers决定
+- doDispatcher()
+  - processDispatchResult()
+    - 没有view，使用RequestToViewNameTranslator
+    - resolveViewName()解析View对象
+
+
+
+
+
+@ResponseBody注解的请求是如何将结果输出到Response中去的？
+
+doDispatch方法中：
+
+- 在HandlerAdapter.handle()中完成Response的输出
+  - RequestMappingHandlerAdapter.invokeHandlerMethod()
+    - HandlerMethodReturnValueHandlerComposite.handleReturnValue()
+      - RequestResponseBodyMethodProcessor.handleReturnValue()
+
+
+
+
+
+### JSON序列化和反序列化的配置
+
+MVC对默认的序列化和反序列化的支持：上面的Formatter是对传入表单数据的支持，之所以回写不显示，是因为回写的是JSON数据，需要使用序列化定制格式：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/6/27 20:30
+ * 将该类作为Money的序列化器
+ */
+@JsonComponent
+public class MoneySerializer extends StdSerializer<Money> {
+
+    protected MoneySerializer() {
+        super(Money.class);
+    }
+
+    @Override
+    public void serialize(Money money, JsonGenerator jsonGenerator, SerializerProvider serializerProvider) throws IOException {
+        jsonGenerator.writeNumber(money.getAmount());
+    }
+} 
+```
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/6/27 20:35
+ */
+@JsonComponent
+public class MoneyDeserializer extends StdDeserializer<Money> {
+
+    protected MoneyDeserializer() {
+        super(Money.class);
+    }
+
+    @Override
+    public Money deserialize(JsonParser jsonParser, DeserializationContext deserializationContext) throws IOException, JsonProcessingException {
+        return Money.of(CurrencyUnit.of("CNY"),jsonParser.getDecimalValue());
+    }
+}
+```
+
+即可完成对Money对象的序列化和反序列化操作的定制，简单测试：
+
+Controller:
+
+```java
+@GetMapping("/jsonrequest")
+public Money jsonrequest(@RequestBody @Valid MoneyRequest request) {
+    return request.getPrice();
+}
+```
+
+MoneyRequest依旧：
+
+```java
+@Data
+public class MoneyRequest {
+    @NotBlank
+    private String name;
+    @NotNull
+    private Money price;
+}
+```
+
+启用Postman测试：
+
+![image-20200627205221628](images/image-20200627205221628.png)
+
+成功~
+
+
+
+模板引擎的使用技巧：将对象添加进ModelAttribute中去
+
+不用在MVC层面的方法中指定接收ModelMap然后使用add方法，而是直接在需要将返回值加入ModelAttribute的方法头上使用@ModelAttribute
+
+ 
 
 
 
