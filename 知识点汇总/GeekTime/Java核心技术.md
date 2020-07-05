@@ -265,3 +265,159 @@ StringBuilder：1.5以后新增的一个类，相当于去掉了线程安全的S
 
 
 String的存储方式从JDK9之前的使用char数组变成使用一个byte数组加上一个标识编码的coder以减少Char占用两个字符所带来的额外的内存开销
+
+
+
+
+
+## Java的动态代理
+
+
+
+谈到动态代理就不得不谈到反射机制
+
+
+
+反射机制是Java语言层面提供的一种机制，允许我们可以直接操作类或者是对象，例如：获取某个对象的类定义，获取类声明的属性和方法，调用方法或者是构造对象，甚至可以运行时修改类定义
+
+动态代理是一种方便运行时动态构建代理，动态处理代理方法调用的机制。使用到的场景有：AOP面向切面编程，包装RPC调用等等
+
+
+
+实现动态代理的方法有很多，例如JDK自身提供的动态代理，主要就是利用了反射机制，还有更高级别的字节码操作机制：类似cglib，ASM等
+
+动态代理底层并不一定是由反射来实现的
+
+
+
+Java语言通过本省语言的反射机制做到了灵活操作很多运行时才能确定的信息，而动态代理则是延伸出的一种广泛应用于产品开发中的技术，很多繁琐的重复操作可以通过动态代理优雅的解决
+
+
+
+动态代理是一个代理机制，代理可以被看做是对调用目标的一个包装，这样对目标代码的调用不是直接发生的，而是通过代理完成，有点python装饰器的味道了
+
+通过代理可以使得调用者与实现着之间的解耦，例如常规的序列化，反序列化对调用者来说是毫无意义的，通过代理可以提供更友善的界面，也为应用插入额外的逻辑提供了便利的入口
+
+Java提供的动态代理使用：
+
+```java
+public class MyDynamicProxy {
+    public static  void main (String[] args) {
+        HelloImpl hello = new HelloImpl();
+        MyInvocationHandler handler = new MyInvocationHandler(hello);
+        // 构造代码实例
+        Hello proxyHello = (Hello) Proxy.newProxyInstance(HelloImpl.class.getClassLoader(), HelloImpl.class.getInterfaces(), handler);
+        // 调用代理方法
+        proxyHello.sayHello();
+    }
+}
+interface Hello {
+    void sayHello();
+}
+class HelloImpl implements  Hello {
+    @Override
+    public void sayHello() {
+        System.out.println("Hello World");
+    }
+}
+ class MyInvocationHandler implements InvocationHandler {
+    private Object target;
+    public MyInvocationHandler(Object target) {
+        this.target = target;
+    }
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args)
+            throws Throwable {
+        System.out.println("Invoking sayHello");
+        Object result = method.invoke(target, args);
+        return result;
+    }
+}
+```
+
+仍然需要实例化Proxy对象，而不是真正的调用类型，带来了一定的不便
+
+
+
+如果使用另一种方式（参考Spring AOP实现的两种方式） cglib就完全可以避开Proxy对象的使用，直接操作接口。cglib使用的是创建目标类的子类的方式来实现的，就可以直接通过Java的向上转型机制来完成很好的调用
+
+且cglib拥有跟高的性能和更流畅的编码体验，但是在JDK版本升级的时候不如JDK Proxy那般过度平滑，且编写门槛要低得多
+
+
+
+
+
+
+
+## Java的自动装箱/包装类
+
+包装类都设有缓存，以防止太过频繁的创建对象导致性能的提前降低
+
+只是包装类缓存了数值，对应的基本类型并没有缓存有相应的数据
+
+包装类的缓存范围：
+
+- Integer：-128~127
+- Boolean：true/false
+- Short：-128~127
+- Byte：数值有限，全部缓存来了，表示范围 -128~127
+- Character：缓存了从`'\u0000'~'\u007F'`的字符
+
+
+
+
+
+在实战中，建议避免自动装箱和自动拆箱的行为
+
+但还是以开发效率为先
+
+之所以泛型不支持原始数据类型，主要是因为：在javac的过程当中需要将泛型全部都向上转型称为Object对象，而原始数据类型是无法转换成为Object对象的，如果每次转换都需要单独处理会显得过于慢了
+
+其实使得Java的List无法存储原始的基本数据类型也是一件好事情，因为List存储的都是对象的引用，对象通常都分布在堆的各个区域当中，无法保证对CPU缓存的最大利用。而单独的原始类型数组则可以很好的利用CPU的缓存机制。
+
+> 所有技术都是有利有弊的，例如这个存储对象的分布虽然降低了缓存的利用率，但也极大的避免了JVM的垃圾收集器工作过于频繁的问题。
+>
+> 当然，OpenJDK现在正在致力于解决这些问题。
+
+
+
+
+
+## List集合框架
+
+
+
+主要的成员有：Vector、ArrayList、LinkedList
+
+
+
+Vector是早期的线程安全的动态数组，可以根据需要进行扩容，扩容时候会创建新的数组并拷贝原数组的数据
+
+
+
+ArrayList是动态数组的实现，不是线程安全的，效率高很多，也存在扩容问题，与Vector不同，Vector是直接扩容1倍，而ArrayList仅仅只是扩容50%
+
+
+
+LinkedList是双向链表，不存在扩容问题，不是线程安全的
+
+![image-20200703233024189](images/image-20200703233024189.png)
+
+
+
+
+
+利用JDK9提供的容器静态工厂方法可以很轻易的创建出不可变的集合对象，如：
+
+```java
+ArrayList<Integer> list = new ArraySlist();
+list.add("hello");
+list.add("world")
+```
+
+可以使用如下代码代替(不可变的)：
+
+```java
+List<String> list = List.of("hello","world");
+```
+

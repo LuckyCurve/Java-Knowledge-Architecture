@@ -1523,7 +1523,7 @@ System.out.println(any.get());
 System.out.println(any.get());
 ```
 
-
+并不会消费掉获取的元素，仅仅只是获取他罢了
 
 会发现findAny方法也是返回第一个元素，那么和FindFirst方法有什么区别呢？
 
@@ -1554,4 +1554,540 @@ src.parallelStream().forEach(distinct::add);
 
 
 
+
+归约操作：将流规约成一个值，通过reduce操作来实现
+
+
+
+
+
+求和：
+
+主要有两个重载的方式：
+
+```java
+Optional<Integer> sum = list.stream().reduce(Integer::sum);
+Integer reduce = list.stream().reduce(0, Integer::sum);
+```
+
+两者区别：第一种没有给初始值，Stream有可能为空，求出的结果有可能不存在，故使用Optional来包装
+
+第二种是有初始值，一定能够返回一个对象回来，所以没有使用Optional对象来包装
+
+本来传入的是`(a,b)->a+b`表达式的，但Integer里面有静态函数sum已经实现了
+
+
+
+
+
+求最值的思路也是一样：
+
+```java
+//    求最值
+Optional<Integer> max = list.stream().reduce(Integer::max);
+max.ifPresent(System.out::println);
+Optional<Integer> min = list.stream().reduce(Integer::min);
+min.ifPresent(System.out::println);
+```
+
+也可以点进去查看求最值的具体函数实现，都是使用三元运算符来实现的
+
+
+
+
+
+于是可以很轻易的使用map和reduce函数来实现计数处理：
+
+```java
+//    数一数流中元素的个数
+Integer num = list.stream().map(a -> 1).reduce(0, Integer::sum);
+System.out.println(num);
+```
+
+> map reduce操作的链接通常称为map-reduce操作，因为Google使用它进行网络搜索而得名，非常容易实现并行化
+
+
+
+
+
+规约里面的并行好像并不容易实现，只能采取map-reduce分而治之的思想来实现并行化了
+
+
+
+
+
+已经学到的流的操作：
+
+![image-20200702152330228](images/image-20200702152330228.png)
+
+
+
+
+
+因为泛型的影响，使得流中不可能存在基本数据类型了，所有的基本数据类型都必须经过自动装箱的过程变成对应的包装类才能进入，这就造成了一定的性能损耗，还好Stream提供了三个原始类型转换流接口：
+
+- IntStream
+- DoubleStream
+- LongStream
+
+避免了自动装箱的陈本，当然其中也提供了比价多的定制化方法，例如sum等等。当然也可以在必要时候将他们转换成对象流的方法
+
+
+
+将对象流转换成原始类型流可以直接使用mapToXXX（XXX：Int，Double，Long）
+
+例如使用IntStream来进行求和避免自动装箱操作（如果直接使用Integer就不会有这么多事儿了，为啥都喜欢在定义数据的时候使用int这种原始类型来定义呢）
+
+例如求交易总额：
+
+```java
+int sum = Transaction.transactions().stream()
+    .mapToInt(Transaction::getValue)
+    .sum();
+System.out.println("Sum:"+sum);
+```
+
+
+
+如果要将其转换成为对象流：
+
+例子：生成1~100的连续整数，并转换成`Stream<Integer>`
+
+```java
+Stream<Integer> stream = IntStream.rangeClosed(1, 100).boxed();
+```
+
+这里包括了100了，感觉好乱哦，有些end是不包含在里边的，而有些是包含在里边的
+
+
+
+除了求和的例子很奇怪，直接返回了int类型的数据，其他的会返回OptionalInt类型，相当于是对应以下版本的Optional：`Optional<int>`，当然这个写法是错误的。
+
+例如查找最大的元素就会返回一个OptionalInt对象。
+
+
+
+连续值的生成，如下两个静态方法：
+
+- range（int start，int end）
+- rangeClosed（int start，int end）
+
+区别：前者不包含end，后者包含end
+
+
+
+
+
+练习：求100以内的勾股数
+
+改进前的代码：
+
+```java
+Stream<int[]> stream = IntStream.rangeClosed(1, 100).boxed()
+    //扁平化一个流，要不然就成为了Stream<Stream<int[]>>
+    .flatMap(a -> IntStream.rangeClosed(a, 100)
+             .filter(b -> Math.sqrt(a * a + b * b) % 1 == 0)
+             .mapToObj(b -> new int[]{a, b, (int) Math.sqrt(a * a + b * b)}));
+
+stream.forEach(a -> System.out.println(Arrays.toString(a)));
+```
+
+
+
+
+
+改进后的代码：
+
+```java
+Stream<double[]> stream = IntStream.rangeClosed(1, 100).boxed()
+    //扁平化一个流，要不然就成为了Stream<Stream<int[]>>
+    .flatMap(a -> IntStream.rangeClosed(a, 100)
+             .mapToObj(b -> new double[]{a, b, Math.sqrt(a * a + b * b)})
+             .filter(result -> result[2] % 1 == 0));
+```
+
+
+
+
+
+学习Stream表达式，更是为了适应以后的反应式编程
+
+创建流的几种方式：
+
+- 由值创建流
+
+调用Stream的静态方法of或者是empty创建一个空流
+
+- 有数组创建流
+
+使用Arrays工具类的静态方法stream来创建一个流
+
+- 由文件生成流
+
+使用Files.lines方法返回一个流，事例代码如下：
+
+```
+Stream<String> lines = Files.lines(Paths.get("data.txt"), Charset.defaultCharset());
+```
+
+可能会抛出IO异常，使用来了新的NIO（非阻塞式IO来读取的），建议使用JDK7的try-with-resources语法糖来使用
+
+- 由函数生成流
+
+Stream提供的两个静态方法：Stream.iterator或者是Stream.generate，这两个方法都可以创建出无限流来，通过函数的方式
+
+例如我要使用Iterator方法生成所有正偶数：
+
+`Stream.iterator(0,n-> n+2);`
+
+简单测试：生成斐波纳契数列
+
+```java
+//生成Fibonacci数列
+Stream<Integer> stream = Stream.iterate(new int[]{0, 1}, t -> new int[]{t[1], t[0] + t[1]})
+    .limit(20)
+    .map(t -> t[0]);
+stream.forEach(System.out::println);
+```
+
+
+
+上面都是使用Stream的Iterator来生成流，下面使用generate来生成，他接收一个Supplier<T>类型的Lambda表达式（Java提供了例如IntSupplier等类型），即`T get()`的表达式。他与Iterator最主要的区别就是语法形式上的不同，iterator更有种通过上一个元素生成下一个元素的语义在里面，因为语法格式的支持就是这样的，传入的对象就是上一个存储的对象
+
+所以以下这样使用Iterator生成的斐波纳契数列更符合Iterator的语义：通过上面的元素来迭代出后面的元素来：
+
+```java
+AtomicInteger before = new AtomicInteger(1);
+
+Stream.iterate(0, t -> {
+    int result = before.get() + t;
+    before.set(t);
+    return result;
+}).limit(20).forEach(System.out::println);
+```
+
+这里为了防止并发还是使用了原子类，其实用不用一个样，不会有并发条件的产生，没想到歪打正着，准备使用int代替的时候出现了如下异常：
+
+```
+No lines changed: content is already properly formatted
+```
+
+
+
+
+
+仍然会产生有序的输出
+
+
+
+在并发代码中使用有状态的供应源是不安全的，应该尽量避免
+
+
+
+不能对一个无限流使用排序或者是规约，因为所有元素都需要处理，是不可能的，永远也完不成
+
+
+
+小结：
+
+对流的基本操作：
+
+![image-20200702152330228](images/image-20200702152330228.png)
+
+
+
+对流的创建
+
+
+
+对基本数据的流操作：IntStream，DoubleStream，LongStream和包装类流的转换
+
+
+
+
+
+
+
+## 第六章、用流收集数据
+
+
+
+流的终端操作会消耗流，以产生一个最终的结果，例如：count、findFirst、forEach和reduce等等
+
+
+
+本章了解的是另一个归约操作，类似于reduce的操作——collect，将流中的元素积累成一个汇总结果，配合Collector实现
+
+
+
+学会的第一个分组技巧（按次序生成一个List）：
+
+```
+collect(Collectors.toList())
+```
+
+第二个语法（根据某些值将Stream中的元素区分开来，并以Map形式保存）：
+
+```
+Map<Integer, List<Integer>> map = Stream.of(1, 2, 3, 4).collect(Collectors.groupingBy(integer -> 1));
+System.out.println(map);
+
+result：{1=[1, 2, 3, 4]}
+```
+
+更多的可以直接查看Collectors的支持，这些被称作预定义收集器
+
+
+
+预定义收集器主要提供的功能：
+
+- 将元素归约和汇总成一个值（这不就是reduce的操作码）
+- 元素分组：以一个key将流中的元素进行分组
+- 元素分区：元素分组的特殊情况：以Boolean类型作为分组条件
+
+
+
+第一块：归约成一个值：
+
+```java
+Long length = info.stream().collect(Collectors.counting());
+System.out.println("Length:" + length);
+```
+
+可以写成：
+
+```
+long length = info.stream().count();
+```
+
+
+
+
+
+之所以书上的例子可以直接写counting()而不用写成Collectors的形式，是因为在类开头静态导入了：`import static java.util.stream.Collectors.*;`
+
+
+
+求最大值和最小值：
+
+```java
+Optional<String> max = info.stream().collect(Collectors.maxBy(String::compareTo));
+Optional<String> min = info.stream().collect(Collectors.minBy(String::compareTo));
+//省略了对Optional是否含有元素的判断，需要传入一个Comparator
+System.out.println("Max:" + max.get());
+System.out.println("Min:" + min.get());
+```
+
+可以写成：
+
+```
+Optional<String> max = info.stream().max(String::compareTo);
+Optional<String> min = info.stream().min(String::compareTo);
+```
+
+
+
+> Java好像对Collect的一些入参都直接抽象出了对应的Stream API
+
+
+
+汇总操作：Reduce也提供了相关操作
+
+```
+infoInteger.stream().collect(Collectors.summingInt(t -> t));
+```
+
+原函数对应着summingInt、summingDouble、summingLong，刚好对应三种基本数据类型，不过还是建议转换成IntStream然后再执行sum操作：
+
+```
+infoInteger.stream().mapToInt(t -> t).sum();
+```
+
+也可以使用Collectors::avragingInt等操作来轻松求出平均值（无法应用于无限流当中）
+
+
+
+有时候可能会有这样的需求：一次操作返回数据的平均值，最大值等等，代码如下：
+
+```java
+IntSummaryStatistics statistics = infoInteger.stream().collect(Collectors.summarizingInt(t-> t));
+//可以分别get出来
+System.out.println("Statistics:" + statistics);
+```
+
+
+
+
+
+连接字符串
+
+```java
+String s = info.stream().collect(Collectors.joining());
+System.out.println("Joining Result:" + s);
+```
+
+会自动调用流中元素的toString方法将其转换为Stream<String>然后执行连接操作。
+
+增强可读性（有分隔符）的写法：
+
+```java
+String s = info.stream().collect(Collectors.joining(" | "));
+System.out.println("Joining Result:" + s);
+```
+
+
+
+
+
+上面所有收集器的抽象是如下方法：
+
+```
+Collectors.reducing()
+```
+
+默认提供的那些实现只是为了增加程序的可读性和方便程序员等等
+
+IDEA推荐将其直接转换为reduce操作，而不是collect操作
+
+
+
+> 收集与归约：
+>
+> reduce和collect有什么不同？因为两种方法通常会获得相同的结果
+>
+> 都是聚合操作，但运行的原理有所不同：
+>
+> collect是可变聚合，把输入的元素积累到一个可变的容器中
+>
+> reduce是其他聚合，一般不是通过修改某个可变对象，而是通过将前一次的汇聚结果当成下一次的入参，反复如此，还有：count，allMatch
+>
+> 实际问题：reduce这种其他聚合无法并行工作，collect更适合表达可变容器的归约，很好的支持了并行
+
+
+
+虽然达到某种情况的方案有很多，尽量选择最专业的那一个，例如求和操作就更加倾向于使用IntStream的sum函数而不是去使用`reduce(Integer::sum)`
+
+
+
+
+
+分组操作
+
+最佳实践展示函数式编程比指令式编程的优势
+
+用于演示的Data类：
+
+```java
+public class Data {
+    private final String name;
+    private final Type type;
+
+    public Data(String name, Type type) {
+        this.name = name;
+        this.type = type;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public Type getType() {
+        return type;
+    }
+
+    @Override
+    public String toString() {
+        return "Data{" +
+                "name='" + name + '\'' +
+                ", type=" + type +
+                '}';
+    }
+}
+```
+
+需要根据Data中的Type字段进行分组操作：
+
+```java
+Map<Type, List<Data>> map = infoData.stream().collect(Collectors.groupingBy(Data::getType));
+System.out.println("Group Map: " + map);
+```
+
+非常的简单，如果用指令式编程估计得创建多个forEach循环
+
+有可能出现如下需求：可能需要以id为2分组等等
+
+```java
+Map<String, List<Data>> collect = infoData.stream().collect(Collectors.groupingBy(t -> {
+    if (t.getId() < 3) {
+        return "LowId";
+    } else {
+        return "HighID";
+    }
+}));
+System.out.println("result:"+ collect);
+```
+
+
+
+
+
+多级分组：
+
+最常见的二级分组：groupingBy的第二个参数可为groupBy
+
+```java
+        Map<Type, Map<String, List<Data>>> map = infoData.stream().collect(Collectors.groupingBy(Data::getType,
+                Collectors.groupingBy(t -> {
+                    if (t.getId() < 3) {
+                        return "LowId";
+                    } else {
+                        return "HighId";
+                    }
+                })));
+        System.out.println("multipartGroup:" + map);
+```
+
+groupBy是一个递归函数，可以无限的嵌套下去
+
+
+
+第二个参数其实不必要是groupingBy收集器，也可以是counting收集器
+
+例如如下方法就统计每个Type对应的个数：
+
+```java
+Map<Type, Long> countResult = infoData.stream().collect(Collectors.groupingBy(Data::getType, Collectors.counting()));
+System.out.println("Count Result: " + countResult);
+```
+
+
+
+可以多使用如下函数生成Comparator：
+
+```java
+Comparator.comparing(Data::getName)
+```
+
+```java
+//找出每个Type中id最大的元素
+Map<Type, Optional<Data>> map = infoData.stream().collect(Collectors.groupingBy(Data::getType, Collectors.maxBy(Comparator.comparing(Data::getId))));
+
+map.forEach((op1,op2)-> {
+    System.out.println(op1+ "\t" +op2.get());
+});
+```
+
+> groupingBy不会单独为所有元素都去创建一个key，所以不存在value为null的情况，故上面的Optional不是很有意义，值是必然存在的
+
+
+
+可以使用Collectors.collectionAndThen函数来实现对Optional的自动拆箱
+
+```java
+//改进，去掉Optional
+Map<Type, Data> collect = infoData.stream().collect(Collectors.groupingBy(Data::getType, Collectors.collectingAndThen(Collectors.maxBy(Comparator.comparing(Data::getId)), Optional::get)));
+System.out.println("Simple Result:" + collect);
+```
+
+> 使用collectionAndThen函数去操作Optional的get函数前提是这个操作是绝对安全的
 

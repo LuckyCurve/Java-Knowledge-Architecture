@@ -2426,6 +2426,214 @@ public class MoneyRequest {
 
 
 
+### SpringMVC的异常处理
+
+感觉已经掌握很多了，很多底层的运行轨迹都有
+
+
+
+内部的调用逻辑：
+
+- DispatcherServlet.doservice
+  - DispatcherServlet.doDispatch
+    - DispatcherServlet.processDispatchResult
+
+
+
+
+
+书写异常处理方法：
+
+- @ExceptionHandler：标注在方法上，表示这个方法是用来处理异常的
+
+添加的位置：
+
+- @Controller/@RestController：只是当前Controller的异常处理
+- @ControllerAdvice/@RestControllerAdvice：类似于AOP的动作，会对所有的Controller都会做一个拦截
+
+
+
+主要是代码中的实现：
+
+在MVC层面直接获取BingingResult，如果存在异常，则直接抛出自定义异常类，再到全局异常处理类中处理，代码如下：
+
+- 自定义异常类：
+
+```java
+@Getter
+@AllArgsConstructor
+public class FormValidationException extends RuntimeException  {
+    private final BindingResult result;
+}
+```
+
+- Controller层：
+
+```java
+@GetMapping("/")
+public String hello(@Valid HelloInfo info, BindingResult result) {
+    if (result.hasErrors()) {
+        throw new FormValidationException(result);
+    }
+    return info.getInfo();
+}
+```
+
+- 全局异常处理类：
+
+```java
+@ResponseStatus(HttpStatus.BAD_REQUEST)
+@ExceptionHandler(FormValidationException.class)
+public Map<String, String> formValidationExceptionHandler(FormValidationException e) {
+    HashMap<String, String> map = new HashMap<>();
+    FieldError error = e.getResult().getFieldError();
+    map.put("ErrorField:",error.getField());
+    map.put("ErrorInfo:",error.getDefaultMessage());
+    return map;
+}
+```
+
+
+
+
+
+上面的写法有点繁琐，每次都需要获取BindingResult并抛出异常，其实可以直接不在MVC层面获取BindingResult，MVC就会直接BindException异常，我们在全局异常处理类中可以通过BindException获取到BindingResult并依据上面的异常处理逻辑进行处理：
+
+```java
+@ResponseStatus(HttpStatus.BAD_REQUEST)
+@ExceptionHandler(BindException.class)
+public Map<String, String> validationExceptionHandler(BindException e) {
+    HashMap<String, String> map = new HashMap<>();
+    BindingResult bindingResult = e.getBindingResult();
+    FieldError error = bindingResult.getFieldError();
+    map.put("ErrorField:",error.getField());
+    map.put("ErrorInfo:",error.getDefaultMessage());
+    return map;
+}
+```
+
+大同小异把，写起来还是蛮舒服的。
+
+
+
+
+
+### SpringMVC的拦截器
+
+拦截器也类似于上面的ControllerAdvice，都是框架提供的原生的AOP切面
+
+主要是HandlerInteceptor接口，里面的几个方法为：
+
+- boolean preHandle（）	返回值为true则继续进行后续步骤，返回值为false则直接拒绝该请求继续执行，即终止方法处理。常用于权限认证
+- void postHandle（）        方法执行之后调用的，视图呈现前做的
+- void afterCompletion（）   方法执行之后调用，视图呈现之后执行
+
+
+
+如果是异步请求的话可以使用AsyncHandlerInterceptor接口
+
+
+
+直接可以在DispatcherServlet的doDispatch里面找到Handler，（每个请求进来都是通过doService方法来走的，不过大头都是在doService中调用的doDispatch中）
+
+核心代码也就这几行把：
+
+```java
+if (!mappedHandler.applyPreHandle(processedRequest, response)) {
+    return;
+}
+//进去：
+boolean applyPreHandle(HttpServletRequest request, HttpServletResponse response) throws Exception {
+    HandlerInterceptor[] interceptors = getInterceptors();
+    if (!ObjectUtils.isEmpty(interceptors)) {
+        for (int i = 0; i < interceptors.length; i++) {
+            HandlerInterceptor interceptor = interceptors[i];
+            if (!interceptor.preHandle(request, response, this.handler)) {
+                triggerAfterCompletion(request, response, null);
+                return false;
+            }
+            this.interceptorIndex = i;
+        }
+    }
+    return true;
+}
+//这里的代码逻辑：遍历所有Handler，并调用preHandle，一旦返回为false，这个方法也返回false
+```
+
+上面是preHandle的逻辑，后面的两个Handle调用逻辑差不多，其中也包含一些对异步请求的单独处理
+
+
+
+拦截器的配置：基础结论里面有
+
+拦截器的preHandler是在参数校验之前完成的
+
+
+
+欣赏一下优秀的拦截器（起到Web层的日志摘要的作用）：
+
+```java
+@Slf4j
+@Component
+public class StopWatchInterceptor implements HandlerInterceptor {
+
+    /**
+     * stopWatch是Spring提供的一个记录时间的工具
+     * 这是使用ThreadLocal是为了保证其线程安全
+     */
+    private final ThreadLocal<StopWatch> stopWatch = new ThreadLocal<>();
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        StopWatch sw = new StopWatch();
+        stopWatch.set(sw);
+        sw.start();
+        return true;
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        stopWatch.get().stop();
+        stopWatch.get().start();
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        StopWatch sw = this.stopWatch.get();
+        sw.stop();
+
+        String method = handler.getClass().getSimpleName();
+        if (handler instanceof HandlerMethod) {
+            String beanType = ((HandlerMethod) handler).getBeanType().getName();
+            String methodName = ((HandlerMethod) handler).getMethod().getName();
+            method = beanType + "." + methodName;
+        }
+        //三个时间段的耗时
+        log.info("{};{};{};{};{}ms;{}ms;{}ms", request.getRequestURI(), method,
+                response.getStatus(), ex == null ? "-" : ex.getClass().getSimpleName(),
+                sw.getTotalTimeMillis(), sw.getTotalTimeMillis() - sw.getLastTaskTimeMillis(),
+                sw.getLastTaskTimeMillis());
+
+        stopWatch.remove();
+    }
+}
+```
+
+运行结果：
+
+```
+2020-07-01 11:29:38.506  INFO 13752 --- [nio-8080-exec-1] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;400;-;80ms;0ms;80ms
+2020-07-01 11:30:29.283  INFO 13752 --- [nio-8080-exec-3] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;400;-;2ms;0ms;2ms
+2020-07-01 11:30:36.713  INFO 13752 --- [nio-8080-exec-4] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;200;-;7ms;7ms;0ms
+2020-07-01 11:30:43.407  INFO 13752 --- [nio-8080-exec-5] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;200;-;2ms;2ms;0ms
+2020-07-01 11:30:43.652  INFO 13752 --- [nio-8080-exec-6] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;200;-;1ms;1ms;0ms
+2020-07-01 11:30:43.843  INFO 13752 --- [nio-8080-exec-7] c.l.s.c.StopWatchInterceptor             : /;cn.luckycurve.springmvcexceptionhandler.controller.HelloExceptionController.hello;200;-;1ms;1ms;0ms 
+```
+
+也可以看出JVM调优的强大，运行起来越来越快，在JVM层尽量解决平台无关性所带来的劣势，突然感觉到非常优秀的一个语言，总有那么多人在为我们负重前行使得我们可以很轻易的编写优质的代码。
+
+
+
 ##  14、理解Spring ApplicationContext
 
 
@@ -2638,3 +2846,89 @@ after hello()
 
 
 这就是底层AOP为什么时而生效，时而不生效的原因了
+
+
+
+
+
+
+
+## 15、访问Web资源
+
+
+
+主要是两种途径：
+
+- RestTemplate
+- WebClient
+
+
+
+SpringBoot没有提供自动配置的RestTemplate：
+
+- 自己new一个
+- SpringBoot提供了RestTemplateBuilder，使用这个Builder去Build一个就好了
+
+
+
+主要就是两个方法：ForObject和ForEntity
+
+Object是将响应体中的内容映射成一个对象，而Entity则直接将整个返回体的内容全部取回
+
+并不做任何的处理什么的
+
+
+
+需要手动构造URI
+
+可以构造出URI来传入到ForObject方法
+
+```java
+UriComponentsBuilder.fromuriString("http://....?")
+    .build(param);
+```
+
+
+
+可以在post方法将对象加入到请求中去。（get方法不提供）
+
+
+
+RestTemplate提供的一些高阶用法：
+
+带上请求头`RestTemplate.exchange(RequestEntity request,Class class)`
+
+一定要设置超时时间，要不然系统会越来越慢
+
+
+
+对RestTemplate的高度定制化可以查看advanced-resttemplate-demo项目来查看
+
+在主类中的配置
+
+
+
+
+
+
+
+WebClient来访问HTTP资源
+
+WebClient：一个以Reactive方式处理HTTP请求的非阻塞式的客户端。
+
+底层支持的HTTP库：Netty和Jetty
+
+使用最多的还是Netty
+
+
+
+与RestTemplate一样都需要自己创建：
+
+- WebClient.create()
+- WebClient.build()
+
+可以在构造过程中指定baseurl
+
+在webflux的starter中
+
+使用起来也是涉及到Mono，Flux等等的对象，也存在doOnError的一些方法。
