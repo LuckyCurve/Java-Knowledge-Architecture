@@ -2932,3 +2932,29 @@ WebClient：一个以Reactive方式处理HTTP请求的非阻塞式的客户端�
 在webflux的starter中
 
 使用起来也是涉及到Mono，Flux等等的对象，也存在doOnError的一些方法。
+
+
+
+
+
+
+
+## 16、更好得书写Web Service
+
+
+
+URL与HTTP方法的推荐组合——以Coffee为例子：
+
+![image-20200706161043717](images/image-20200706161043717.png)
+
+
+
+HTTP的常见状态码（可以通过`@ResponseStatus`注解来返回）
+
+![image-20200706161133038](images/image-20200706161133038.png)
+
+以2开头的状态码表示成功
+
+以4开头的是相关的客户端的错误
+
+以5开头的是服务端的错误

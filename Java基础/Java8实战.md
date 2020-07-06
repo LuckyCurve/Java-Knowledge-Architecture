@@ -2091,3 +2091,547 @@ System.out.println("Simple Result:" + collect);
 
 > 使用collectionAndThen函数去操作Optional的get函数前提是这个操作是绝对安全的
 
+
+
+
+
+分区：是分组的特殊形式，得到的Map的键是Boolean类型（感觉也可以使用groupingBy来进行分组，不过使用partitioningBy语义更加明显），和groupingBy一样也支持多级的分组，只需要传入合适的收集器即可，不过最外层永远是Key为true或者是false的Map
+
+划分质数与非质数：
+
+```java
+//判断一个数是否为质数
+public static Boolean isPrime(Integer candidate) {
+    //如果都不满足：
+    return IntStream.range(2, candidate).noneMatch(i -> candidate % i == 0);
+}
+
+//分区操作
+public static Map<Boolean, List<Integer>> partitionPrimes(Integer n) {
+    if (n<2) {
+        throw new IllegalArgumentException("Number is too small");
+    }
+    return IntStream.rangeClosed(2,n)
+        .boxed()
+        .collect(Collectors.partitioningBy(PrimeNumber::isPrime));
+}
+
+public static void main(String[] args) {
+    Map<Boolean, List<Integer>> map = partitionPrimes(100);
+    System.out.println(map);
+}    
+```
+
+
+
+
+
+
+
+Collectors操作汇总表：
+
+![image-20200705155753574](images/image-20200705155753574.png)
+
+![image-20200705155819377](images/image-20200705155819377.png)
+
+
+
+所有的收集器都是对Collector接口的实现，接下来讨论自定义的Collector接口实现，实现自定义的归约操作，例如将数据流划分成质数与非质数
+
+
+
+Collector接口抽象：
+
+```java
+public interface Collector<T, A, R> {
+    //返回元素的承载容器，如果是List就创建一个空的List
+    Supplier<A> supplier();
+    
+    BiConsumer<A, T> accumulator();
+
+    BinaryOperator<A> combiner();
+
+    Function<A, R> finisher();
+	//提供一系列特征，告诉collect方法在执行时候可以应用哪些优化
+    Set<Characteristics> characteristics();
+}
+```
+
+> 泛型说明：
+>
+> - T：流中要收集的元素的泛型
+> - A：累加器类型，在收集过程当中用于积累部分结果的对象
+> - R：收集操作得到的对象的类型，通常是集合
+
+
+
+
+
+类似于Collectors.toList()方法的实现：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/7/5 16:10
+ * 自定义Collector
+ */
+public class ToListCollector<T> implements Collector<T, List<T>, List<T>> {
+    /**
+     * 1、创建空的累加器实例，通常直接调用实例的无参构造函数
+     */
+    @Override
+    public Supplier<List<T>> supplier() {
+        return ArrayList::new;
+    }
+
+    /**
+     * 2、将元素添加到结果容器。会提供两个参数：
+     * 流中前n-1个项目的结果累加器
+     * 第n个元素本身
+     * 都是通过lambda表达式体现出来的
+     */
+    @Override
+    public BiConsumer<List<T>, T> accumulator() {
+        //return (list,item) -> list.add(item);
+        //写法优化
+        return List::add;
+    }
+
+    /**
+     * 4、如果不考虑并行操作，这里就不用了
+     * 对并行操作的支持，并行操作的结果合并
+     * 主要是合并两个结果容器
+     */
+    @Override
+    public BinaryOperator<List<T>> combiner() {
+        return (list1, list2) -> {
+            list1.addAll(list2);
+            return list1;
+        };
+    }
+
+    /**
+     * 3、对结果容器应用最终转换
+     * 在完成对最后一个元素的遍历后，是否需要操作将累加器转换
+     * 成为最终符合预期的对象类型，通常是不需要的
+     */
+    @Override
+    public Function<List<T>, List<T>> finisher() {
+        return Function.identity();
+    }
+
+    /**
+     * 5、对流操作优化的配置
+     * 主要包含三个特性的枚举
+     * CONCURRENT：允许并行调度，如果没有UNORDERED特性，只会在无序的数据源情况下使用并行归并操作
+     * UNORDERED：归约结果不受流中项目遍历和积累顺序影响
+     * IDENTITY_FINISH：finisher（）方法可以跳过，跳过转换
+     */
+    @Override
+    public Set<Characteristics> characteristics() {
+        /*
+          可以标注为CONCURRENT，但所有入参都是有序的，标注了也不会有太大作用
+          无法标注为UNORDERED
+          可以标注IDENTITY_FINISH
+         */
+
+        return Set.of(Characteristics.IDENTITY_FINISH,Characteristics.CONCURRENT);
+    }
+
+
+    /**
+     * 测试
+     */
+    public static void main(String[] args) {
+        Stream<String> stream = Stream.of("hello", "world", "Java");
+        List<String> list = stream.collect(new ToListCollector<String>());
+        System.out.println(list);
+    }
+}
+
+```
+
+
+
+自定义Collector的优势在于：
+
+可以在Collector内部访问到先前处理的元素了，而在外部仅仅只是使用封装好的Collector是达到这种效果的
+
+性能的优化也来源于此，可以在利用前面已经满足条件的数据来增加这次查找的效率
+
+可以查看6.6节查看具体应用，感觉使用场合不会很多，虽然利用前面的数据确实可以很大的提升效率，但规律比较难找，需要对算法的了解程度。
+
+
+
+
+
+小结：
+
+- collect操作及其传入的收集器
+- 使用内置的收集器统计出流的最值，平均值等值，可以直接通过summarizingInt全部取出，或者转换成对应的原始类型Stream来处理
+- 分区、分组
+- 收集器可以轻易的复合，进行多级分区和多级分组
+- 自定义Collector
+
+
+
+
+
+
+
+
+
+## 第七章、并行数据处理与性能
+
+
+
+使用Stream最大的好处就是利用计算机的多个内核进行运算
+
+在JDK8之前，想要使用并发处理得避免竞态条件，还好JDK7引入了叫做分支/合并的框架，让这些操作执行起来更加稳定
+
+流即在幕后应用JDK7提供的分支合并框架的
+
+了解并行流的运行原理以及可能会产生的意外的结果
+
+
+
+
+
+可以通过parallelStream方法将收集源转换成并行流
+
+并行流：把一个内容分成多个数据块，并用不同的线程分别处理每个数据块的流
+
+
+
+
+
+只有当数据特别大的时候并行流的优势才得以体现，要不然协同几个处理器的结果都需要花费不少时间，反倒效率会降低
+
+可以直接对stream调用parallel方法可以使流并行化，生成的还是Stream对象，实际上只是内部设置了一个boolean标志位是否要将操作并行化而已
+
+也可以对一个并行流调用sequential方法将其变换为一个顺序流
+
+因此可以很方便的控制流的哪一段操作并行执行，哪一些操作可以串行执行
+
+
+
+底层是基于分支/合并框架执行的，即ForkJoin框架，默认创建线程池的数量是当前处理器的核心数量，通过`Runtime.getRuntime().availableProcessors()`获得，其实Runtime可以获取到很多信息，包括剩余内存等等
+
+
+
+
+
+
+
+书本上的测试Demo：
+
+```java
+package cn.luckycurve.demo.character7;
+
+import java.util.function.Function;
+import java.util.stream.Stream;
+
+/**
+ * @author LuckyCurve
+ * @date 2020/7/6 10:34
+ * 对并行流的性能测试：迭代式，顺序归纳，并行归纳
+ */
+public class PerformanceTesting {
+
+    public static Long statistic = 10_000_000L;
+
+    /**
+     * @return 返回最快时间，单位ms
+     */
+    public static Long measureSumPerf(Function<Long, Long> adder, Long n) {
+        //记录最短时间
+        long fastest = Long.MAX_VALUE;
+        for (int i = 0; i < 10; i++) {
+            long start = System.nanoTime();
+            Long sum = adder.apply(n);
+            long duration = (System.nanoTime() - start) / 1_000_000;
+            System.out.println("Result:" + sum);
+            if (duration < fastest) {
+                fastest = duration;
+            }
+        }
+        return fastest;
+    }
+
+    /**
+     * 常规迭代
+     */
+    public static Long normal(Long n) {
+        long sum = 0;
+        for (int i = 0; i < n; i++) {
+            sum += i;
+        }
+        return sum;
+    }
+
+    public static Long order(Long n) {
+        return Stream.iterate(0L, p -> p + 1)
+                .limit(n)
+                .reduce(0L, Long::sum);
+    }
+
+    public static Long parallel(Long n) {
+        return Stream.iterate(0L, p -> p + 1)
+                .limit(n)
+                .parallel()
+                .reduce(0L, Long::sum);
+    }
+
+
+    public static void main(String[] args) {
+        Long time = 0L;
+        time = measureSumPerf(PerformanceTesting::normal, statistic);
+        System.out.println("Time:" + time + "ms");
+        System.out.println("-----------------------------------------");
+        time = measureSumPerf(PerformanceTesting::order, statistic);
+        System.out.println("Time:" + time + "ms");
+        System.out.println("-----------------------------------------");
+        time = measureSumPerf(PerformanceTesting::parallel, statistic);
+        System.out.println("Time:" + time + "ms");
+    }
+
+
+}
+
+```
+
+> 真的很漂亮，对方法抽象的非常完美
+
+Result：
+
+```java
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Time:6ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Time:80ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Time:150ms
+
+Process finished with exit code 0
+```
+
+结果和我自己测试的差不多，
+
+并行性能远差于串行性能
+
+主要是Iterator的限制，每次都需要上一次Iterator的结果才能继续执行，很难将问题直接分成独立的小块，其实本质上还是串行操作，只是将串行任务分配到不同的线程上去了，且同一时间只有一个线程在执行而已
+
+至于常规的操作也比串行的操作好，还是由于Iterator的性能瓶颈
+
+解决办法很简单，也就是我一直推崇的原始数据流的range方法来代替Iterator方法
+
+改进：
+
+```java
+public static Long optimizeOrder(Long n) {
+    return LongStream.range(0,n)
+        .sum();
+}
+
+public static Long optimizeParallel(Long n) {
+    return LongStream.range(0,n)
+        .parallel()
+        .sum();
+}
+```
+
+结果：
+
+```java
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Normal Time:6ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Order Time:81ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+OptimizeOrder Time:3ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Parallel Time:275ms
+-----------------------------------------
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+Result:49999995000000
+OptimizeParallel Time:1ms
+```
+
+突破Iterator带来的性能瓶颈，就连串行的方法都快了很多
+
+如果用错了，性能损失的不是一点两点了，而且很难调试的到
+
+
+
+避免共享可变状态，确保并行Stream得到正确的结果，特别是在使用forEach迭代数据的时候千万要记得避免共享变量
+
+
+
+使用并行流的一些建议：
+
+- 如果有疑问，测试、问题通常与你的感觉相悖
+- 留意装箱、装箱会大大降低性能，Java8有原始数据流供使用，尽量使用这些流
+- 有些操作在并行流上的性能就比顺序流差、特别是limit、findFirst等依赖于元素顺序的操作，~~还有Iterator~~（Iterator是数据源操作，不该列在这里）。对limit，无序流调用会比有序流更加高效，可以调用unordered方法将有序流变成无序流。对findFirst在并行流中代价非常大，如果对顺序不执著的话强烈建议使用findAny代替。
+- 对于较小的数据量，使用并行几乎从来都不是一件好事儿、和我的理解非常像
+- 考虑数据结构是否容易分解、例如ArrayList就比LinkedList容易拆分的多，因为前者可以不用遍历就平均拆分，后者则不行，另外用range工厂方法创建的原始数据流也可以快速的拆分，非常适合用来做并发
+- 考虑终端操作对流的合并操作代价的大小，避免在结果合并的时候消费了太多的性能
+
+
+
+数据源操作对并发的支持（也就是下表的可分解性）：
+
+![image-20200706114036659](images/image-20200706114036659.png)
+
+
+
+
+
+
+
+接下来看看并行流的基础框架：ForkJoin框架
+
+
+
+分支/合并框架：以递归方式将可以并行的任务拆分成更小的任务，然后将每个任务的结果合并起来并生成整体结果。他是ExecutorService接口的一个实现，将任务交给线程池中的工作线程，然后再合并
+
+可以看下ForkJoinPool的类继承图：
+
+![image-20200706114446006](images/image-20200706114446006.png)
+
+
+
+
+
+这里的Task实质上指的是ForkJoinTask实现——RecursiveTask<R>
+
+R是任务产生的结果返回类型，如果没有返回结果，则使用RecursiveAction来代替
+
+唯一的需要实现方法：
+
+```java
+protected abstract V compute();
+```
+
+任务处理逻辑是：将任务拆分成子任务，直到任务无法拆分时候生成解决单个子任务的逻辑，类似于递归调用，不过是多核同时的递归调用
+
+执行逻辑：
+
+```
+if (任务足够小或不可分) {
+	顺序计算该任务
+} else {
+    将任务分成两个子任务
+    递归调用本方法，拆分每个子任务，等待所有子任务完成
+    合并每个子任务的结果
+}
+```
+
+即分而治之思想的并行版本
+
+
+
+执行的代码示例：
+
+```java
+new ForkJoinPool().invoke(RecursiveTaskImpl)
+```
+
+尽量别这么用，保证ForkJoinPool的单例，可以注入到IOC容器当中，要使用的时候直接取出
+
+使用起来可能比直接使用并行流来的效果要差
+
+
+
+ForkJoin需要你找到一个标准来判断这个任务是应该继续拆分还是直接执行，这个标准是动态的，需要你自己根据机器的实际环境去测试
+
+尽量把任务分细一点，虽然可能会遇到一些问题，但可以充分利用ForkJoin框架的窃取机制，从别的线程的工作队列的队尾获取到一个任务去执行，保证CPU的最大利用率，直到全部任务都完成为止或者全部任务都在被执行
+
+
+
+
+
+
+
+既然并行流是依赖于ForkJoin框架的，必然会有任务的拆分，那么是如何完成的呢？
+
+依赖的自动机制被称为——Spliterator机制
+
+
+
+Spliterator是一个接口，可分迭代器，一般都不用自己去实现Spliterator接口，Java8已经为集合框架中包含的所有数据结构都提供了一个默认的Spliterator实现，了解即可
