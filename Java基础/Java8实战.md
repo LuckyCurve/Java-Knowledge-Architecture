@@ -2635,3 +2635,1385 @@ ForkJoin需要你找到一个标准来判断这个任务是应该继续拆分还
 
 
 Spliterator是一个接口，可分迭代器，一般都不用自己去实现Spliterator接口，Java8已经为集合框架中包含的所有数据结构都提供了一个默认的Spliterator实现，了解即可
+
+
+
+
+
+
+
+
+
+# 第三部分、高效Java8编程
+
+
+
+旨在通过Java8的各种特性更有效的改善代码的质量
+
+
+
+
+
+
+
+
+
+## 第八章、重构、测试和调试
+
+
+
+本章主要讨论的就是：面对老版Java接口编写的遗留问题，即对代码的重构
+
+并且还讲解了几种设计模式和Lambda表达式，Stream API的调试
+
+
+
+从增强可读性的方向重构代码需要注意的几点：
+
+- 用Lambda表达式取代匿名类
+- 用方法引用重构Lambda表达式（例：尽量使用Integer::sum去代替你写的求和）
+- 用Stream API重构命令式的数据处理
+
+
+
+第一点的限制：
+
+不仅仅是需要接口支持函数式编程，还会出现以下问题：
+
+```java
+Integer a = 10;
+//报错
+Runnable runnable1 = () -> {
+    Integer a = 20;
+    System.out.println(a);
+};
+new Thread(runnable1).start();
+
+Runnable runnable2 = new Runnable() {
+    @Override
+    public void run() {
+        Integer a = 20;
+        System.out.println(a);
+    }
+};
+new Thread(runnable2).start();
+```
+
+原因在于：匿名类可以屏蔽包含类的对象，但是Lambda表达式不行，换言之，Lambda里面定义的变量的作用域与包含类里面的变量作用域相同，而匿名类拥有自己的变量作用域
+
+此外还有：由于Lambda变量没有自己的作用域，在Lambda表达式中的this指的是包含类的实例化对象，而匿名类指的是当前匿名对象
+
+最后，在涉及重载的方法中，Lambda表达式可能不适用，例如如下代码：
+
+```java
+@FunctionalInterface
+interface Task{
+	public void execute();
+}
+public static void doSomething(Runnable r){
+    r.run(); 
+}
+public static void doSomething(Task a){ 
+    a.execute(); 
+}
+```
+
+如果使用如下代码：
+
+```java
+doSomething(()->{System.out.println("Hello world")});
+```
+
+则可能出现问题，因为Lambda是根据上下文语义来判断的，这时候可能就需要显式转换了：
+
+```java
+doSomething((Task)()->{System.out.println("Hello world")});
+```
+
+IntelliJ支持这种重构，会帮你避免发生这种情况
+
+
+
+
+
+第二点：从Lambda表达式到方法引用之间的转换
+
+往往方法名更能够直观的表达代码的意图，可以使用类中的方法来改善代码的可读性（更常见的：自己将代码块抽象出方法来，给方法一个合理的命名）
+
+```java
+List<Integer> list = List.of(1, 4, 7, 3, 7, 9, 4, 2, 99, 0);
+Map<String, List<Integer>> map = list.stream().collect(Collectors.groupingBy(t -> {
+    if (t < 5) {
+        return "Lower";
+    } else {
+        return "Higher";
+    }
+}));
+System.out.println(map);
+```
+
+可以将groupBy代码抽象出如下结果：
+
+```java
+public static void main(String[] args) {
+    List<Integer> list = List.of(1, 4, 7, 3, 7, 9, 4, 2, 99, 0);
+    Map<String, List<Integer>> map = list.stream().collect(Collectors.groupingBy(GroupByExample::intJudge));
+    System.out.println(map);
+}
+
+public static String intJudge(Integer i) {
+    if (i < 5) {
+        return "Lower";
+    } else {
+        return "Higher";
+    }
+}
+```
+
+> 这里之所以将方法标注为static，主要是因为主函数是static，static方法无法调用非static方法
+
+尽量使用库函数，不仅少些代码，读起来还直观，如以下两个求和操作：
+
+```java
+int totalCalories =menu.stream()
+    .map(Dish::getCalories)
+    .reduce(0, (c1, c2) -> c1 + c2);
+
+int totalCalories = menu.stream()
+    .collect(summingInt(Dish::getCalories));
+```
+
+
+
+最后一点：将数据处理从命令式转换为Stream
+
+主要的优点就是：代码容易实现并行，可读性强，短路，延迟加载等特性
+
+缺点：转换过程困难，需要将原本的控制流转换成流方式的控制流
+
+
+
+
+
+
+
+以上是代码的可读性，下面是代码的灵活性：
+
+构建函数式接口，在什么情况下应该使用函数式接口呢？主要是**有条件的延迟执行**和**环绕执行**
+
+- 有条件的延迟执行：
+
+可以直接将需要判断的固定代码抽象到一个方法里面去，将需要执行的方法作为参数传入，设计这样的一个通用接口就可以了
+
+- 环绕执行
+
+特别是对特定资源，需要指定准备阶段和清理阶段，完美适配Lambda表达式
+
+
+
+<hr></hr>
+
+
+
+使用Lambda表达式重构面向对象的设计模式
+
+对设计经验的归纳被称作设计模式，往往可以复用这些方式方法来解决一些常见问题。如：
+
+访问者模式：用于分离程序的算法和它的操作对象
+
+单例模式：限制类的实例化，只生成一份对象
+
+使用Lambda表达式可以使得很多现存的略显臃肿的面向对象设计模式以更加精炼的方式实现了。本书举例：
+
+- 策略模式
+- 模板方法
+- 观察者模式
+- 责任链模式
+- 工厂模式
+
+
+
+这部分直接挪到了常见错误&基础结论中去了。
+
+
+
+
+
+Lambda表达式的测试：
+
+开发一时爽，维护火葬场
+
+我们往往是需要正确的代码
+
+应该尽量测试外层方法而不是Lambda表达式，因为Lambda表达式没有方法名，无法直接调用并测试他
+
+如果实在需要，可以再将其转换成方法进行测试
+
+高阶函数测试更加难，即传入一个函数，传出一个函数
+
+如果测试出现问题，那么就进入了调试阶段
+
+
+
+
+
+调试的两大要素：
+
+- 查看栈追踪
+- 输出日志
+
+不幸的是，Lambda表达式没有方法名字，它的栈追踪可能比较难
+
+至于输出日志，别用forEach输出，forEach会直接影响整个流，使用peek方法打印你想要直到的中间值，用法如下：
+
+```java
+List<Integer> result =
+numbers.stream()
+.peek(x -> System.out.println("from stream: " + x))
+.map(x -> x + 17)
+.peek(x -> System.out.println("after map: " + x))
+.filter(x -> x % 2 == 0)
+.peek(x -> System.out.println("after filter: " + x))
+.limit(3)
+.peek(x -> System.out.println("after limit: " + x))
+.collect(toList());
+```
+
+
+
+
+
+
+
+
+
+## 第九章、默认方法
+
+
+
+默认方法的出现主要是为了以一种兼容的方式改进API
+
+往往设计者更新接口的时候，接口的实现类都无法使用了，特别是随着Java API的数量级的增大，这种问题愈发严重
+
+Java8的接口现在支持在声明方法的同时提供实现，可以通过两种方法来实现：
+
+- 在接口内部声明静态方法
+- 使用默认方法，指定方法的默认实现
+
+这样就可以让接口平滑的进行优化和演进。
+
+最常见的例子：
+
+- List接口中的sort方法
+- Collection接口的stream方法
+
+这样的话接口看起来越发的像抽象类了，只有其中的一部分方法需要去实现，会带一些默认实现的方法
+
+> 抽象类与接口之间的区别：
+>
+> - 一个类只能继承一个抽象类，却可以实现多个接口
+> - 抽象类可以通过实例变量（字段）来保存信息，而接口是不能有实例变量的
+
+
+
+突发奇想：如果一个类继承两个接口，两个接口都定义了相同的签名的默认方法实现，即以下这种情况，会怎么样呢？
+
+```java
+public interface Interface1 {
+    default String hello() {
+        return "Interface1:hello";
+    }
+}
+
+public interface Interface2 {
+    default String hello() {
+        return "Interface2:hello";
+    }
+}
+
+public class ImplTest implements Interface1,Interface2 {
+
+}
+```
+
+编译器会强制要求ImplTest手动实现hello方法
+
+如果修改其中一个接口的方法签名，例如在Interface1接口中的方法中增加一个参数，就会使得其可进行编译。
+
+
+
+> 随着Java8的接口对静态方法的支持，很多的辅助工具类会渐渐地被取代
+>
+> 例如Collections可能会逐步被声明在Collection内部的static方法所取代，从而保证更好的向后兼容性
+
+
+
+
+
+默认方法的使用途径：
+
+- 可选方法
+
+即对一些方法的默认不支持，避免了许多方法的方法体都是return null的情况发生
+
+例如Iterator的remove方法使用Java8的默认方法：
+
+```java
+default void remove() {
+    throw new UnsupportedOperationException("remove");
+}
+```
+
+虽然提供了remove接口，但是会损伤迭代器的整体运行逻辑，不好写，但是有可能用户自定义的迭代器可以很轻松的实现这个功能，于是提供了这个方法接口
+
+
+
+> 关于继承的错误观点：
+>
+> 不应该一想到代码复用就试图使用继承，会将类引入不必要的复杂性。就像Java编程思想里说的，优先考虑组合而不是继承。Java为了防止继承这种属性被滥用，JDK里大量定义了final类来防止被继承，防止核心代码的功能被污染
+
+
+
+接下来就是默认方法实现冲突规则：
+
+如果一个类实现了两个接口，这两个接口都拥有相同方法的数字签名，那么处理这种冲突的规则如下（书上举的例子和我这也差不多，都是接口提供hello方法）：
+
+1. 类中的方法优先级最高，类或父类中声明的方法优先级高于任何声明为默认方法的优先级
+2. 如果无法依靠第一条进行判断，则子接口的优先级更高，即如果B接口扩展了A接口，那么B接口方法的优先级较高
+3. 如果还是无法判断，则继承了多个接口的类必须显式的覆盖和调用期望的方法，显式的选择使用哪一个默认方法的实现
+
+
+
+存在一个折磨人的问题：
+
+![image-20200708140655871](images/image-20200708140655871.png)
+
+D是实现了A接口的一个类，直接沿用了A的默认方法，并以D为基类创建了类C。
+
+此时调用C的hello方法，按照第一条规则应该直接遵从D中的hello方法，答案却是遵循B中的方法，因为D没有实现自己的hello方法，他的hello方法源于A，所以根据第二条规则执行的是B
+
+如果D实现了自己的hello方法，则执行的是D的hello方法
+
+即编译器会选择更加具体的接口或类实现来定义类的方法源于何处
+
+```java
+public class ImplTest implements Interface1,Interface2 {
+
+    public static void main(String[] args) {
+        new ImplTest().hello();
+    }
+
+    @Override
+    public String hello() {
+        return Interface1.super.hello();
+    }
+}
+```
+
+
+
+
+
+最后一个场景，也是C++最为头疼的一个难题：菱形继承问题
+
+接口BC直接拓展接口A，类D直接实现了BC接口
+
+![image-20200708141424361](images/image-20200708141424361.png)
+
+这时候调用D的hello方法就相当于调用A的hello方法了。
+
+
+
+如果BC实现了自己的hello默认方法，就会以BC的默认方法为依据
+
+如果C中声明了一个普通的hello方法，由于其优先级比A中的默认方法要高（B中的hello方法也要被认作是A中的），就需要类D自己实现hello了
+
+
+
+> 当然这只是在Java语言中被简化了的菱形问题，由于C++的多继承会造成更加复杂的问题，直接将上面的全部看成类（这在Java当中是不存在的），因为C++中也支持向上转型，如果使用A的引用去调用某个方法，这个方法在BC中都有各自的实现，在D中没有实现，则需要手动的指定这个方法是来源于B还是来源于C
+
+
+
+
+
+遵循着越具体的原则去处理冲突问题可以很轻易的解决问题。
+
+
+
+记住Java8还提供了接口对静态代码的支持
+
+
+
+
+
+
+
+
+
+## 第十章、用Optional取代null
+
+
+
+1965年就有人提出了null，只是因为这种方式设计语言实现起来比较容易，此后的语言为了与前面的语言保持兼容，都保存了null，例如1972年发行的C和1995年发行的Java
+
+导致最常见的NullPointerException异常
+
+最常见的避免的方式就是：每次都做null检查
+
+
+
+看下其他语言对NULL的替代品：
+
+Groovy通过引入安全导航操作符？可以安全访问可能为null的变量
+
+Scala提供了名为Optional[T]的数据结构，他既可以包含T类型的变量，也可以不包含变量，每次想要获取值的时候不得不做语法层面的检查。
+
+
+
+Java8借鉴的Optional，完成了null到Optional的迁移
+
+使用Optional空对象来代替null值，语义是等价的。例如在传入用户名的时候当用户名不存在的时候不要传入null，而是传入`Optional<String>`来避免NULL值的产生，可以使用Optional.empty来返回一个空的Optional对象。
+
+此外使用Optional还有一个好处就是在语义层面上可以告诉别人这里是可以为null的
+
+主要是为了在存取数据的时候直接报出异常，而不是等你调用null里面的某个方法再发现null异常之后再用工具调试这个null值是哪儿来的
+
+
+
+使用Optional
+
+1. 创建Optional对象
+
+主要因为Optional构造方法被声明为private了，
+
+主要有三种工厂方法：
+
+声明空的Optional：`Optional.empty()`
+
+```java
+public static<T> Optional<T> empty() {
+    @SuppressWarnings("unchecked")
+    Optional<T> t = (Optional<T>) EMPTY;
+    return t;
+}
+```
+
+依据一个非空值创建Optional：`Optional.of(obj)`
+
+```java
+public static <T> Optional<T> of(T value) {
+    return new Optional<>(value);
+}
+
+private Optional(T value) {
+    this.value = Objects.requireNonNull(value);
+}
+```
+
+所以当value为null的时候会直接抛出NullPointerException异常，避免过久后才发现异常
+
+可接受null的Optional：`Optional.ofNullable(obj)`
+
+```java
+public static <T> Optional<T> ofNullable(T value) {
+    return value == null ? empty() : of(value);
+}
+```
+
+
+
+对其中的对象转换成另一种数据——map
+
+就是Stream里面我们使用的map，可以把Optional理解成单个对象的Stream
+
+```java
+public <U> Optional<U> map(Function<? super T, ? extends U> mapper) {
+    Objects.requireNonNull(mapper);
+    if (!isPresent()) {
+        return empty();
+    } else {
+        return Optional.ofNullable(mapper.apply(value));
+    }
+}
+```
+
+接收一个Function，将Optional中的对象转入到另一种形式，如果不存在的话就直接变成了empty的状态
+
+
+
+map能操作，flatmap也能操作，其目的就是为了让流扁平化，防止出现多层Optional嵌套的情况出现
+
+
+
+可以对optional对象使用orElse方法来保证当其为null的时候可以有一个默认值
+
+```java
+public T orElse(T other) {
+    return value != null ? value : other;
+}
+```
+
+通过这个方法，处理潜在的缺失值的时候就非常的具有优势
+
+
+
+
+
+Optional的使用范围：
+
+Java语言的架构师Brain Goetz曾经明确的陈述过：Optional的设计初衷仅仅是要支持能返回Optional对象的语法。所以不支持Serializable接口，在框架中使用Optional很有可能会引发程序故障
+
+
+
+
+
+获取Optional内部的对象：
+
+- get
+
+```java
+public T get() {
+    if (value == null) {
+        throw new NoSuchElementException("No value present");
+    }
+    return value;
+}
+```
+
+最简单但是最不安全的方法，很容易抛出异常
+
+
+
+- orElse
+
+```java
+public T orElse(T other) {
+    return value != null ? value : other;
+}
+```
+
+提供默认值在Optional不包含对象的时候使用
+
+
+
+- orElseGet
+
+```java
+public T orElseGet(Supplier<? extends T> supplier) {
+    return value != null ? value : supplier.get();
+}
+```
+
+传入一个Supplier在Optional不包含对象的时候调用
+
+
+
+- orElseThrow
+
+```java
+public T orElseThrow() {
+    if (value == null) {
+        throw new NoSuchElementException("No value present");
+    }
+    return value;
+}
+
+public <X extends Throwable> T orElseThrow(Supplier<? extends X> exceptionSupplier) throws X {
+    if (value != null) {
+        return value;
+    } else {
+        throw exceptionSupplier.get();
+    }
+}
+```
+
+方法被重载过，可以使用第二个方法抛出定制化的异常
+
+
+
+
+
+使用Optional的建议：
+
+Optional是在Java8提出的，很多老的API都不可能改成Optional的样子
+
+
+
+- 用Optional封装可能为null的值
+
+```java
+Optional<Object> value = Optional.ofNullable(map.get("key"));
+```
+
+- 将异常转换为Optional
+
+最常见的就是Integer.parseInt(String s) throws NumberFormatException
+
+如果转换不成功就会抛出异常，你不想每次都去catch然后再来处理这些异常，这样会显得程序很笨拙，可以使用如下包装类：
+
+```java
+public static Optional<Integer> stringToInt(String s) {
+    try {
+    	return Optional.of(Integer.parseInt(s));
+    } catch (NumberFormatException e) {
+    	return Optional.empty();
+    }
+}
+```
+
+
+
+Optional也像Stream一样提供了三个原始类型数据，但是不建议使用他们
+
+
+
+
+
+
+
+
+
+## 第十一章、CompletableFuture：组合式异步编程
+
+
+
+本章主要是关于异步非阻塞计算
+
+
+
+两种趋势推动着Java语言的发展：
+
+- 硬件平台的影响
+
+随着多核CPU时代的来领，如何充分利用硬件成为了一个重要的因素。
+
+Java对其支持：Java7的分支/合并框架，Java8的并行流都为了更简单高效的实现这一目的
+
+- 公共API日益增长的互联网服务应用
+
+各个公司纷纷提供自己的API服务，而不是像以前一样以完全隔离的方式工作。现代的网络应用愈发倾向于调用别的API采用“混聚”的方式聚合来自多个源的内容
+
+![image-20200709221127505](images/image-20200709221127505.png)
+
+当然当出现网络服务慢的时候应用程序可以单独处理，例如调用谷歌地图，如果网络慢，可以先展示文字而不是呆呆地等着谷歌地图的图片加载出来
+
+这其中就可能存在这样的问题：你不想因为等待FaceBook的数据而暂停对来自Twitter的数据的处理
+
+对这种问题的抽象：如果想要充分利用CPU的核，尽可能地提高程序的吞吐量，那么你真正想要的其实是避免因为等待远程服务的返回，或者对数据库的查询，而阻塞线程的执行，浪费宝贵的计算资源。
+
+那么Java8的Future接口，尤其是他的新版实现类CompletableFuture
+
+> Future和CompletableFuture都是来自于JUC包下，出自并发大师Doug Lea之手
+>
+> Future1.5版本就有了，CompletableFuture在Java8推出
+
+
+
+Future接口
+
+设计初衷就是对将来某个时刻会发生的结果进行建模。它建模了一种异步计算，返回一个执行运算结果的引用，当运算结束后，这个引用被返回给调用方。**在Future中触发那些潜在耗时的操作把调用线程解放出来，让它能够继续执行其他有价值的工作，不再呆呆等待耗时操作的完成**
+
+在Java8之前使用Future的一个典型例子：
+
+```java
+ExecutorService executor = Executors.newSingleThreadExecutor();
+
+//标准用法
+Future<String> future = executor.submit(() -> {
+    //do calculate to get a result
+    return "hello world";
+});
+
+//do something else
+try {
+    String s = future.get(1, TimeUnit.SECONDS);
+} catch (InterruptedException e) {
+    //线程被中断异常处理
+    e.printStackTrace();
+} catch (ExecutionException e) {
+    //异步计算异常处理
+    e.printStackTrace();
+} catch (TimeoutException e) {
+    //等待超时异常处理
+    e.printStackTrace();
+}
+```
+
+使用submit方法去异步执行任务，使用Future的get方法化异步为同步，极力推荐带超时时间的get版本，为了防止永无止境的等待下去的问题
+
+可以调用Future的isDone方法来查看Future计算是否完成
+
+
+
+Future接口的局限性：
+
+- 很难通过代码的方式来表述Future之间结果的依赖性，从文字上看表达很简单，特别是出现以下情况：
+  - 将两个异步任务合并成一个——这两个异步任务相互独立，第二个任务依赖于第一个任务的结果
+  - 等待Future集合中的所有任务都完成
+  - 仅等待Future集合中最快结束的任务完成，并返回它的结果
+  - 通过编程方式完成一个Future任务的执行（手工设置异步操作结果的方式）
+  - 应对Future的完成事件（即当前线程会在Future完成时候收到消息，并能使用Future的计算结果去进行下一步的操作，不只是简单地阻塞等待操作的完成）
+
+CompletableFuture使用了Java8提供的语法实现了Future接口并使用其新特性更直观的将上述的方式变为可能，很好的支持了Lambda表达式。
+
+CompletableFuture和Future的关系类似于Stream和Collection的关系
+
+
+
+
+
+使用CompletableFuture：
+
+目标：最佳价格查询器，查询多个在线商店，找出最低的商品价格
+
+
+
+> 同步API和异步API：
+>
+> 同步API只是对传统方法调用的另一种称呼：调用了某个方法，调用方在调用方法运行的过程中会持续等待，被调用方运行结束返回，调用方取得返回值并继续运行，即**阻塞式调用**这个名词的由来
+>
+> 异步API：会直接返回，会将剩余的任务调用交给另一个线程去做，该线程和调用方是异步的——也就是非阻塞调用，等到计算完成之后，线程会将他的计算结果返回给调用方，主要的方式有两种：
+>
+> 1. 回调函数
+> 2. 由调用方再次执行一个“等待，直到计算完成”的方法调用
+>
+> 第二种方式在IO系统程序设计中非常常见：发起一次磁盘访问，这次访问是异步的，当你完成其他任务时候，想要再对磁盘执行操作，这时候磁盘操作可能还没有执行完成，你只需要等待磁盘操作的执行即可
+
+
+
+
+
+
+
+最佳实践：最佳价格查询器
+
+先模拟每个商店查找价格的API
+
+```java
+public class Shop {    
+	public Double getPrice(String product) {
+        //待实现的操作
+        return null;
+    }
+}
+```
+
+这里面可能执行一些耗时的任务，如：查询数据库、联系其他外部服务（商品供应商、和制造商有关的推广服务），使用线程休眠来模拟延迟
+
+```java
+public static void delay(Integer second) {
+    try {
+        TimeUnit.SECONDS.sleep(second);
+    } catch (InterruptedException e) {
+        //    返回RuntimeException，确实是无法修复
+        throw new RuntimeException(e);
+    }
+}
+```
+
+
+
+
+
+使用异步方法来对getPrice方法进行重写
+
+```java
+public Future<Double> getPriceAsync(String product) {
+    CompletableFuture<Double> future = new CompletableFuture<>();
+    //在实际项目中使用池化资源
+    new Thread(() -> {
+        Double price = calculatePrice(product);
+        //将计算结果存入CompletableFuture中
+        future.complete(price);
+    }).start();
+    return future;
+}
+```
+
+到主线程中会得到一个Future对象，在需要获取数值前可以做一些别的事儿，获取时候调用其带时间的get方法，测试代码如下
+
+```java
+Shop shop = new Shop("MyShop");
+long start = System.nanoTime();
+Future<Double> future = shop.getPriceAsync("My favorite product");
+long durationTime = (System.nanoTime() - start) / 1_000_000L;
+//此时输出5ms，远低于我们预定的1s
+System.out.println("Consume Time: " + durationTime + "ms");
+
+//do something
+System.out.println(future.get(2, TimeUnit.SECONDS));
+
+```
+
+出现异常一定要向上抛出，不要轻易的在线程中使用catch，除非是构建自定义异常再抛出，否则可能出现异常生吞的情况发生
+
+
+
+问题：如何正确的处理异步任务执行过程中可能出现的错误
+
+如果商品价格在计算过程中发生错误，且如果get方法没有使用限时版本的，get方法就会一直阻塞下去：
+
+```java
+//计算抛出异常：
+public Future<Double> getPriceAsync(String product) {
+    CompletableFuture<Double> future = new CompletableFuture<>();
+    //在实际项目中使用池化资源
+    new Thread(() -> {
+        Double price = calculatePrice(product);
+        int a = 1 / 0;
+        //将计算结果存入CompletableFuture中
+        future.complete(price);
+    }).start();
+    return future;
+}
+
+//主函数里面部分代码
+try {
+    System.out.println(future.get(2, TimeUnit.SECONDS));
+} catch (Exception e) {
+    System.out.println("异常捕获");
+    e.printStackTrace();
+}
+```
+
+会发生除零异常，具体的异常如下：
+
+```java
+Consume Time: 4ms
+Exception in thread "Thread-0" java.lang.ArithmeticException: / by zero
+	at cn.luckycurve.demo.character11.Shop.lambda$getPriceAsync$0(Shop.java:31)
+	at java.base/java.lang.Thread.run(Thread.java:834)
+异常捕获
+java.util.concurrent.TimeoutException
+	at java.base/java.util.concurrent.CompletableFuture.timedGet(CompletableFuture.java:1886)
+	at java.base/java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2021)
+	at cn.luckycurve.demo.character11.Shop.main(Shop.java:63)
+```
+
+如果没有使用定时的get，第二个TimeoutException就不会抛出，get方法就一直阻塞下去了
+
+避免上面比较好的做法就是定时的get，但仍然不知道计算商品价格的线程发生了什么问题，需要将Future中的异常打包发出到主线程中，事例代码如下：
+
+```java
+public Future<Double> getPriceAsync(String product) {
+    CompletableFuture<Double> future = new CompletableFuture<>();
+    //在实际项目中使用池化资源
+    new Thread(() -> {
+        try {
+            Double price = calculatePrice(product);
+            int a = 1 / 0;
+            //将计算结果存入CompletableFuture中
+            future.complete(price);
+        } catch (Exception e) {
+            //将异常加入到Future中，只有CompletableFuture提供了这个方法
+            future.completeExceptionally(e);
+        }
+    }).start();
+    return future;
+}
+```
+
+**这样做的一个好处是：发生问题会直接将异常抛出给主线程中，主线程不会阻塞到get方法上，主线程通过对get方法抛出的ExecutionException异常的处理即可获取线程中的异常**
+
+```java
+Consume Time: 3ms
+异常捕获
+java.util.concurrent.ExecutionException: java.lang.ArithmeticException: / by zero
+	at java.base/java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:395)
+	at java.base/java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2022)
+	at cn.luckycurve.demo.character11.Shop.main(Shop.java:68)
+Caused by: java.lang.ArithmeticException: / by zero
+	at cn.luckycurve.demo.character11.Shop.lambda$getPriceAsync$0(Shop.java:32)
+	at java.base/java.lang.Thread.run(Thread.java:834)
+```
+
+异常中没有出现TimeoutException异常，表明get方法提前结束了。
+
+
+
+但是这里面存在大量重复的代码，真正有用的代码也就那么几行，于是提供了大量的工厂方法来简化我们对CompletableFuture的使用，例如上面的getPriceAsync代码可以改成如下形式：
+
+```java
+public Future<Double> getPriceAsyncOpt(String product) {
+    //使用CompletableFuture的工厂方法来达到上面的目的
+    return CompletableFuture.supplyAsync(() -> {
+        //模拟异常处理
+        int a = 1/0;
+        return calculatePrice(product);
+    });
+}
+```
+
+使用起来很舒服，只需要传递一个Supplier进去即可，返回一个T传入到Future中去，至于执行线程都是交给了Java7提供的ForkJoin框架去了，异常处理也是非常到位，直接使用这种工厂方法就好了
+
+**还是强烈建议使用带超时的get方法。**
+
+异常信息：
+
+```
+Consume Time: 6ms
+异常捕获
+java.util.concurrent.ExecutionException: java.lang.ArithmeticException: / by zero
+	at java.base/java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:395)
+	at java.base/java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2022)
+	at cn.luckycurve.demo.character11.Shop.main(Shop.java:79)
+Caused by: java.lang.ArithmeticException: / by zero
+	at cn.luckycurve.demo.character11.Shop.lambda$getPriceAsyncOpt$1(Shop.java:49)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1700)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.exec(CompletableFuture.java:1692)
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:290)
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1020)
+	at java.base/java.util.concurrent.ForkJoinPool.scan(ForkJoinPool.java:1656)
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1594)
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:177)
+```
+
+当然也可以指定一个线程池来代替默认的ForkJoinPool：
+
+`public static <U> CompletableFuture<U> supplyAsync(Supplier<U> supplier, Executor executor)`
+
+
+
+默认就使用ForkJoinPool，大小等于CPU虚拟核心数，通过`Runtime.getRuntime().availableProcessors()`获取
+
+
+
+
+
+<hr></hr>
+
+接下来模拟假如你非常不幸，Shop提供的getPrice都是同步阻塞的，这也是HTTP API最常发生的情况。这时候如何避免被单一的请求所阻塞。
+
+
+
+简单测试环境搭建
+
+数据源：
+
+```java
+public static List<Shop> shopList() {
+    return Arrays.asList(new Shop("BestPrice"),
+                         new Shop("LetsSaveBig"),
+                         new Shop("MyFavoriteShop"),
+                         new Shop("BuyItAll"));
+}
+```
+
+
+
+用于记录时间的工具方法：
+
+```java
+public static <T> T consumeTimeTest(Supplier<T> supplier) {
+    long start = System.nanoTime();
+    T t = supplier.get();
+    System.out.println("Consume Time: " + (System.nanoTime() - start) / 1_000_000L);
+    return t;
+}
+```
+
+
+
+最简单的一种方式：使用Java8的语法直接遍历全部的shop
+
+```java
+public static List<String> findPrices(String product) {
+    return shops.stream()
+        .map(shop -> String.format("%s price is %.2f", shop.getShopName(), shop.getPrice(product)))
+        .collect(Collectors.toList());
+}
+```
+
+之所以声明成static是为了方便在main函数中直接调用
+
+> 格式化输出可以好好学一下
+
+
+
+测试：
+
+```java
+//性能测试
+public static void main(String[] args) {
+    List<String> test = Utils.consumeTimeTest(() -> findPrices(PRODUCT_NAME));
+    System.out.println("Result: "+test);
+}
+```
+
+
+
+输出日志：
+
+```
+Consume Time: 4016
+Result: [BestPrice price is 113.20, LetsSaveBig price is 108.85, MyFavoriteShop price is 75.89, BuyItAll price is 128.14]
+```
+
+四个商店，每个商店都阻塞了一秒
+
+
+
+最简单的改进：并行流：
+
+```java
+public static List<String> findPricesOpt1(String product) {
+    return shops.parallelStream()
+        .map(shop -> String.format("%s price is %.2f", shop.getShopName(), shop.getPrice(product)))
+        .collect(Collectors.toList());
+}
+```
+
+输出结果如下：
+
+```
+Consume Time: 1032
+Result: [BestPrice price is 104.66, LetsSaveBig price is 152.59, MyFavoriteShop price is 93.72, BuyItAll price is 155.86]
+```
+
+
+
+
+
+如果按照以上结论，单查询这一个步骤就需要`max(所有查询时间)`了，是否还能做得更好呢？
+
+
+
+如果使用CompletableFuture，建议使用join方法代替get方法
+
+Join方法和get方法非常类似，唯一不同点是如果顶层的CompletableFuture完成之前发现异常，会直接抛出一个直接继承与RuntimeException的异常——CompletionException
+
+不用我们手动的像使用get方法一样去强制捕获几个异常。可以理解为join方法是框架帮我们将可能抛出的异常进行了进一步的封装。
+
+
+
+尝试使用CompletableFuture：
+
+```java
+public static List<String> findPricesOpt2(String product) {
+    return shops.stream()
+        .map(shop -> CompletableFuture.supplyAsync(() ->
+                                                   shop.getShopName() + " price is " + String.format("%.2f", shop.getPrice(product))))
+        .map(CompletableFuture::join)
+        .collect(Collectors.toList());
+}
+```
+
+运行结果：`Consume Time: 4031`
+
+
+
+虽然使用了CompletableFuture类，但是并没有并行执行，原因如下：
+
+![image-20200710113436405](images/image-20200710113436405.png)
+
+因为流的顺序执行，大量时间被浪费在了每次的join上面，其实本质上是：让别的线程执行这个计算任务，主线程在这儿等待结果，完全的并行执行，甚至效率可能比第一次还低
+
+
+
+解决办法：开启两个流：一个流发布任务，一个流接收任务
+
+因为发布任务就相当于是开启多个任务的异步执行
+
+代码如下：
+
+```java
+public static List<String> findPricesOpt3(String product) {
+    List<CompletableFuture<String>> list = shops.stream()
+        .map(shop -> CompletableFuture.supplyAsync(() ->
+                                                   shop.getShopName() + " price is " + String.format("%.2f", shop.getPrice(product))))
+        .collect(Collectors.toList());
+
+    return list.stream().map(CompletableFuture::join).collect(Collectors.toList());
+}
+```
+
+
+
+输出结果：
+
+```
+Consume Time: 1055
+Result: [BestPrice price is 100.00, LetsSaveBig price is 133.69, MyFavoriteShop price is 153.39, BuyItAll price is 97.93]
+```
+
+甚至比直接使用ParallelStream运行的还慢一点点
+
+
+
+但随着任务数量的增大，CompletableFuture还是没啥优势，那么CompletableFuture的意义在哪儿呢？增加了大量复杂的处理逻辑，提升的效率寥寥无几。
+
+优势在于：定制Executor，不像ParallelStream只能使用固定大小为`Runtime.getRuntime().availableProcessors()`的线程池
+
+> 如何指定线程池的大小呢？
+>
+> 《Java并发编程实战》中Brain Goetz给出的建议：
+>
+> N<sub>threads</sub> = N<sub>CPU</sub> * U<sub>CPU</sub> * (1 + W/C)
+>
+> - N<sub>CPU</sub>：处理器核心数
+> - U<sub>CPU</sub>：期望的CPU利用率
+> - W/C：等待时间与计算时间之比
+
+
+
+N<sub>CPU</sub>为8，U<sub>CPU</sub>我们期待为1，应用99%都在等待商店的响应，预估W/C为99。计算得出N<sub>threads</sub>的最佳值为800
+
+
+
+不过远远用不到这么多，可以采取如下逻辑，设定一个阈值，当商店数量在阈值之下时候，让线程数等于商店数目，如果商店数目激增，大于阈值了，就直接采用阈值来创建线程池，我们设置这个阈值为100
+
+代码如下：
+
+创建线程池
+
+```java
+public static final Integer THREAD_MAX = 100;
+
+//创建一个指定大小的Executor，跟随阈值来
+public static Executor getExecutor(Integer number) {
+    return Executors.newFixedThreadPool(Math.min(number, THREAD_MAX), r -> {
+        Thread thread = new Thread(r);
+        //设置守护线程，防止线程池阻止主线程关闭
+        thread.setDaemon(true);
+        return thread;
+    }
+                                       );
+}
+```
+
+测试类：
+
+```java
+public static List<String> findPricesOpt4(String product) {
+    List<CompletableFuture<String>> list = shops.stream()
+        .map(shop -> CompletableFuture.supplyAsync(() ->
+                                                   shop.getShopName() + " price is " + String.format("%.2f", shop.getPrice(product)),
+                                                   Utils.getExecutor(shops.size())))
+        .collect(Collectors.toList());
+
+    return list.stream().map(CompletableFuture::join).collect(Collectors.toList());
+}
+```
+
+测试数据改成了69个，测试结果如下：
+
+```
+Consume Time: 1083
+普通CompletableFuture测试：
+Consume Time: 10062
+ParallelStream测试：
+Consume Time: 10034
+```
+
+并行流的资源利用率：
+
+![image-20200710122026130](images/image-20200710122026130.png)
+
+CPU下面那一条线是利用率
+
+
+
+自定义线程池的资源利用率：
+
+![image-20200710122207655](images/image-20200710122207655.png)
+
+自定义线程池优势还是很多的，特别是在CPU资源利用率较低的情况下
+
+
+
+> 并行——使用流还是CompletableFuture？
+>
+> - 如果你进行的是计算密集型的操作，并且没有IO，推荐使用Stream接口，实现简单，利用率也是最高的
+> - 如果并行的工作单元涉及等待IO的操作，使用前面的Brain Goetz推荐的来确定线程池的大小。另外这里不推荐使用并行流的另一个原因：流如果发生了IO等待，流的延迟特性很难让我们判断到底什么时候触发了等待
+
+
+
+
+
+对多个异步操作执行流水线操作
+
+运行逻辑：
+
+```java
+public String getPrice(String product) {
+    Utils.delay(1);
+    Double price = calculatePrice(product);
+    Random random = new Random();
+    //values取出所有可能的值,随机抽取一个
+    Code code = Code.values()[
+        random.nextInt(Code.values().length)];
+    return String.format("%s : %.2f : %s", name, price, code);
+}
+```
+
+会获取一个带有打折力度，打折金额等信息的String
+
+```java
+public static PriceParse parse(String s) {
+    String[] split = s.split(" : ");
+    String shopName = split[0];
+    Double price = Double.valueOf(split[1]);
+    DiscountShop.Code code = DiscountShop.Code.valueOf(split[2]);
+    return new PriceParse(shopName, price, code);
+}
+```
+
+使用parse方法来解析产生的打折力度的字符串，返回一个含有商店名字，产品价值，打折力度的对象
+
+```java
+public static String applyDiscount(PriceParse parse) {
+    //商店这边的业务，假设远程有一秒的网络等其他的阻塞
+    Utils.delay(1);
+    return String.format("%s price is %.2f", parse.getShopName(),
+                         parse.getPrice() * (100 - parse.getCode().percentage) / 100.0);
+}
+```
+
+商店收到打折信息后对商品进行打折并且输出最终的价格
+
+
+
+测试：
+
+Java8语法的串行执行：
+
+减少了数据规模，只有4个商店
+
+```java
+public static List<String> findPrice(String product) {
+    return shopList.stream()
+            .map(discountShop -> discountShop.getPrice(product))
+            .map(PriceParse::parse)
+            .map(DiscountShop::applyDiscount)
+            .collect(Collectors.toList());
+}
+```
+
+输出结果：
+
+```java
+Consume Time: 8018
+Result: [hello world0 price is 48.34, hello world1 price is 97.33, hello world2 price is 128.51, hello world3 price is 91.18]
+```
+
+当然可以通过改成并行流的方式来提高性能，但当商店数量增多时候效果并不好，使用CompletableFuture来更充分的利用CPU资源。
+
+
+
+代码如下，好复杂，写的头晕
+
+```java
+//解决方案。异步实现
+public static List<String> findPriceAsync(String product) {
+
+    Executor executor = Utils.getExecutor(shopList.size());
+    //计算的异步任务
+    List<CompletableFuture<String>> list = shopList.stream()
+        .map(i -> CompletableFuture.supplyAsync(() -> i.getPrice(PRODUCT), executor))
+        //异步任务的连接
+        .map(future -> future.thenApply(PriceParse::parse))
+        //再开启一个异步任务
+        .map(future -> future.thenCompose(i ->
+                                          CompletableFuture.supplyAsync(() ->
+                                                                        DiscountShop.applyDiscount(i), executor
+                                                                       )))
+        .collect(Collectors.toList());
+
+    //合并
+    return list.stream().map(CompletableFuture::join)
+        .collect(Collectors.toList());
+}
+```
+
+主要的两个方法：
+
+- Future的thenApply方法，可以让Future中任务完成后继续执行新添加的任务
+- Future的thenCompose方法，在建立一个CompletableFuture来进行异步调用，本质上是对两步异步操作的流水数据拼接
+
+![image-20200710161546175](images/image-20200710161546175.png)
+
+即主线程只负责**一次性交付全部**任务和等着接收全部任务
+
+以上的thenCompose是将两个CompletableFuture拼接起来，两个Future之间有依赖关系。
+
+
+
+而有些情况下两个CompletableFuture之间没有依赖关系，不像上面那样第二个依赖于第一个的结果，完全不用等到第一个结束，就是简单的将两个进行数据拼接
+
+
+
+简单的例子：一家商店的价格是以欧元计算的，但是你希望使用美元呈现该商店的价格，于是你便有了以下应用：采用异步的方式同时从商店查询欧元价格和从汇率服务中查询汇率，然后再由一个CompletableFuture计算出美元结果
+
+![image-20200710162649997](images/image-20200710162649997.png)
+
+这里使用了thenCombine函数将两个CompletableFuture连接起来，连接方式为相乘
+
+这里的运行逻辑为：
+
+![image-20200710194911517](images/image-20200710194911517.png)
+
+没有显式地指定为同一个线程池，所以会为每一个CompletableFuture创建一个Pool
+
+
+
+使用CompletableFuture，利用了Lambda表达式对Future有巨大的提升。提别是其中的工厂方法
+
+
+
+最后的一个需求：
+
+你希望尽快的将不同商店中已经查询到的商品价格呈现给你的用户，而不是等到所有数据都加载完再进行呈现
+
+使用的是CompletableFuture的completion方法，与之相反的，调用get或者join方法只会造成阻塞，直到当前任务完成才能去执行下一个任务
+
+
+
+实现这个需求完全有必要，因为这里每个商店都只是延迟了1s，要是现实生活中有些商店直接不响应了，那整个程序都会直接阻塞在对该商店的API调用中
+
+核心逻辑：将原本的整合步骤移除，直接返回一个CompletableFuture的Stream
+
+```java
+public static Stream<CompletableFuture<String>> findPriceAsyncReCon(String product) {
+
+    Executor executor = Utils.getExecutor(shopList.size());
+    //计算的异步任务
+    return shopList.stream()
+        .map(i -> CompletableFuture.supplyAsync(() -> i.getPrice(PRODUCT), executor))
+        //异步任务的连接
+        .map(future -> future.thenApply(PriceParse::parse))
+        //再开启一个异步任务
+        .map(future -> future.thenCompose(i ->
+                                          CompletableFuture.supplyAsync(() ->
+                                                                        DiscountShop.applyDiscount(i), executor
+                                                                       )));
+}
+```
+
+调用方：
+
+```java
+CompletableFuture[] futures = findPricesStream("myPhone")
+    .map(f -> f.thenAccept(System.out::println))
+    .toArray(size -> new CompletableFuture[size]);
+//给机会后续依次输出
+CompletableFuture.allOf(futures).join();
+```
+
+感觉有点理解不过来，但是这个需求确实存在还蛮重要，看下别的框架有没有支持的把
+
+如果只需要其中一个满足希求，就可将allof改成anyof，于是便只会返回第一个
+
+可以做到依次输出
+
+
+
+
+
+小结：
+
+- 执行耗时操作，记得使用异步，加快程序的响应速度
+- 尽可能为客户端提供异步API
+- CompletableFuture提供了异常管理的机制，使用其中的工厂方法更是自动帮你将异常抛出到主线程当中去
+- 将同步API封装到CompletableFuture中，用异步的方式使用其结果
+- 可以尽可能的将结果的处理交给主线程，即不要在自己的逻辑里直接全部要任务执行完成才返回，说不定只想要的是最快执行的那一个呢，即直接返回`Stream<CompletableFuture<?>>`而不是在方法里面就用map拆箱CompletableFuture对象
+

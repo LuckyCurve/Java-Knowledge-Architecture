@@ -2958,3 +2958,133 @@ HTTP的常见状态码（可以通过`@ResponseStatus`注解来返回）
 以4开头的是相关的客户端的错误
 
 以5开头的是服务端的错误
+
+
+
+
+
+## 17、分布式Session
+
+
+
+这里的会话指的是Session
+
+解决方案：
+
+Sticky Session粘性会话：让来自一个用户的会话尽可能落到同一个机器上去，可以把分布Session变成单机Session
+
+问题：如果服务器有下线，那么用户原先持有的会话就不生效了
+
+比较简单的实现方式
+
+
+
+Session Replication会话复制：把每台机器上的会话都进行复制，集群上的每台机器都会有相同的会话信息，成本比较高，每台之间Session的同步也存在问题，不推荐使用
+
+
+
+Centralized Session集中会话：使用JDBC或者Redis存储会话信息，每台机器都从这里面取，只要保证有相同的JSessionId，就可以保证取到相同的会话。推荐使用
+
+
+
+
+
+Spring Session提供对Centralized Session的支持。支持的存储：Redis、MongoDB、JDBC
+
+
+
+使用：
+
+基于Redis的HTTPSession
+
+
+
+导入依赖：
+
+```xml
+<dependency>
+    <groupId>org.springframework.session</groupId>
+    <artifactId>spring-session-data-redis</artifactId>
+</dependency>
+
+<!-- 需要redis的支持，不然会报没有Jedis或者是luttuce客户端错误 -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+
+
+```yaml
+# 简单配置信息
+spring:
+  redis:
+    host: www.luckycurve.cn
+    password: 123456
+```
+
+
+
+主类：加入@EnableRedisHttpSession即可
+
+以下内容供测试：
+
+```java
+@GetMapping("/hello")
+public String printSession(HttpSession session, String name) {
+    //如果存储了name则直接返回，否则存储并返回当前值
+    String storedInfo = (String) session.getAttribute("name");
+    if (storedInfo == null) {
+        session.setAttribute("name",name);
+        return name;
+    }
+    return "Hello,StoreName:"+storedInfo;
+}
+```
+
+测试通过，即使重启服务也不会出现Session丢失问题
+
+
+
+会话在redis的存活时间是2300s
+
+
+
+
+
+
+
+
+
+## 18、认识WebFlux
+
+
+
+更多的是对其的总结：
+
+WebFlux是基于Reactive技术栈之上的Web应用程序
+
+基于Reactive Streams API，运行在非阻塞服务器（例如：Netty、Jetty、最新版本的Tomcat）
+
+主要是人们对非阻塞Web应用的需求和函数式编程的需要（Java8提供，希望Web开发也使用函数式编程来做）
+
+
+
+特性：
+
+- 请求的耗时不会有很大的改善，只是把能并行化的操作并行化处理
+- 使用固定数量的线程和较少的内存即可提升并发容量（QPS）
+
+
+
+官网上WebMVC 与 WebFlux的评估：
+
+- 如果已有MVC应用，就正常运行，别修改了
+- 依赖了大量阻塞式持久化API（例如MySQL操作，R2DBC这种Reactive的持久层访问框架不支持MySQL数据库，且R2DBC处于孵化阶段，数据库操作层面无法变成Reactive方式）和网络API，建议使用Spring MVC
+- 已经使用了全套的非阻塞技术栈，例如持久层没有使用MySQL，只使用了R2DBC支持的Redis和MongoDB，可以考虑使用WebFlux
+- 想要使用Java8的函数式编程风格，可以考虑WebFlux
+
+
+
+使用注解的WebFlux只有返回值不同Mono<T>和Flux<T>
