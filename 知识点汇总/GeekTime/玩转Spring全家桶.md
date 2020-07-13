@@ -3088,3 +3088,100 @@ WebFlux是基于Reactive技术栈之上的Web应用程序
 
 
 使用注解的WebFlux只有返回值不同Mono<T>和Flux<T>
+
+
+
+
+
+## 19、Spring Boot
+
+
+
+SpringBoot不是什么
+
+- 不是应用服务器。不是Tomcat或Jetty（不是jedis，jedis是用于访问redis客户端的组件）这类Servlet容器，只不过可以轻易的集成这些服务器或者打成war包运行在这些服务器上
+- 不是Java EE之类的规范。只是帮你构建出遵循Java EE规范的程序
+- 不是代码生成器。完全不会对你的workPlace插入一行代码
+- 不是Spring Framework的升级版、只是为了大家更方便的使用Spring Framework
+
+
+
+SpringBoot的特性：
+
+- 方便创建独立可运行的程序
+- 直接内嵌Tomcat，Jetty或Undertow服务器
+- 简化配置
+- 对Spring及第三方库自动配置
+- 提供生产级特性，如Actuator模块
+
+
+
+
+
+SpringBoot四大核心：
+
+- 自动配置 - Auto Configuration
+- 起步依赖 - Starter Dependency 
+- 命令行界面 - Spring Boot CLI（用的不是很多）
+- Actuator - 提供生产级特性
+
+
+
+
+
+自动配置：基于添加的jar包自动对Spring Boot应用程序进行配置，主要是在spring-boot-autoconfiguration包里面
+
+开启自动配置：@EnableAutoConfiguration，包含在@SpringBootApplication中
+
+@EnableAutoConfiguration会替我们自动import一个类：`AutoConfigurationImportSelector`
+
+该类存在如下调用栈：selectImports() -> getAutoConfigurationEntry() -> getCandidateConfigurations()，最终会取到spring-boot-autoconfiguration的WEB-INF/spring.factories配置文件，里面全是预先设置的配置
+
+
+
+自动配置的实现原理：
+
+一系列的条件注解：Conditional，ConditionalOnBean，ConditionalOnProperty（配置了特定属性触发）等等，在某些条件满足的时候再去使用Import注解导入别的自动配置或者别的配置类来将Bean加入容器当中
+
+
+
+
+
+使用配置`debug:true`便可以输出所有匹配的，没有匹配上的，排除的，无条件配置的
+
+
+
+
+
+
+
+实现自己的自动配置，主要逻辑：
+
+- 书写配置类——@Configuration
+- 添加条件——@Conditional
+- 定位自动配置——MATE-INF/spring-factories
+
+
+
+条件注解：
+
+最基本的：@Conditional
+
+类条件：@ConditionalOnBean，@ConditionalOnClass
+
+属性条件：@ConditionalOnProperty
+
+Bean条件：@ConditionalOnBean，@ConditionalOnMissingBean，@ConditionalOnSingleCandidate（只有一个候选的bean）
+
+资源条件：@Conditional OnResource
+
+Web应用条件：@ConditionalOnWebApplication，@ConditionalOnNotWebApplication
+
+等等
+
+
+
+指定执行顺序：@AutoConfigureBefore，@AutoConfigureAfter（在某些自动配置之前，之后执行），@AutoConfigureOrder（指定执行顺序）
+
+
+

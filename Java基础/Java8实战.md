@@ -4017,3 +4017,468 @@ CompletableFuture.allOf(futures).join();
 - 将同步API封装到CompletableFuture中，用异步的方式使用其结果
 - 可以尽可能的将结果的处理交给主线程，即不要在自己的逻辑里直接全部要任务执行完成才返回，说不定只想要的是最快执行的那一个呢，即直接返回`Stream<CompletableFuture<?>>`而不是在方法里面就用map拆箱CompletableFuture对象
 
+
+
+
+
+
+
+## 第十二章、新的日期和时间API
+
+
+
+Java虽然提供了很多非常好的组件，但其中的一些组件难免会不完善，例如Java8之前的库对时间和日期的支持就非常不理想
+
+且DataFormat方法不是线程安全的，可能出现多个线程调用此方法出现不同的结果
+
+
+
+这些缺陷导致开发人员转头第三方库，如Joda-Time
+
+Oracle于是在java8中整合了Joda-Time的特性
+
+
+
+
+
+创建简单的日期和时间间隔入手，主要操作的类为：
+
+LocalDate，LocalTime，Instant，Duration和Period
+
+
+
+- LocalDate：
+
+只提供简单的日期，并不包含当天的时间信息，不附带任何与时区有关的信息
+
+主要使用工厂方法来创建，而不是通过构造器方法来创建，具体Demo：
+
+```java
+public static void main(String[] args) {
+    LocalDate date = LocalDate.of(2020, 7, 11);
+    //获取年份，输出为2020
+    int year = date.getYear();
+    System.out.println("year: " + year);
+
+    //获取月份信息，输出为JULY
+    Month month = date.getMonth();
+    System.out.println("month: " + month);
+
+    //获取天数信息，输出为11
+    int day = date.getDayOfMonth();
+    System.out.println("day: " + day);
+
+    //获取星期几，输出为SATURDAY
+    DayOfWeek week = date.getDayOfWeek();
+    System.out.println("week: " + week);
+
+    //当前月份天数，输出31
+    int len = date.lengthOfMonth();
+    System.out.println("Mouth Len: " + len);
+
+    //是否是闰年，输出true
+    boolean leapYear = date.isLeapYear();
+    System.out.println("isLeapYear: " + leapYear);
+
+    //现在时间，输出2020-07-11
+    System.out.println("now: " + LocalDate.now());
+}
+```
+
+
+
+
+
+LocalTime也提供类似的工厂方法，参数分别为：时分秒。事例代码：
+
+```java
+public static void main(String[] args) {
+    LocalTime time = LocalTime.of(13, 20, 20);
+
+    //获取小时信息，输出为13
+    int hour = time.getHour();
+    System.out.println("hour: "+hour);
+
+    //获取分钟信息，输出为20
+    int minute = time.getMinute();
+    System.out.println("minute: "+minute);
+
+    //获取分钟信息，输出为20
+    int second = time.getSecond();
+    System.out.println("second: "+second);
+}
+```
+
+
+
+
+
+试下LocalDate和LocalTime的解析操作：
+
+```java
+public static void main(String[] args) {
+    //测试LocalData和LocalTime的解析字符串操作，标准格式
+    LocalDate date = LocalDate.parse("2020-07-11");
+    LocalTime time = LocalTime.parse("13:20:20");
+
+    System.out.println(date + " : " + time);
+}
+```
+
+以上是标准格式，在后面会了解public static LocalTime parse(CharSequence text, DateTimeFormatter formatter)。带DateTimeFormatter的parse版本，取代了老板的DateFormat
+
+解析不成功抛出DateTimeParseException异常
+
+
+
+
+
+LocalDateTime合并日期和时间，不带有时区信息，具体创建方法如下：
+
+```java
+LocalDateTime dt1 = LocalDateTime.of(2020, 7, 12, 13, 20, 20);
+
+LocalDate date = LocalDate.of(2020, 7, 12);
+LocalTime time = LocalTime.of(13, 20, 20);
+LocalDateTime dt2 = LocalDateTime.of(date,time);
+
+LocalDateTime dt3 = date.atTime(13, 20, 20);
+
+LocalDateTime dt4 = date.atTime(time);
+
+LocalDateTime dt5 = time.atDate(date);
+```
+
+相当于LocalDateTime = LocalDate+LocalTime
+
+可以相互转换，可以使用toLocalDate或者toLocalTime完成转换
+
+
+
+
+
+机器通常不会像人一样计算时间，时间建模在机器内部是以Instant类的方式来完成的，基本上都是以Unix元年（UTC时区的1970-1-1午夜时分）开始所经历的秒数进行计算
+
+可以使用Instant的工厂方法来完成：
+
+```java
+public static Instant ofEpochSecond(long epochSecond);
+public static Instant ofEpochSecond(long epochSecond, long nanoAdjustment);
+```
+
+也为了便于使用提供了now方法返回当前的时间戳
+
+Instant的设计初衷就是为机器准备的，没有必要的情况建议不要使用
+
+但是可以通过Duration和Period来使用Instant
+
+
+
+Duration可以进行以秒和纳秒为衡量单位的时间的长短，使用如下的静态方法：
+
+```java
+Duration d1 = Duration.between(time1, time2);
+Duration d1 = Duration.between(dateTime1, dateTime2);
+Duration d2 = Duration.between(instant1, instant2);
+```
+
+不能将以上三者混用，因为是以s为计量单位，无法接受参数LocalDate
+
+
+
+如果需要以年，月，日的方式建模，可以使用Period类：
+
+```java
+public static Period between(LocalDate startDateInclusive, LocalDate endDateExclusive)
+```
+
+使用Period的get方法来获取信息
+
+
+
+也可以使用of工厂方法来直接创建Period和Duration
+
+
+
+
+
+上面创建的与时间有关的对象，是不可修改的，但也提供了一个简单的创建对象副本并按照需要修改它的属性，如`WithXXX（）;`方法。
+
+可以理解为get和with方法是对Temporal对象的读写操作
+
+![image-20200712110552862](images/image-20200712110552862.png)
+
+
+
+
+
+也可以以相对方式修改LocalDate对象
+
+![image-20200712110616119](images/image-20200712110616119.png)
+
+特别是最后的plus方法配上ChronoUnit工具类可以轻易地实现对时间的相对方式操作
+
+
+
+通用方法：
+
+![image-20200712110802752](images/image-20200712110802752.png)
+
+> 只要记住with是创建一个副本对象就好了，原来的对象是无法修改的
+
+
+
+
+
+如果需要对Temporal进行更复杂的操作，就需要使用入参为TemporalAdjuster对象的with方法。
+
+例如：需要将日期调整到下个周日，下个工作日，或者是本月的最后一天
+
+当然，提供的大量预定的TemporalAdjuster，可以使用TemporalAdjusters类来访问到
+
+```java
+import static java.time.temporal.TemporalAdjusters.nextOrSame;
+
+public static void main(String[] args) {
+    LocalDate date = LocalDate.now();
+    //输出下一个星期一的日期
+    LocalDate time = date.with(nextOrSame(DayOfWeek.MONDAY));
+    System.out.println(time);
+}
+```
+
+具体的TemporalAdjusters工厂方法：
+
+![image-20200712111757992](images/image-20200712111757992.png)
+
+非常有用
+
+
+
+如果预设的这些还是无法满足你的需求，去自定义自己的TemporalAdjuster，是一个函数式接口，可以用Lambda表达式轻松实现（如果逻辑简单且只有这一处用到的话）
+
+接口摘要如下：
+
+```java
+@FunctionalInterface
+public interface TemporalAdjuster {
+    Temporal adjustInto(Temporal temporal);
+}
+```
+
+只需要学会将一个Temporal转换成为另外一个Temporal即可
+
+
+
+
+
+例如实现自己的TemporalAdjuster去计算下个工作日，将其封装到工具类里面去了，说不定以后可以直接拿出来用
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/7/12 11:28
+ * 自己的工具类，没有必要使用单例模式
+ */
+public class DateUtils {
+
+    public static TemporalAdjuster getNextWorkDay() {
+        //直接使用Lambda表达式了，反正都封装成了工具类了
+        return temporal -> {
+            DayOfWeek day = DayOfWeek.of(temporal.get(ChronoField.DAY_OF_WEEK));
+            int add = 1;
+            if (day == DayOfWeek.FRIDAY) {
+                add = 3;
+            } else if (day == DayOfWeek.SATURDAY) {
+                add = 2;
+            }
+            //返回后几天
+            return temporal.plus(add, ChronoUnit.DAYS);
+        };
+    }
+}
+```
+
+如果使用Lambda表达式，当然更建议使用TemporalAdjusters的`public static TemporalAdjuster ofDateAdjuster(UnaryOperator<LocalDate> dateBasedAdjuster)`方法
+
+修改代码如下
+
+```java
+return TemporalAdjusters.ofDateAdjuster(temporal -> {
+    DayOfWeek day = DayOfWeek.of(temporal.get(ChronoField.DAY_OF_WEEK));
+    int add = 1;
+    if (day == DayOfWeek.FRIDAY) {
+        add = 3;
+    } else if (day == DayOfWeek.SATURDAY) {
+        add = 2;
+    }
+    //返回后几天
+    return temporal.plus(add, ChronoUnit.DAYS);
+});
+```
+
+基本逻辑没变，只是使用了工具类进行了包装
+
+
+
+
+
+
+
+日期时间对象与String之间的转换关系
+
+主要依赖于java.time.format包下的DateTimeFormatter的静态工厂方法以及一些预定义好的常亮来进行打印输出和解析
+
+```java
+LocalDate date = LocalDate.now();
+System.out.println("Default Style: "+date);
+//Default Style: 2020-07-12
+System.out.println("Style1: "+date.format(DateTimeFormatter.BASIC_ISO_DATE));
+//Style1: 20200712
+System.out.println("Style2: "+date.format(DateTimeFormatter.ISO_LOCAL_DATE));
+//Style2: 2020-07-12
+```
+
+与之对应的：
+
+```java
+String style1 = "20200712";
+String style2 = "2020-07-12";
+//也就是默认的
+LocalDate date1 = LocalDate.parse(style1 ,DateTimeFormatter.BASIC_ISO_DATE);
+LocalDate date2 = LocalDate.parse(style2, DateTimeFormatter.ISO_LOCAL_DATE);
+```
+
+
+
+还支持自定义解析格式的静态工厂方法
+
+```java
+//演示静态工厂自定义Formatter方法
+DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+String style3 = date.format(formatter);
+System.out.println("My Style: "+style3);
+//My Style: 12/07/2020
+//尝试解析
+LocalDate.parse(style3,formatter);
+```
+
+还可以选择带Locale参数的ofPattern方法
+
+
+
+如果想要更加细粒度的操作，可以使用DateTimeFormatterBuilder来去构建DateTimeFormatter。
+
+
+
+
+
+接下来是一个复杂的问题：处理不同的时区和立法
+
+Java8的API都对这类问题有很好的支持，新的ZoneId是老版的TimeZone的替代品
+
+
+
+可以直接通过ZoneId的getAvailableZoneIds方法获取所有时区信息，格式为：
+
+{区域}/{城市}，例如：Asia/Shanghai
+
+使用ZoneId的of方法生成一个ZoneId对象。
+
+一旦有了Zone对象，就可以与LocalDate，LocalDateTime整合起来，转换成ZoneDateTime
+
+![image-20200712153246836](images/image-20200712153246836.png)
+
+
+
+
+
+另一种是类Zoneoffset，是ZoneId的一个子类，表示的是当前时间与UTC/格林尼治的固定偏差，在大多数情况下不推荐使用，由于是ZoneId的一个子类，使用情况差不多
+
+
+
+提供了ISO和其他四种公历日期建模，并且可以轻易的相互转换
+
+
+
+
+
+
+
+
+
+# 第四部分、超越Java8
+
+
+
+简单介绍Java的函数式编程并对Java8和Scale中相关的特性进行比较
+
+
+
+
+
+## 第十三章、函数式的思考
+
+
+
+
+
+如果存在一个大型的遗留系统需要进行升级，稍有理智的程序员只会依赖于如下言不由衷的格言来做决定：”搜索一下代码中有没有使用过Synchronized关键字，如果有就直接拒绝，否则进一步看看系统的复杂程度“。由此可以了解到修复并发问题是多么的复杂
+
+如果是无状态的行为（处理Stream流水线中的函数不会由于需要等待从另一个方法中读取变量，或者由于需要写入的变量同时有另一个方法正在写而发生中断），Java8中的Stream提供了强大的技术支撑
+
+
+
+命令式编程与函数式编程
+
+命令式编程的特点是他的指令与计算机底层的词汇非常相近。
+
+函数式编程重要的思想是内部迭代，将如何实现的细节交给函数库，于是你的代码更像是陈述问题，而不是如何解决问题，理解起来也比较容易（真的吗，一旦复杂起来就直接看的一脸蒙蔽，还不好调试，开发一时爽，维护火葬场）
+
+> 不过IDEA好像开发了一款插件
+>
+> ![image-20200713095525350](images/image-20200713095525350.png)
+>
+> 这个体验还是蛮不错的
+>
+> 或者使用peek打印每一次的结果
+
+
+
+函数式程序还有一个附加条件往往被人们所忽略：函数或者方法不应该抛出任何异常。因为一旦抛出异常，就意味着结果被终止了
+
+但往往代码里面难免会抛出异常，例如算术运算的除法运算和开方运算
+
+这里就容易引起争论了，有人认为抛出代表严重错误的异常是可以接受的，有人认为这违反了我们的黑盒模型中对函数的定义：“传递参数，返回结果”的规则，引出了代表异常的第三个箭头
+
+![image-20200713101108997](images/image-20200713101108997.png)
+
+
+
+
+
+Java的递归调用通常都是尾递归，即在函数的尾部在调用自身，这样可以充分利用JVM，尽可能的回收当前栈帧的无用局部变量（因为都到了最后一行了，无需保护现场）。
+
+
+
+使用Java8进行编程时，应该尽量使用Stream取代迭代操作。
+
+
+
+
+
+
+
+
+
+
+
+## 第十四章、函数式编程的技巧
+
+
+
+本章介绍更高级的函数式编程技巧，可以将本章看做实战
+
+
+
+Java8对函数进行了升级，可以想变量赋值一样来操作函数，这样使用的函数被称为一等函数
