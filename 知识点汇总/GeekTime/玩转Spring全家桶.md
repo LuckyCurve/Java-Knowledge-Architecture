@@ -3185,3 +3185,136 @@ Web应用条件：@ConditionalOnWebApplication，@ConditionalOnNotWebApplication
 
 
 
+
+
+
+
+将别的properties文件加入到IOC中来：例如读取addition.properties文件，内容如下：
+
+```properties
+hello.test = 222
+```
+
+只需要在某个被扫描到的类上加上如下注解即可：
+
+`@PropertySource("classpath:/addition.properties")`
+
+使用时候可以直接使用`@Value("${hello.test}")`SPEL表达式获取到值
+
+默认还支持读取XML文件，暂时不支持读取yaml，网上有实现教程
+
+
+
+
+
+## 20、了解SpringBoot对运维的支持
+
+
+
+
+
+常见的EndPoint：
+
+![image-20200714152243247](images/image-20200714152243247.png)
+
+N/A是表示不提供该功能
+
+
+
+访问EndPoint：/actuator/{id}
+
+Actuator的配置：
+
+- management.server.port=让应用的端口和管理的端口分开
+
+
+
+开启EndPoint和暴露endpoint的配置：
+
+![image-20200714152630167](images/image-20200714152630167.png)
+
+
+
+定义自己的Health Indicator来检查应用程序的健康状况，然后将Health Indicator配置到EndPoint当中使得可以在外部监控到
+
+一般访问health只能看到一个up，想要查看详细信息，使用如下配置：
+
+```yaml
+management:
+  endpoint:
+    health:
+      show-details: always
+```
+
+可以参考DataSourceHealthIndicator的写法
+
+
+
+自定义思路：
+
+- 实现HealthIndicator接口（或者是下面的抽象类，一般直接接口就好了）
+- 根据指定逻辑返回Health状态即可
+
+使用起来非常的舒服，具体的逻辑代码如下：
+
+```yaml
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+
+hello:
+  test: "health"
+
+
+#自定义一些INFO信息
+info:
+  app:
+    author: LuckyCurve
+    # 这个高级
+    encoding: @project.build.sourceEncoding@
+
+```
+
+自定义的Indicator类：
+
+```java
+@Component
+public class MyIndicator implements HealthIndicator {
+
+    @Value("${hello.test}")
+    private String test;
+
+    @Override
+    public Health health() {
+        Health health;
+        if (Objects.equals("health",test)) {
+            health = Health.up()
+                    .withDetail("Info",test)
+                    .withDetail("message","this part is health")
+                    .build();
+        } else {
+            health = Health.down()
+                    .withDetail("info",test)
+                    .withDetail("message","this part is down")
+                    .build();
+        }
+        return health;
+    }
+}
+```
+
+这时候就可以访问health的endPoint来查看自定义的Indicator
+
+
+
+
+
+可以使用SpringBoot2.0提供的MICormeter来进行监控，可以带上大量的系统指标
+
+其实就是Spring的Admin的metrics属性

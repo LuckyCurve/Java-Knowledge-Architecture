@@ -3282,7 +3282,7 @@ public class SpringBootAdminServerTestApplication {
 
 直接访问：http://localhost:9090/applications
 
-中文界面，做了国际化处理，非常nice\~
+中文界面，做了国际化处理local，非常nice\~
 
 ![image-20200529173106399](images/image-20200529173106399.png)
 
