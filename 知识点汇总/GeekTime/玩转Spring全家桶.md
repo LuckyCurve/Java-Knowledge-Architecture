@@ -3318,3 +3318,53 @@ public class MyIndicator implements HealthIndicator {
 可以使用SpringBoot2.0提供的MICormeter来进行监控，可以带上大量的系统指标
 
 其实就是Spring的Admin的metrics属性
+
+
+
+Spring Boot Admin不是官方提供的，对SpringBoot应用运行状态监控的一套工具
+
+
+
+
+
+针对Spring Boot的Web容器的配置
+
+以server或者是server.tomcat打头的（如果使用的是Tomcat的话）
+
+常见配置列表：
+
+```taml
+server:
+	port:
+	
+	# 压缩配置
+	compression:
+		enabled:
+		min-response-size:
+		mime-types;
+		
+	# 对tomcat的单独配置
+	tomcat:
+		max-connections:
+		max-http-post-size:
+		max-swallow-size:
+		max-threads:
+		min-spare-threads:
+		
+	# 错误处理
+	errpr:
+		path:
+		# 以下两个设置不建议产线上面打开，会暴露应用内部内容
+		# 默认是关闭的
+		include-exception:(bool)
+		include-stacktrace:
+		whitelable:
+			enabled:
+			
+	# 其他
+	use-forward-headers:
+	servlet:
+		session:
+			timeout:
+```
+
