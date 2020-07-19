@@ -1426,4 +1426,67 @@ Spring2.5提供的基于注解方式的依赖注入，这也是日后的趋势�
 
 ![image-20200717185403062](images/image-20200717185403062.png)
 
-是使用BeanPostProcessor实现的，会检查是否有被@Autowired注解标注的当前对象需要完成依赖注入，且实现了
+是使用BeanPostProcessor实现的，会检查是否有被@Autowired注解标注的当前对象需要完成依赖注入，且提供了实现类AutowiredAnnotationBeanPostProcessor
+
+
+
+当IoC容器中有多个Bean的时候，可以使用@Qualifier注解或者是@Resource注解来指定当前对象需要注入哪一个，也可以直接指定在方法入参之上
+
+我自身建议：使用后者，不知道为啥使用前者总会出现各种各样奇怪的问题，我更宁愿相信JSR250标准的Resource注解，Resource是默认需要ByName的
+
+JSR250还带来的两个注解：@PostConstruct和@PreDestroy
+
+在Bean创建和销毁的时候都会执行，事例代码如下：
+
+```java
+@Component
+public class LifeCycleBean {
+
+    @PostConstruct
+    public void init() {
+        System.out.println("LifeCycleBean Init");
+    }
+
+    @PreDestroy
+    public void destroy() {
+        System.out.println("LifeCycleBean Destroy");
+    }
+}
+
+```
+
+在直接启动主项目，输出日志如下：
+
+```
+LifeCycleBean Init
+LifeCycleBean Destroy
+```
+
+其实本质上就是使用了Spring的InitializingBean和DisposableBean接口
+
+JSR250是需要CommonAnnotationBeanPostProcessor实现类的支持的，~~现在在SpringBoot中自动配置都直接帮我们将需要的BeanPostProcessor装配好了，如果在以前，所有的BeanPostProcessor都需要用户自己去装配，要不然就无法实现了。~~这里不是SpringBoot的功劳，而是ComponentScan注解的功劳
+
+所以现在混合使用这两个系列的注解没有任何问题，依赖都由SpringBoot项目管理好了
+
+
+
+避免使用XML繁琐的Bean定义，Spring在2.5的时候就提供了@ComponentScan注解（那时候只能在XML中配置标签`<component-scan>`来指定扫描的包路径）用于扫描当前路径下被@Component注解标注的类，并将这些类加入到容器当中去，非常的简单与实用。
+
+@Component注解根据语义细化成了Controller+Service+Repository
+
+完全省去了使用XML配置的苦恼
+
+
+
+
+
+小结
+
+对注解支持的引入，Spring对整个框架带来的冲击做了权衡
+
+最终还是选择引入，带来了高效，但是就当时情况而言不可能完全使用基于注解的Spring，因为当时XML还是Spring最为强大的表达方式，许多第三方库的集成都是通过XML方式的，还没有提供基于注解的方式，但是到现在则完全提供了，所以可以很轻易的面向注解编程，也是Spring官方提倡的，摆脱繁琐的XML配置，使用Configuration配置类来代替，虽然XML这一块也是Spring曾经的强项，但是Spring在看到起复杂性之后能果断的舍弃，不得不佩服，成功似乎也就是理所当然的了。
+
+
+
+
+
