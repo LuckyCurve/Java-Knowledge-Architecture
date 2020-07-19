@@ -78,6 +78,10 @@ Spring对Java EE服务（JNDI，JMS以及JavaMail等）的支持，使其不再�
 
 
 
+# 第二部分、Spring的IoC容器
+
+
+
 
 
 ### 第二章、IoC的基本概念
@@ -977,3 +981,449 @@ BeanFactory的XML标签、
 
 IoC的功能实现：容器启动和Bean实例化（即Bean的生命周期，大体上分为5个阶段）
 
+
+
+
+
+
+
+
+
+###  第五章、Spring IoC容器ApplicationContext
+
+
+
+拓展了BeanFactory，拥有BeanFactory的全部功能
+
+ApplicationContext的实现（与Spring全家桶里的差不多）：
+
+- FileSystemXMLApplicationContext
+- ClassPathXMLApplicationContext
+- XMLWebApplicationContext（已经找不到了，估计被剔除了）
+- AnnotationConfigApplicationContext
+
+都是将BeanDefinition加载到ApplicationContext中
+
+
+
+本章主要围绕ApplicationContext的一些特性来展开（较之于BeanFactory）：国际化i18n、统一资源加载策略、容器内事件发布等
+
+这些附加功能全部都是对JavaSE的扩展，使我们可以更轻易的摆脱JDK类库的设计缺陷，但是好像没有太多的新理念了，不如BeanFactory里面的惊艳
+
+
+
+
+
+- 统一资源加载策略
+
+之所以出现这一项特性，还得从需求了解
+
+URL（统一资源定位符）是Java SE提供的标准类，但多少有些名副其实了。基本上只限于网络形式发布的资源的查找和定位工作，使用起来不够方便（和Java的Date类差不多，只不过在Java8中Oracle对其进行了调整，整合了joda-time，这里是Spring自己对资源的加载策略的重新定义）
+
+
+
+Spring提出一套基于Resource和ResourceLoader接口的资源抽象和加载策略
+
+
+
+
+
+
+
+- Resource接口
+
+Spring使用此接口作为所有资源的抽象和访问接口，根据不同类型的资源，提供了不同的实现：
+
+- ByteArrayResource：对字节数组提供的数据作为一种资源进行封装，可以构造特定的ByteArrayInputStream访问该资源
+- ClassPathResource：从Java应用程序的CLassPath中加载具体资源并进行封装，可以使用指定的ClassLoader对资源进行加载
+- FileSystemResource：对File类型进行封装，以文件或者URL的方式对资源进行访问
+- UrlResource：URL的实现类，内部委托URL进行具体的资源操作
+- InputStreamResource：使用较少，将InputStream视为资源的Resource实现类，一般可以通过ByteArrayResource或者其他Resource代替
+
+有好些类都是直接在上面加上Context的，那些是他们的子类
+
+
+
+也可以自己去实现抽象类AbstractResource来实现Resource，但估计不会用到了，Spring提供的Resource已经足够强大
+
+
+
+
+
+
+
+- ResourceLoader接口
+
+职责在于：查找和定位这些资源。该接口是资源查找定位策略的统一抽象。可以看做是更广义的URL
+
+接口内部也十分简洁：
+
+```java
+public interface ResourceLoader {
+	//CLASSPATH_URL_PREFIX = "classpath:";
+	String CLASSPATH_URL_PREFIX = ResourceUtils.CLASSPATH_URL_PREFIX;
+	//核心方法
+	Resource getResource(String location);
+
+	@Nullable
+	ClassLoader getClassLoader();
+
+}
+```
+
+
+
+默认提供的ResourceLoader实现类
+
+- DefaultResourceLoader
+
+内部的getResource方法也非常的简单：
+
+```java
+@Override
+public Resource getResource(String location) {
+    Assert.notNull(location, "Location must not be null");
+    //使用内置的协议解析器先尝试对location进行解析
+    for (ProtocolResolver protocolResolver : getProtocolResolvers()) {
+        Resource resource = protocolResolver.resolve(location, this);
+        if (resource != null) {
+            return resource;
+        }
+    }
+
+    if (location.startsWith("/")) {
+        //内部直接尝试构建ClassPathContextResource，文末
+        return getResourceByPath(location);
+    }
+    else if (location.startsWith(CLASSPATH_URL_PREFIX)) {
+        //直接构建ClassPathResource
+        return new ClassPathResource(location.substring(CLASSPATH_URL_PREFIX.length()), getClassLoader());
+    }
+    else {
+        try {
+            // Try to parse the location as a URL...
+            URL url = new URL(location);
+            return (ResourceUtils.isFileURL(url) ? new FileUrlResource(url) : new UrlResource(url));
+        }
+        catch (MalformedURLException ex) {
+            // No URL -> resolve as resource path.
+            return getResourceByPath(location);
+        }
+    }
+}
+
+//两次出现了
+protected Resource getResourceByPath(String path) {
+    return new ClassPathContextResource(path, getClassLoader());
+}
+```
+
+
+
+可以尝试在项目中使用类似于24行的代码，非常的高效与简洁
+
+
+
+可以发现上面的getResource方法永远都会返回一个非null的对象，即使是抛出异常了，也会调用getResourceByPath方法构建一个ClassPathContextResource对象返回，有可能该资源不存在
+
+处理的其实不是很恰当
+
+
+
+
+
+- FileSystemResourceLoader
+
+拓展了DefaultResourceLoader，主要是重写了getResourceByPath方法，让他不会无脑的返回一个ClassPathContextResource对象，逻辑如下：
+
+```java
+protected Resource getResourceByPath(String path) {
+    if (path.startsWith("/")) {
+        path = path.substring(1);
+    }
+    return new FileSystemContextResource(path);
+}
+```
+
+这样碰到文件类型就可以直接返回一个FileSystemContextResource对象而不是笼统的ClassPathContextResource对象
+
+实际体验并没有什么差别，反正都是直接返回Resource对象
+
+简单使用：
+
+```java
+@Test
+void resourceGet() {
+    FileSystemResourceLoader loader = new FileSystemResourceLoader();
+    Resource resource = loader.getResource("E:\\Entertainment\\Game\\英雄联盟\\TCLS\\Client.exe");
+    assertTrue(resource instanceof FileSystemResource);
+    assertTrue(resource.exists());
+    System.out.println(resource.getFilename());
+}
+```
+
+
+
+
+
+
+
+Spring框架也提供了批量查找的ResourceLoader：ResourcePatternResolver接口
+
+是对ResourceLoader接口的扩展。可以根据资源的路径匹配模式匹配到多个Resource实例
+
+定义和ResourceLoader基本如出一辙：
+
+```java
+public interface ResourcePatternResolver extends ResourceLoader {
+	String CLASSPATH_ALL_URL_PREFIX = "classpath*:";
+
+	Resource[] getResources(String locationPattern) throws IOException;
+}
+```
+
+引入新的前缀classpath*:
+
+最常用的实现类：PathMatchingResourcePatternResolver，支持基于Ant风格的路径匹配模式（即我们常用的：**/ *.suffer匹配所有以suffer结尾的路径）
+
+内部默认使用DefaultResourceLoader来进行资源查找和定位，出来的资源也都是ClassPathResourceLoader或者更详细一点ClassPathContextResourceLoader的子类
+
+简单使用：
+
+```java
+PathMatchingResourcePatternResolver loader = new PathMatchingResourcePatternResolver(new FileSystemResourceLoader());
+Resource[] resources = loader.getResources("E:/temp/**");
+for (Resource resource : resources) {
+    assertTrue(resource instanceof FileSystemResource);
+    System.out.println(resource.getFilename());
+}
+```
+
+
+
+现在已知的Spring的统一资源管理配置：
+
+![image-20200718151710627](images/image-20200718151710627.png)
+
+
+
+现在再回到本章的主角，ApplicationContext，你会发现他实现了ResourcePatternResolver接口，直接本身就支持对资源的批量定位和查找了
+
+于是就可以直接通过对ApplicationContext的注入来将ApplicationContext当做一个ResourcePatternResolver来使用
+
+但是会存在一个问题：我们在SpringBoot项目中使用Autowired注入的是AnnotationConfigApplicationContext类，只会负责去查询ClassPath路径下的，和ClassPathXmlApplicationContext类一样，不会也无法去查看文件系统的其他位置，如果需要的话估计得使用FileSystemXmlApplicationContext来，试了下是可以的
+
+无论使用哪个ApplicationContext，读取来的结果都是FileSystemResource
+
+ApplicationContext可以自动的将String转换到Resource类型而不用我们自己去实现PropertyEditor来完成，还是没有成功，麻烦
+
+
+
+Spring提供了classpath:资源路径协议，类似的还有原来就在的file、http、ftp等
+
+现在只有FileSystemXMLApplicationContext是默认从系统文件中加载了。
+
+
+
+
+
+
+
+
+
+讲完统一资源加载策略，下面是：
+
+国际化信息支持（i18n MessageSource）
+
+
+
+为不同国家和地区的人提供他们各自的语言文字信息
+
+
+
+JavaSE也提供了国际化支持
+
+每个国家和地区在Locale类中都有相对应的简写代码表示可以去查看
+
+例如中国的代码表示为zh_CN，美国的代码表示为en_US
+
+例如美国和英国都属于英文地区，因此可以用Locale.ENGLISH来统一表示
+
+构造方法摘要：
+
+![image-20200718161709008](images/image-20200718161709008.png)
+
+
+
+
+
+Spring对JavaSE的国际化抽象出接口：MessageSource，摘要如下：
+
+```java
+public interface MessageSource {
+	@Nullable
+	String getMessage(String code, @Nullable Object[] args, @Nullable String defaultMessage, Locale locale);
+
+	String getMessage(String code, @Nullable Object[] args, Locale locale) throws NoSuchMessageException;
+    
+	String getMessage(MessageSourceResolvable resolvable, Locale locale) throws NoSuchMessageException;
+
+}
+```
+
+> 参数解释：
+>
+> - code：传入的资源条目的键
+> - args：信息参数
+> - Locale：位置信息
+> - defaultMessage：默认值
+> - MessageSourceResolvable：封装code参数和args参数
+
+
+
+
+
+ApplicationContext实现了MessageSource接口。表示其提供国际化支持
+
+默认会委托一个名为messageSource的bean来完成MessageSource应该完成的职责
+
+如果没有配置的话，会由MessageSourceAutoConfiguration自动配置一个DelegatingMessageSource类进来
+
+Spring提供的几个MessageSource实现：
+
+- StaticMessageSource
+
+实现简单，常用于测试
+
+- ResourceBundleMessageSource
+
+最常用
+
+- ReloadableResourceBundleMessageSource
+
+可以定期的刷新properties文件并对其变化做出响应
+
+简单使用Demo：
+
+![image-20200718171922370](images/image-20200718171922370.png)
+
+感觉除了结合前端使用Thymeleaf会使用到国际化之外，如果是REST服务就完全不会处理了，这部分的任务交给前端去处理
+
+
+
+
+
+最后一个特性：自定义事件发布
+
+也是对Java的事件发布机制的扩展
+
+Java事件发布主要依靠的两个接口为：EventObject和EventListener
+
+可以通过实现EventObject接口来自定义事件类型
+
+实现EventListener来实现对指定事件的监听，并修改两个方法的参数为需要监听的事件
+
+事件从发布源Publisher发布出去，监听者也需要注册在Publisher里面
+
+大体关系如图所示：
+
+![image-20200718173558328](images/image-20200718173558328.png)
+
+
+
+
+
+Spring对其封装：
+
+将ApplicationListener注册进容器中，当有ApplicationEvent发布到容器当中来的时候，ApplicationListener就会对这些事件进行处理
+
+ApplicationEvent的具体实现
+
+- ContextClosedEvent：在ApplicationContext即将关闭时候触发的事件类型
+- ContextRefreshedEvent：在ApplicationContext初始化或者刷新的时候发布的事件类型
+
+没有什么实际的作用，只是起到标识的作用而已
+
+
+
+
+
+ApplicationListener：用于自定义的事件监听器定义接口
+
+
+
+ApplicationContext实现了ApplicationEventPublisher接口，可以担当事件发布者的角色，主要的功能就是注册管理以及事件发布的方法
+
+Spring的ApplicationContext的事件默认是顺序发布的，通过SyncTaskExecutor来进行的，当然，我们也可以提供额外的TaskExecutor的实现类来提高事件发布性能
+
+ApplicationContext的事件发布功能直接委派给ApplicationEventMulticaster来做的
+
+
+
+Spring的事件发布机制只能完成简单的通知和处理功能，并不适用与分布式、多进程、多容器之间的事件通知
+
+
+
+> Spring之所以提供了大量的Aware接口就是为了我们注入所需要的，例如ApplicationContext，BeanFactory，还有 这里的ApplicationEventPublisher实例
+
+
+
+
+
+简单实现：
+
+注册一个指定事件的Listener到容器当中去： 
+
+```java
+@Bean
+ApplicationListener<ContextRefreshedEvent> applicationListener() {
+    return event -> System.out.println("收到一个事件：" + event);
+}
+```
+
+因为ApplicationContext本身也是一个Publisher，直接使用ApplicationContext发布一个ContextRefreshEvent对象。
+
+```java
+    @Autowired
+    ApplicationContext context;
+
+    @Test
+    void contextLoads() {
+        //发布一个Event，触发Listener
+        context.publishEvent(new ContextRefreshedEvent(context));
+    }
+```
+
+启动容器时候完成事件的触发
+
+
+
+
+
+小结
+
+本章讲述ApplicationContext的额外特性：资源统一加载策略、i18n支持、容器内事件发布。都是ApplicationContext独有的一些特性，可以直接使用
+
+
+
+
+
+
+
+### 第六章、Spring IoC容器之扩展篇
+
+
+
+Spring2.5提供的基于注解方式的依赖注入，这也是日后的趋势所在了
+
+
+
+@Autowired注解可以标注于类的属性上，也是我们最常用的方式
+
+也可以标注于构造器或者setter方法之上，还可以标注于任意名称的方法定义之上，只要该方法定义了需要被注入的参数
+
+自动注入的阶段可以根据Bean实例化的阶段来判断出来
+
+![image-20200717185403062](images/image-20200717185403062.png)
+
+是使用BeanPostProcessor实现的，会检查是否有被@Autowired注解标注的当前对象需要完成依赖注入，且实现了
