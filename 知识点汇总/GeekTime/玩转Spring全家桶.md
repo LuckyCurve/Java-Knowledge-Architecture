@@ -3207,11 +3207,11 @@ hello.test = 222
 
 
 
-## 20、了解SpringBoot对运维的支持
 
 
 
 
+SpringBoot对运维的支持
 
 常见的EndPoint：
 
@@ -3368,3 +3368,57 @@ server:
 			timeout:
 ```
 
+
+
+
+
+让SpringBoot项目支持HTTP2，以及如何使用RestTemplate去访问HTTP2的网站
+
+先是配置HTTPS的支持
+
+```yaml
+server:
+	# 开启8443端口监听HTTPS请求
+	port: 8443
+	# ssl证书信息
+	ssl:
+		key-store:
+		key-store-type: JKS或者PKCS12
+		key-store-password: 
+```
+
+可以使用keytool来生成一个keyStore，然后在上述配置文件中指定。
+
+使用如下指令在当前目录下生成一个KeyStore
+
+```
+keytool -genkey -alias springTest -storetype PKCS12 -keyalg RSA -keysize 2048 -keystore springTest.p12 -validity 365
+```
+
+如果要查看的话去character10里面
+
+
+
+SpringBoot不支持明文的HTTP2，得先配置SSL，即只支持HTTPS基础之上的HTTP2
+
+再通过如下配置：
+
+```xml
+server.http2.enabled = true
+```
+
+
+
+客户端对HTTP2的支持
+
+依赖于OKHTTPClient，得引入其依赖
+
+
+
+
+
+SpringBoot构建Docker镜像，需要使用到的插件以及配置：
+
+![image-20200720201106612](images/image-20200720201106612.png)
+
+具体的事例可以查看character10/docker-demo
