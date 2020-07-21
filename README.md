@@ -16,7 +16,7 @@
 
 [深入理解Java虚拟机（读书笔记：《深入理解Java虚拟机：第三版》已完结）](Java基础/深入理解Java虚拟机.md)
 
-[Java8实战（读书笔记：《Java8实战》）](Java基础/Java8实战.md)
+[Java8实战（读书笔记：《Java8实战》已完结）](Java基础/Java8实战.md)
 
 
 

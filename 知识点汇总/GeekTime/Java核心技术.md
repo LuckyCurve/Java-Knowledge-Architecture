@@ -496,3 +496,49 @@ resize方法也很重要，分配到扩容，很容易被面试官问道
 
 
 树化改造的逻辑主要在treeifyBin中
+
+
+
+
+
+
+
+## 如何保证集合是线程安全的？
+
+
+
+Collections的synchronized方法，粗粒度的加锁，在高并发条件下性能比较地下
+
+使用JUC包来代替 
+
+主要的面试问题：
+
+- 基本的线程安全工具
+- 传统的同步容器Map存在的问题
+- 梳理JUC包，尤其是ConcurrentHashMap采取了哪些方式来提高并发表现
+- ConcurrentHashMap的历史演进，很多都是停留在早期的版本
+
+
+
+ConcurrentHashMap的设计实现：在Java8发生了较大的变化
+
+早期ConcurrentHashMap，其实现是基于分段锁来实现的，在进行并发操作时，只需要锁定相应的段（HashEntity，结构直接类似于HashMap，也直接以链表的形式存放数据），这样就可以有效避免了类似HashTable整体同步的问题，大大提高了性能
+
+HashEntity的大小为concurrencyLevel，默认是16，可以通过构造方法来实现
+
+ConcurrentHashMap的扩容不是对整体进行扩容，而是对每一个HashEntity进行扩容
+
+当需要获取全部锁，例如计算所有HashEntity的总和的时候，或许会因为并发put导致获取结果后续被修改了，又或者是获取全部的锁，但代价果高
+
+ConcurrentHashMap采取类似CAS的重试机制（RETRIES_BEFORE_LOCK）尝试获取可靠值，如果检测到了修改就需要重新获取了。
+
+
+
+
+
+Java8和之后的版本中ConcurrentHashMap发生的变化
+
+- 同步与HashMap的数据结构，当链表过长时候转换成红黑树
+- 初始化操作改成懒加载模式，应该和HashMap一样是在putVal中分配内存
+- 内部数据使用volatile来保证可见性
+- 使用CAS操作，实现特定场景无锁并发

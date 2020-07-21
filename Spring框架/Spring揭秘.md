@@ -78,7 +78,7 @@ Spring对Java EE服务（JNDI，JMS以及JavaMail等）的支持，使其不再�
 
 
 
-# 第二部分、Spring的IoC容器
+## 第二部分、Spring的IoC容器
 
 
 
@@ -1556,7 +1556,7 @@ AOP的具体实现语言被称为AOL（Aspect-Oriented Language），如果系�
 
 
 
-Java平台自身的AOP实现：动态大力
+Java平台自身的AOP实现：动态代理
 
 默认会将切面逻辑织入到相应的代理类中，以动态代理类为载体的横切逻辑。
 
@@ -1570,9 +1570,7 @@ Spring默认情况下采用这种机制实现AOP机能
 
 动态字节码增强：
 
-JVM会运行任何符合规范的class文件，不一定是javac编译出来的class文件，因此ASM和CGLIB等工具库就可以在程序运行期间动态的构建字节码的class文件。
-
-> 很厉害的实现思路，完美避开了静态AOP和动态AOP的缺陷
+JVM会运行任何符合规范的class文件，不一定是javac编译出来的class文件，因此ASM和CGLIB等工具库就可以在程序运行期间动态的构建字节码的class文件，就是动态AOP的一种。
 
 实现的逻辑也非常简单：在运行期间通过动态字节码增强技术为这些模块类生成相应的子类，将横切逻辑加入到这些子类当中，让应用程序在执行期间使用的是动态代理生成的子类，即可摆脱 通过接口的方式来增强了。
 
@@ -1725,3 +1723,312 @@ AspectJ的织入器为专门的编译器，即ajc，Spring AOP使用一组类来
 小结
 
 AOP终究只是一种软件开发模式，是从面向过程到面向对象编程的转换过程中，人们发现面向对象编程的一些缺陷，而AOP正是为了解决这些缺陷而存在的。本章还讲述了AOP的基础组件。
+
+
+
+
+
+
+
+
+
+### 第八章、Spring AOP概述及其实现机制
+
+
+
+上一章了解了AOP的总体概述，这一章来了解下Spring AOP
+
+
+
+通常认为Spring的IOC容器和Spring AOP以及Spring框架对其他JavaEE服务的集成共同组成了Spring框架的质量三角。
+
+Spring AOP以对AOP尽量的支持而不是全部的支持换取了学习曲线的平滑，当然如果Spring AOP无法满足你的需求，也可以直接使用AspectJ，Spring对其有很好的支持
+
+
+
+
+
+Spring AOP对普通的AOP概念进行了抽象和实现
+
+Spring AOP属于第二代AOP，采用动态代理和字节码生成技术实现。
+
+
+
+代理模式的问题：
+
+创建Proxy代理Interface接口，就可以代替接口的所有实现类了，但如果随着接口数目的增多，Proxy对象也会增多，完全无法实施
+
+
+
+
+
+动态代理：动态的生成代理对象，为指定接口在系统运行期间动态的生成代理对象，从而帮助我们走出静态代理实现AOP的窘境，避免手动创建Proxy
+
+主要依靠的类库就是：Proxy类和InvocationHandler接口
+
+Proxy就包含着我们需要代理的对象，InvocationHandler就是我们实现横切逻辑的地方，Java提供的动态代理只能对接口有效，如果一个类没有实现任何的Interface就无法使用动态代理机制为其生成相应的动态代理对象，具体的代码示例看知识点总结中的动态代理篇章。
+
+
+
+Spring AOP发现目标对象实现了相应的interface，就会采用动态代理机制为其生成代理对象实例，如果目标对象没有实现任何的Interface，Spring AOP就会尝试使用CGLIB的动态字节码生成类库，为目标对象生成动态的代理对象实例
+
+
+
+动态字节码生成技术前面已经提到过，就是对目标对象生成相应的子类，重写父类的方法，在系统运行期间进行
+
+
+
+
+
+
+
+### 第九章、Spring AOP一世
+
+
+
+在动态代理和CGLIB的支持下，Spring AOP的实现经过了两代
+
+- 从Spring的AOP框架发布，到Spring2.0发布之前的AOP实现，是Spring第一代AOP实现
+- 从Spring2.0发布之后的AOP实现，是Spring AOP第二代
+
+底层实现机制一直没有改变，改变的只是AOP的概念实体的表现形式以及Spring AOP的使用方式
+
+
+
+Spring AOP一代的概念实体：
+
+- Joinpoint
+
+Spring AOP只支持方法级别的Joinpoint，不支持例如构造方法调用，字段的设置以及获取，方法执行等的Joinpoint，但基本够用了，可以满足80%的需求仅需要付出20%的努力
+
+
+
+
+
+- Pointcut
+
+提供了Pointcut接口作为AOP框架中所有Pointcut的顶层抽象，摘要如下
+
+```java
+public interface Pointcut {
+    Pointcut TRUE = TruePointcut.INSTANCE;
+	//匹配被织入的对象
+    ClassFilter getClassFilter();
+	//匹配被织入的方法
+    MethodMatcher getMethodMatcher();
+}
+```
+
+- ClassFilter
+
+对所指定的Joinpoint进行Class级别的类型匹配，如果对Class无限制的话，可以直接使用如下代码：`ClassFilter TRUE = TrueClassFilter.INSTANCE()`方法，可以点进去看一下其实就是返回了一个TRUEClassFilter对象，只是构造函数没有对外公开
+
+摘要如下：
+
+```java
+@FunctionalInterface
+public interface ClassFilter {
+    ClassFilter TRUE = TrueClassFilter.INSTANCE;
+
+    boolean matches(Class<?> var1);
+}
+```
+
+
+
+
+
+- MethodMatcher
+
+摘要如下：
+
+```java
+public interface MethodMatcher {
+    MethodMatcher TRUE = TrueMethodMatcher.INSTANCE;
+	//忽略方法参数，被称为StaticMethodMatcher，效率较高
+    boolean matches(Method var1, Class<?> var2);
+	//返回true表示方法入参需要检查，false则表示不需要检查
+    boolean isRuntime();
+	//需要方法参数，被称为DynamicMethodMatcher，效率较差，尽量避免
+    boolean matches(Method var1, Class<?> var2, Object... var3);
+}
+```
+
+StaticMethodMatcher和DynamicMethodMatcher都只是MethodMatcher的两个子接口，具体的继承关系如下图，Spring对StaticMethodMatcher有着更多的支持
+
+![image-20200721150843144](images/image-20200721150843144.png)
+
+
+
+
+
+
+
+Spring提供的常见Pointcut实现：
+
+- NameMatchMethodPointcut
+- JdkRegexpMethodPointcut
+- AnnotationMatchingPointcut
+- ComposablePointcut
+- ControlFlowPointcut
+
+下面就是分解了：
+
+
+
+1、NameMatchMethodPointcut
+
+最简单的pointCut实现，StaticMethodMatcher的实现类，根据方法名字来匹配，但无法对重载的方法进行匹配，因为他只能根据方法名来，而不能根据方法参数来匹配
+
+可以使用通配符（“*”）进行简单的方法名匹配
+
+```java
+NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+pointcut.setMappedName("user*Opt");
+//或者使用setMappedNames方法匹配多个
+pointcut.setMappedNames(new String[]{"matches","user*Opt"});
+```
+
+如果通配符*还是无法满足需求，继续往下面看
+
+
+
+
+
+2、JdkRegexpMethodPointcut
+
+基于正则表达式的，需要JDK4
+
+与NameMatchMethodPointcut类似，支持正则表达式
+
+使用正则表达式的方式来匹配JoinPoint则需要匹配整个方法签名，会带上方法的类名和包名
+
+简单使用：
+
+```java
+JdkRegexpMethodPointcut pointcut = new JdkRegexpMethodPointcut();
+pointcut.setPattern(".*match.*");
+//可以使用setPatterns匹配到多个正则表达式
+```
+
+
+
+
+
+3、AnnotationMatchingPointcut
+
+基于注解的，需要JDK5
+
+会根据目标对象是否存在指定类型的注解来匹配Joinpoint
+
+一般配合自定义注解，方法如下
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/7/21 15:42
+ * 类级别的Annotation
+ */
+@Documented
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ClassLevelAnnotation {
+}
+```
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/7/21 15:42
+ * 方法级别的Annotation
+ */
+@Documented
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface MethodLevelAnnotation {
+}
+
+```
+
+可以这样创建AnnotationMatchingPointcut，返回值就省了
+
+```java
+//直接匹配指定注解类的所有方法
+new AnnotationMatchingPointcut(ClassLevelAnnotation.class);
+//等价于
+AnnotationMatchingPointcut.forClassAnnotation(ClassLevelAnnotation.class);
+
+//指定了标注指定注解的方法
+AnnotationMatchingPointcut.forMethodAnnotation(MethodLevelAnnotation,class);
+
+//要求同时标注类和方法的注解
+new AnnotationMatchingPointcut(ClassLevelAnnotation.class,MethodLevelAnnotation.class);
+```
+
+
+
+书中作者说道注解已经愈发的受到人们的青睐，真的是这样。
+
+
+
+
+
+
+
+4、ComposablePointcut
+
+支持交并运算的pointcut，需要用ClassFilter和MethodFilter进行初始化
+
+
+
+如果 想要进行Pointcut与Pointcut之间的逻辑组合运算，可以使用Pointcuts工具类来实现
+
+
+
+
+
+
+
+5、ControlFlowPointcut
+
+最特殊的Pointcut类型，不常用
+
+ControlFlowPointcut匹配程序的调用流程，而不是某一个Joinpoint
+
+可以指定只有当在特定的方法中被调用时候，被调用方法才会发生织入
+
+通过检查调用栈的方式，性能比较低下，不建议使用
+
+
+
+
+
+绝大多数情况下Spring AOP提供的Pointcut已经足够了，但也存在扩展pointcut的可能
+
+可以去实现PointCut的两个子接口——StaticMethodMatcherPointcut和DynamicMethodMatcherPointcut
+
+
+
+StaticMethodMatcherPointcut这个抽象类实现了MethodFilter，且已经提供了默认实现：
+
+- 内部的ClassFilter默认是TRUE，当然也可以指定
+- isRuntime方法会返回false，且第三个参数的matches会直接抛出UnsupportOperationException异常（在父接口中可以看到）
+
+最终我们只需要实现两个参数的matches方法了
+
+```java
+boolean matches(Method var1, Class<?> var2);
+```
+
+
+
+DynamicMethodMatcherPointcut抽象类也为子类提供了部分实现，实现了MethodFilter：
+
+- ClassFilter默认也是TRUE
+- isRuntime方法返回的默认值总是true，且对于两个参数的Method直接返回true（父接口中查看）
+
+
+
+
+
+通常不会直接将Pointcut注入到IoC容器当中去
