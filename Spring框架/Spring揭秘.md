@@ -1797,7 +1797,7 @@ Spring AOP发现目标对象实现了相应的interface，就会采用动态代�
 
 Spring AOP一代的概念实体：
 
-- Joinpoint
+Joinpoint部分
 
 Spring AOP只支持方法级别的Joinpoint，不支持例如构造方法调用，字段的设置以及获取，方法执行等的Joinpoint，但基本够用了，可以满足80%的需求仅需要付出20%的努力
 
@@ -1805,7 +1805,7 @@ Spring AOP只支持方法级别的Joinpoint，不支持例如构造方法调用�
 
 
 
-- Pointcut
+Pointcut部分
 
 提供了Pointcut接口作为AOP框架中所有Pointcut的顶层抽象，摘要如下
 
@@ -2029,6 +2029,795 @@ DynamicMethodMatcherPointcut抽象类也为子类提供了部分实现，实现�
 
 
 
-
-
 通常不会直接将Pointcut注入到IoC容器当中去
+
+
+
+
+
+Advice部分
+
+Spring AOP完美遵守我们前面介绍的通用AOP概念
+
+在Spring中，Advice按照其自身实例（instance）能否在目标对象类的所有实例中共享这一标准，可以划分为两大类，即pre-class类型的Advice和pre-instance类型的advice
+
+
+
+pre-class类型的Advice
+
+pre-class类型的advice类型是指：该类型的Advice是可以在目标对象类的所有实例之间共享，
+
+这类的Advice通常只是提供方法拦截的功能，不会为目标对象类保存任何状态或者添加新的特性
+
+使我们最常接触的Advice类型，包含如下几种类型：
+
+- Before Advice
+
+通常不会打断程序的执行，除非抛出异常
+
+在Spring AOP的表达形式为实现MethodBeforeAdvice接口
+
+- Throw Advice
+
+Spring AOP的实现为ThrowsAdvice接口，虽然该接口没有抽象出任何的方法，但我们实现该接口的时候方法定义需要满足如下规则：
+
+![image-20200721220215574](images/image-20200721220215574.png)
+
+要么全部省略，要么全部都不要省略，Demo：
+
+```java
+public class HelloThrowsAdvice implements ThrowsAdvice {
+
+    public void afterThrowing(Throwable throwable) {
+        System.out.println("Throwable");
+    }
+
+    public void afterThrowing(RuntimeException exception) {
+        System.out.println("RuntimeException");
+    }
+
+    public void afterThrowing(Method method, Object[] args, Object target, ApplicationContextException exception) {
+        System.out.println("ApplicationContextException");
+    }
+}
+
+```
+
+- AfterReturningAdvice
+
+在方法返回之后执行，可以访问到方法的返回值，但无法修改，所以使用场景非常受限制，如果真想要修改，AroundAdvice可以做到
+
+- Around Advice
+
+Spring AOP没有提供单独的AFTER（Finally）Advice。不过有了AroundAdvice这些问题都解决了
+
+提供了接口MethodInterceptor，使用例子：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2020/7/21 22:31
+ * 时间记录
+ */
+public class HelloMethodInterceptor implements MethodInterceptor {
+    @Override
+    public Object invoke(MethodInvocation methodInvocation) throws Throwable {
+        StopWatch watch = new StopWatch();
+        try {
+            watch.start();
+            return methodInvocation.proceed();
+        } finally {
+            watch.stop();
+            System.out.println("Consume: " + watch.getLastTaskTimeMillis() + " ms");
+        }
+    }
+}
+```
+
+
+
+
+
+per-instance类型的Advice
+
+该类型的advice不会再目标类实例对象 中共享，而是会为不同的实例对象保存他们各自的转台以及相关逻辑，感觉用的比较少
+
+实际上就是在不改动目标类的前提下，为目标类对象增加新的属性以及行为
+
+Spring AOP提供的这个Introduction接口就是拓展自MethodInterceptor接口的IntroductionInterceptor接口
+
+大多数情况使用Spring提供的两个实现类就好了
+
+- DelegatingIntroductionInterceptor
+- DelegatePerTargetObjectIntroductionInterceptor
+
+且因为Introduction的性能问题，这一部分使用的非常少
+
+
+
+
+
+
+
+使用Aspect组装pointcut和advice
+
+Spring提供了一种局限性的Aspect实现——Advisor，局限性在于只能持有一个pointcut和一个advice，而理论上Aspect可以持有多个。
+
+估计以为是需要支持两种形式的Advice，Advisor有两个子接口：PointcutAdvisor和IntroductionAdvisor
+
+1、PointcutAdvisor：
+
+大部分的Advisor实现都是PointcutAdvisor的子类，得益于per-class的使用多场景
+
+常用的实现：
+
+- DefaultPointcutAdvisor
+
+最通用的PointCutAdvisor实现，除了Introduction的Advisor无法使用，适用于其他一切的场景
+
+使用起来非常简单，通过构造函数或者是set方法将一个Pointcut和一个Advice注册进来即可
+
+
+
+- NameMatchMethodPointcutAdvisor
+
+细化后的DefaultPointcut，内部持有NameMatchMethodPointcut的Pointcut，只能通过匹配Name来完成（使用DefaultPointcutAdvisor配合NameMatchMethodPointcut一样完成）
+
+使用起来也非常方便：
+
+```java
+NameMatchMethodPointcutAdvisor advisor = new NameMatchMethodPointcutAdvisor();
+
+advisor.setMappedName("sayHello");
+//或者
+advisor.setMappedNames(new String[]("sayHello1","sayHello2"));
+```
+
+
+
+- RegexpMethodPointcutAdvisor
+
+和上面的NameMatchMethodPointcutAdvisor类似，内部持有AbstractRegexpMethodPointcut，默认使用其实现类JdkRegexpMethodPointcut，使用和上面的差不多
+
+
+
+- DefaultBeanFactoryPointcutAdvisor
+
+使用较少，自身绑定到另一个BeanFactory中
+
+
+
+
+
+
+
+2、IntroductionAdvisor分支
+
+introductionAdvisor只是为了Introduction型的Advice，而不能像PointCutAdvisor可以使用任意类型的Advisor
+
+个人感觉使用较少，接口只有唯一的实现类
+
+
+
+
+
+
+
+Ordered的作用
+
+当同一个Joinpoint需要执行多个Advice时候就有可能存在着执行逻辑的先后了，这时候就需要我们来干预了。
+
+很有可能出现这种情况，例如我设置了ThrowsAdvice检查指定的异常，最后应用抛出了异常我的Advice却没有捕捉到，很有可能就是因为其他的advice在这之前执行了并且拿到了我的异常
+
+Spring AOP会默认按照指定的序号来确定优先级，序号越小，优先级越高，越先被执行，序号只能指定大于等于0的，因为小于零的是Spring内部的序号，如果没有指明则会按照声明的顺序来（这里估计指的是在XML文件中声明的顺序，但是如果以注解方式进行注入就需要手动配置了）
+
+可以通过注解或者使用set方法（实现了Ordered接口）来指定序列号
+
+
+
+
+
+Spring AOP的织入
+
+已经将Pointcut和Advice组合成了Aspect（Spring当中叫做Advisor），那么如何将Advice织入到Pointcut指定的Joinpoint当中去呢？
+
+在AspectJ中使用ajc编译器作为织入器，而Spring AOP使用类ProxyFactory作为织入器
+
+示例代码：
+
+```java
+@Resource(name = "pointcut")
+Hello hello;
+
+/**
+ * @return 注册一个Advisor进来
+ */
+@Bean
+public Hello pointcut(Hello hello) {
+    AnnotationMatchingPointcut pointcut = AnnotationMatchingPointcut.forMethodAnnotation(MethodLevelAnnotation.class);
+    HelloMethodInterceptor advice = new HelloMethodInterceptor();
+
+    DefaultPointcutAdvisor advisor = new DefaultPointcutAdvisor(pointcut, advice);
+
+    ProxyFactory weaver = new ProxyFactory();
+    weaver.setTarget(hello);
+    weaver.addAdvisor(advisor);
+    //也可以直接指定到Advice，应该直接作用于所有方法上了，因为没有指定pointcut
+    //weaver.addAdvice(advice);
+    return (Hello) weaver.getProxy();
+}
+```
+
+> 突然感觉是如此的混乱，到织入这一步，明明在Advisor中已经指定了Pointcut和Advice，应该可以直接将Advice织入到相应的Joinpoint当中去，可是这里还要限制织入的目标对象，直接织入容器中所有对象不好吗
+
+**在后面讲其他的Weaver的时候终于提出来了，之所以使用ProxyFactory难受，主要是因为他脱离了Spring IoC容器，所以用起来非常的不顺手，从这里僵硬的对象注入就可见一斑**
+
+织入过程会有两种选择：基于接口的代理和基于类的代理
+
+前者是使用Java在JDK3中提供的动态代理机制来实现的，后者是通过CGLIB字节码生成技术自动生成代理类的子类来完成的。默认情况下都是优先选择前者
+
+如果满足以下三种情况的任意一种才会使用后者：
+
+- 目标类没有实现任何的接口
+- ProxyFactory的ProxyTargetClass属性被设置成true
+- Optimize属性被设置成true
+
+
+
+ProxyFactory的使用到此为止，反正我感觉是没有什么使用体验的，感觉完全限制了Joinpoint的使用范围了，只能在单个对象里面，使用之前还得一个个去增强
+
+
+
+ProxyFactory的本质
+
+主要是依赖于AopProxy的两个实现类JdkDynamicAopProxy和CglibAopProxy来实现两种代理的实现
+
+与ProxyFactory的联系主要在于在构建ProxyBean的时候会调用AopProxyFactory接口（工厂模式）来创建出AopProxy，AopProxyFactory的唯一实现类DefaultAopProxyFactory承担了创建AopProxy的实现逻辑
+
+![image-20200722161717881](images/image-20200722161717881.png)
+
+这里正是我们判断是使用JDK动态代理还是使用CGLIB的条件所在
+
+整体函数如下：
+
+```java
+public AopProxy createAopProxy(AdvisedSupport config) throws AopConfigException {
+    if (!config.isOptimize() && !config.isProxyTargetClass() && !this.hasNoUserSuppliedProxyInterfaces(config)) {
+        return new JdkDynamicAopProxy(config);
+    } else {
+        Class<?> targetClass = config.getTargetClass();
+        if (targetClass == null) {
+            throw new AopConfigException("TargetSource cannot determine target class: Either an interface or a target is required for proxy creation.");
+        } else {
+            return (AopProxy)(!targetClass.isInterface() && !Proxy.isProxyClass(targetClass) ? new ObjenesisCglibAopProxy(config) : new JdkDynamicAopProxy(config));
+        }
+    }
+}
+```
+
+这里传入的AdvisedSupport就是ProxyFactory本身，可以通过ProxyFactory对这个方法的调用看出来`return this.getAopProxyFactory().createAopProxy(this);`
+
+记录着需要创建的代理对象的信息，需要增强的对象，Advice，Advisor等等
+
+之所以在中间设计这么多层是要防止过多的逻辑代码堆积到一个类上面去，增加代码的重用性
+
+ProxyFactory并不是唯一的织入器，可以查看他的父类ProxyCreatorSupport的实现类，都是一些weaver
+
+
+
+容器中的Weaver——ProxyFactoryBean
+
+独立于IoC容器之外的Weaver，例如前面的ProxyFactory，完全发挥不出AOP该有的效果，这里其实也没实际解决啥问题 。。。
+
+这里的ProxyFactoryBean应该会有很好的表现，作者先让我们了解ProxyFactoryBean的本质
+
+ProxyFactoryBean应该理解成为Proxy+FactoryBean。生产Proxy的FactoryBean，是一个Bean，用来生产Proxy的Bean
+
+因为涉及到IoC容器，可以查看他的getObject方法，提供了两套返回Bean的代码示例：
+
+```java
+@Nullable
+public Object getObject() throws BeansException {
+    this.initializeAdvisorChain();
+    if (this.isSingleton()) {
+        return this.getSingletonInstance();
+    } else {
+        if (this.targetName == null) {
+            this.logger.info("Using non-singleton proxies with singleton targets is often undesirable. Enable prototype proxies by setting the 'targetName' property.");
+        }
+
+        return this.newPrototypeInstance();
+    }
+}
+```
+
+singleton或者是PrototypeInstance，默认是singleton，主要是性能上的提升
+
+
+
+使用部分：
+
+使用起来并没有任何的改观，还是需要我们去指定Target Object，仅仅只是允许我们通过使用通配符匹配Interceptor的形式可以 一次给一个TargetObject添加多个Interceptor，根据注册到IoC容器中的Interceptor的Name来的
+
+
+
+
+
+终于到了解决问题的时候了，作者提出来了：一两个需要增强的对象还好，如果需要增强的对象成百上千那么怎么办呢？为每个对象都去创建一个ProxyFactoryBean？显然不可能的
+
+Spring提供了自动代理的机制来帮助我们完成ProxyFactoryBean实现的原理
+
+自动代理机制建立与IoC容器的BeanPostProcessor概念之上的，即实例化Bean的时候，其实前面也讲过，在实例化bean的时候直接返回代理对象而不是原来的对象已达到效果 
+
+至于返回的对象，则可以直接使用ProxyFactoryBean或者是ProxyFactory
+
+这只是实现的原理，需要检查指定的bean是否需要拦截进行织入
+
+
+
+可用的AutoProxyCreator，实际上就是：AbstractAdvisorAutoProxyCreator抽象接口
+
+最常见的两个实现类：DefaultAdvisorAutoProxyCreator和BeanNameAutoProxyCreator
+
+- BeanNameAutoProxyCreator
+
+可以指定一个BeanName列表 和其对应的Interceptor列表，为指定的一系列BeanName织入，也支持使用通配符的方式来指定beanName和Interceptor
+
+- DefaultAdvisorAutoProxyCreator
+
+终于等到了，全自动配置，会自动搜寻容器中所有的Advisor，然后会根据Advisor提供的拦截信息对容器中符合条件的所有对象生成相应的代理对象
+
+但是注入之后毫无反应，这就是我寻找了半天的答案了，还好Spring AOP出了二代
+
+
+
+
+
+TargetSource：
+
+在Weaver绑定对象的时候，都是使用BeanName或者是Target去匹配的，还有第三种方法去指定对象——TargetSource
+
+TargetASource是对对象的一种封装，当请求到达对象时候会先接触到TargetSource尝试获取目标对象，然后调用从TargetSource获取的目标对象的方法。涉及到AOP的方面基本上都有TargetSource对象的封装
+
+
+
+
+
+小结：
+
+讲述了Spring AOP的概念和实现原理，是Spring AOP自发布起就一直秉承的理念
+
+可以帮助我们更好的理解Spring2.0
+
+
+
+
+
+
+
+
+
+### 第十章、Spring AOP二世
+
+
+
+主要感觉是Spring AOP对注解的支持吧
+
+
+
+主要是增加了一套新的使用方式
+
+支持AspectJ的@AspectJ形式的注解的支持，可以直接通过注解的方式标注在POJO对象上，使得这些对象可以包含Aspect信息
+
+在使用过程中最直观的感受就是不用像以前一样要做切面还要去实现特定的advice，另外指定Pointcut的方式也有所改变，不用像以前一样通过指定方法名或者使用通配符进行匹配
+
+虽说是引入的AspectJ的概念，但底层还是Spring AOP的这一套，估计是想让从AspectJ转到Spring AOP的人更多一点，实现代码在AspectJ和SPring AOP之间的通用
+
+尽量使用注解方式的AOP，编程方式的底层操作可能和注解方式的不一致
+
+
+
+最原始的方式增强：
+
+```java
+@Aspect
+@Component
+@EnableAspectJAutoProxy
+public class HelloTestOpt2 implements CommandLineRunner {
+	@Autowired
+    Hello hello;
+
+    @Pointcut("execution(public void cn.luckycurve.aspectorientedprogramming.test.Hello.sayHello(..)) || execution(* say*(..))")
+    public void pointcutName(){}
+
+
+    @Around("pointcutName()")
+    public Object methodTimeStatic(ProceedingJoinPoint joinPoint) throws Throwable {
+        StopWatch watch = new StopWatch();
+        try {
+            watch.start();
+            return joinPoint.proceed();
+        } finally {
+            watch.stop();
+            System.out.println(joinPoint.getTarget()+" : "+watch.getLastTaskTimeMillis());
+        }
+    }
+}
+```
+
+增强Hello的sayHello方法，增加一个计时
+
+> 后来可以直接将pointcut和around注解结合起来了
+>
+> 记得导入aop的starter，不然会报错的
+
+
+
+
+
+AspectJ中的Pointcut的声明方式（毕竟Spring AOP是偷AspectJ的）
+
+即Pointcut Expression，如果有具体的方法载体，例如上面的`public void pointcutName()`方法，被称作Pointcut Signature，具体的方法定义，该方法承载着其注解的Pointcut信息，要求返回值为void，方法入参为空。需要的时候直接使用方法引用即可
+
+可以存在Pointcut注解引入承载了别的Pointcut注解的方法，即以下情况
+
+```java
+@Pointcut("execution(public void cn.luckycurve.aspectorientedprogramming.test.Hello.sayHello(..)) || execution(* say*(..))")
+public void pointcutName(){}
+
+@Pointcut("execution(* *(..))")
+public void pointcutName1(){}
+
+@Pointcut("pointcutName() ||  pointcutName1()")
+public void pointcutName2(){}
+```
+
+可以避免重复定义Pointcut，并且支持对Pointcut进行基本的运算
+
+用起来确实还是比较方便的
+
+
+
+PointcutExpression的写法非常丰富，基本支持所有的Joinpoint，但是由于Spring AOP基本只支持方法级别的AOP，有所限制，只能使用其中少部分标志符
+
+一、execution
+
+使用最多的标志符，匹配方法签名的Joinpoint，格式如下：
+
+```asp
+execution(modifiers-pattern? ret-type-pattern declaring-type-pattern? name-pattern(param-pattern) throws-pattern?)
+```
+
+上面标注？的可以省略，就拿上面Hello类的sayHello方法举例，Pointcut表达式为：
+
+`execution(public void cn.luckycurve.aspectorientedprogramming.test.Hello.sayHello())`
+
+可以简写为：
+
+`execution(void sayHello())`
+
+如上面所说，只保留了方法返回值，方法名，方法参数
+
+另外还支持两种通配符：`*`和`..`
+
+- `*`匹配多个相邻的字符，即一个word，例如以下：`execution(* *(*))`即匹配所有只调用了一个参数的方法
+- `..`只能在两个位置使用declaring-type-pattern和param-pattern
+
+`execution(void cn.luckycurve.*.sayHello())`只能匹配到cn.luckycurve包这一层级下的所有类，而`execution(void cn.luckycurve..*.sayHello())`可以匹配到包下所有的类，不限于当前层级，类似于Ant中的**
+
+
+
+二、within
+
+直接增强整个类中的所有方法
+
+`@Pointcut("within(cn.luckycurve.aspectorientedprogramming.test.Hello)")`
+
+ Hello中的所有方法都会被当做Joinpoint并进行织入
+
+感觉还是蛮有用的
+
+
+
+三、this和target
+
+一起讲可以更好了解标志符之间的语义
+
+this指调用一方所在的对象，target指被调用一方所在的对象
+
+基于代理方式的不同（JDK和CGLIB）会有不同的表现，以此来更加细致的划分JoinPoint
+
+
+
+四、args
+
+根据方法的参数和数量来决定是否需要对方法进行织入
+
+通常需要使用`&&`操作符与其他的pointcut进行操作，不然很有可能会去尝试重写一些被声明为final的方法或者是class，从而报错
+
+`Cannot subclass final class org.springframework.boot.autoconfigure.AutoConfigurationPackages$BasePackages`
+
+且支持的是动态的类型检查式捕捉
+
+例如我们有一个方法`Long hash(Object obj)`
+
+我这里使用了`@pointcut("args(User)")`，如果传入的参数是User依旧可以完成方法的增强，而如果使用的是`@Pointcut("execution(* *(User))")`则不会对方法进行增强
+
+
+
+五、@within
+
+会接收一个标注于类之上的注解，直接增强标注类中的所有方法
+
+`@Pointcut("@within(cn.luckycurve.aspectorientedprogramming.annotation.ClassLevelAnnotation)")`
+
+增强成功
+
+> 舒服了，完全摆脱了基于编程的AOP
+
+
+
+六、@Target
+
+书上说与@within没有什么区别，只不过是一个是静态匹配，后面是动态匹配，让被匹配上的类的所有方法都直接被加强
+
+
+
+七、@args
+
+拦截那些方法参数上标注了特定注解的方法，对其进行织入
+
+
+
+八、@Annotation
+
+检测方法上是否会标注指定注解，如果 标注了的话就加强该方法
+
+感觉使用会非常的广泛，哪怕是某些方法在做事务控制的时候，被标注了@Transactional注解，我们也可以通过这种方式来增强需要制定事务控制的处理流程
+
+
+
+
+
+到这里就结束了，虽然AspectJ还支持其他的Pointcut表达式，但Spring AOP只是支持方法级别的AOP增强，所以底层的实现还是Spring AOP自己的那一套，只是Pointcut Expression偷学了AspectJ的。
+
+
+
+实现的原理是：Spring AOP在内部实现了对AspectJ支持的Pointcut——AspectJExpressionPointcut，只是外表遵循着AspectJ，内部实现完全是按照Spring AOP的概念来的，依据原有的处理Spring AOP的逻辑，最后对需要织入的方法进行织入
+
+
+
+
+
+前面都是对Pointcut的注解支持，下面是对Advice的注解支持，主要包括：
+
+- @Before
+- @AfterReturningAdvice
+- @AfterThrowing
+- @After：相当于After Finally Advice了
+- @Around
+
+都是直接对应于Advice的概念了
+
+在使用注解Advice的时候可以直接指定pointcut，可以通过对现有pointcut函数的调度或者是使用Expression直接定义都是可以的
+
+往往只有Around方法可以指定参数也需要指定参数`ProceedingJoinPoint`，其他的方法往往都不会需要，如果需要获取入参，例如如下情况：
+
+```java
+@MethodLevelAnnotation
+public void hello(String name) {
+}
+```
+
+对hello方法进行了AOP增强，需要在BEFORE中输出name的值
+
+```java
+@Before("@annotation(cn.luckycurve.aspectorientedprogramming.annotation.MethodLevelAnnotation) && args(hello)")
+public void before(String hello) {
+    System.out.println("before : " + hello);
+}
+```
+
+可以通过指定args参数来进行校验和参数的绑定，一定要使用&&通配符，且args的参数名需要与方法的入参的参数名一致。
+
+在任何地方需要获取参数都可以这么做，如果是AfterThrowing注解可以这样做：
+
+```java
+@AfterThrowing(value = "pointcutName() && args(hello)",throwing = "e")
+public void before(Exception e,String hello) {
+}
+```
+
+通过指定throwing的方式来绑定抛出的异常
+
+
+
+@Aspect的补充说明：
+
+- 优先级：
+  - 如果是同一个POJO对象中声明的，那么优先级按照声明次序来，越早声明的Before方法越早执行，越早声明的AFTER方法越晚执行
+  - 如果不是在同一个对象中声明的，那么顺序是随机的，需要通过@Order来指定优先级
+- Aspect的IoC实例化模式——singleton
+
+
+
+
+
+上面是整个Spring AOP 2.0对AspectJ的整合，下面是Spring2.0基于Schema的AOP
+
+其实就是1.0版本的支持XML配置模式的一种演进，并且是对JDK版本没有到5（没有注解）又想使用基于POJO的Aspect声明方式的折中方案，感觉使用频率不是很高。
+
+完全基于XML配置，全是XML配置的语法，因为没有注解嘛，但是现在XML配置基本上已经不复存在了，这部分了解即可，完全是重复造轮子，在当时注解还没有流行起来的版本或许有一定的作用，但是现在毫无用处。
+
+
+
+
+
+小结：
+
+目前已经学过的AOP使用方式：
+
+- 基于接口定义的Advice声明方式，也就是编程式。我们将其称为第一代Spring AOP
+- 基于注解的Spring AOP使用方式。我们将其称为第二代Spring AOP
+
+作者在这部分也推崇使用基于注解的AOP格式
+
+
+
+下一节关注使用AOP的最佳实践
+
+
+
+
+
+
+
+### 第十一章、AOP应用案例
+
+
+
+适合做AOP的几个场景：异常处理、安全检查、缓存
+
+
+
+异常处理
+
+Java的异常类型可以分为两类：
+
+- unchecked exception：无需在编译器检查的异常，主要包含Error和RuntimeException及其子类。通常代表系统的严重异常情况，如数据库挂掉，网络连接中断，服务器崩溃等等，通常无法修复，所以该异常是为人工准备的
+- checked exception：Exception子类除去RuntimeException，需要在程序中对这些异常进行处理。通常代表系统中罕见的非正常状态，系统往往能通过对这些非正常状态的处理得到正常状态，通常是可恢复的
+
+在AOP的异常处理中药处理的异常往往是unchecked exception，因为checked exception系统往往有自己的解决策略，而对于unchecked exception则需要人工进行干涉。通常遇到unchecked exception也就是记录日志等待人工修复，而对于程序中每一处的unchecked exception日志输出逻辑没有必要分散开来，完全可以使用AOP将处理逻辑聚集为一处。
+
+使用@AfterThrowing注解配合args参数绑定RuntimeException到相应的方法上并进行对这些异常的处理，例如发送邮件到工作人员，并记录日志等等
+
+
+
+安全检查
+
+其实Filter就是Servlet规范提供的一种AOP支持，为我们的程序提供基于请求过滤的安全检查策略。通过AOP，可以为任意类型的应用添加相应的安全检查。
+
+就使用Around注解拦截住所有的方法，对所有方法的执行进行安全检查
+
+通常不建议这么用，重复造轮子不说，性能还不一定好，往往会有特定的框架来进行安全检查，例如Spring Security
+
+
+
+缓存
+
+提升系统性能的一个重要方向
+
+同样适用aspect，在方法进入的时候使用类似于如下的调用逻辑：
+
+```java
+if(cache.containskey(key)) {
+    return cache.get(key);
+} else {
+    //do something
+    cache.put(key,value);
+}
+```
+
+当然也不建议这么做，有轮子了，还是上好的轮子
+
+
+
+小结：
+
+给出了常见的AOP最佳实践，但完全不局限于这里面几种
+
+> 在使用任何技术之前要记得先去google一下是否已经有了好的框架实现。
+
+
+
+
+
+
+
+### 第十二章、Spring AOP之扩展篇
+
+
+
+本章围绕着：有关公开当前调用的代理对象的讨论
+
+问题描述：
+
+```java
+public class Hello {
+    public void sayHello(String name) {
+        sayHelloImpl(name);
+        //do something
+    }
+    public void sayHelloImpl(String name) {
+        //do something
+    }
+}
+```
+
+这时候增强sayHelloImpl方法，会发现从外部调用sayHelloImpl方法有增强，但是sayHello方法调用的sayHelloImpl并没有增强
+
+当其方法内部依赖于别的对象需要增强的方法没有任何问题，但依赖于自身定义的方法的时候问题就来了，还是源自于Spring AOP的代理模式，在我们注入对象并且调用方法的时候，Spring AOP会让我们去调用proxy的方法，而封装了target的方法，流程如下所述：
+
+```java
+proxy.sayHello{
+    //do something
+    target.sayHello;
+    //do something
+}
+```
+
+现在进入到了target的sayHello方法中，内部调用sayHelloImpl，其实就是调用this.sayHelloImpl，即直接调用target.sayHelloImpl，而不是proxy.sayHelloImpl，故sayHelloImpl方法没有增强
+
+但如果是调用别的对象里的方法，就不会有这种问题了。
+
+
+
+解决方法：不就是this关键字的限定问题嘛，我显式指定不用this不就好了
+
+通过ApplicationContext的getBean方法获取到增强之后的对象，在调用对应的方法即可
+
+例如如下代码：
+
+```java
+@Component
+public class SpringDefectObj {
+
+    @Autowired
+    ApplicationContext context;
+
+    public void sayHello() {
+        System.out.println("In method sayHello");
+        SpringDefectObj obj = context.getBean(this.getClass());
+        obj.sayHelloImpl();
+    }
+
+    public void sayHelloImpl() {
+        System.out.println("In method sayHelloImpl");
+    }
+}
+```
+
+第九十行体现了这个概念，不要直接使用this，限定死了，要使用IoC注入Proxy
+
+> 也可以使用如下方法：
+>
+> ```java
+> @EnableAspectJAutoProxy(exposeProxy = true,proxyTargetClass = true)
+> //配上
+> SpringDefectObj obj = (SpringDefectObj) AopContext.currentProxy();
+> obj.sayHelloImpl();
+> ```
+>
+> 也是一种解决策略，不过感觉没有直接从IoC中取出对象来的直接
+
+
+
+可以在内部声明一个getThis方法来获取当前已经封装好了的当前对象，避免上述代码的重复，或者声明一个类的成员变量让其指向有已经代理的当前对象
+
+
+
+小结：
+
+展示了Spring AOP实现机制导致的一个小小的缺陷，并通过问题产生了解决方案
+
+Spring AOP在简单与好用之间做出了权衡，这也正是Spring 整个技术栈的伟大，不会直接集成全部的功能，只会给你大部分可能会用到的，让你能够轻松地完成工作

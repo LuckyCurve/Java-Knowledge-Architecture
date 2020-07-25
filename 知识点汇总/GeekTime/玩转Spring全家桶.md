@@ -2,7 +2,7 @@
 
 
 
-## 1、
+## 1、当无法指定parent为Springboot时
 
 使用Spring Initialize生成的项目会自动的带上一个spring-boot-starter-parent做依赖管理：
 
@@ -81,7 +81,7 @@ dependencyManagement的位置往往是放在所有dependencies前面，propertie
 
 
 
-## 2、
+## 2、指定启动容器时候执行代码
 
 在创建Spring容器的时候执行指定方法：
 
@@ -130,7 +130,7 @@ public class StartReport implements CommandLineRunner {
 
 
 
-## 3、
+## 3、Maven插件
 
 使用Maven Helper插件可以很容易的查看到依赖树
 
@@ -142,7 +142,7 @@ public class StartReport implements CommandLineRunner {
 
 
 
-## 4、
+## 4、SpringData的配置
 
 可以通过application.properties来指定数据表的结构和数据（常用于H2数据库等内存数据库，如果使用MySQL，他不会去判断表是否存在，而是直接执行SQL语句）
 
@@ -3422,3 +3422,44 @@ SpringBoot构建Docker镜像，需要使用到的插件以及配置：
 ![image-20200720201106612](images/image-20200720201106612.png)
 
 具体的事例可以查看character10/docker-demo
+
+
+
+
+
+
+
+
+
+## 20、Spring Cloud概述
+
+
+
+>  微服务就是一些协同工作的小而自治的服务
+
+优点：
+
+- 异构性：语言层面的，框架层面的
+- 弹性：不会存在功能影响
+- 可扩展性
+
+缺点：
+
+- 系统复杂性、事务保证等等
+- 开发、测试的复杂性
+- 部署、监控等运维的复杂性
+
+
+
+Spring Cloud替我们抽象出来了一套一致性编程模型，例如：抽象出了Discovery于是可以不用去管你是使用了Eureka、Zookeeper还是什么，我们只需要面向Discovery层即可。帮我们简化了使用框架的成本，让我们把更多的精力放在业务逻辑当中来
+
+主要抽象出来的功能：
+
+- 服务发现：Eureka、Zookeeper、Nacos
+- 服务熔断：Hystrix
+- 配置服务：Git、Nacos
+- 服务安全：Spring Cloud Security（不会讲）
+- 服务网关
+- 分布式消息 
+- 分布式追踪
+- 各种云平台支持
