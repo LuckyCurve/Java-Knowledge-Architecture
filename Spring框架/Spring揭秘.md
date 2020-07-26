@@ -2821,3 +2821,388 @@ public class SpringDefectObj {
 展示了Spring AOP实现机制导致的一个小小的缺陷，并通过问题产生了解决方案
 
 Spring AOP在简单与好用之间做出了权衡，这也正是Spring 整个技术栈的伟大，不会直接集成全部的功能，只会给你大部分可能会用到的，让你能够轻松地完成工作
+
+
+
+
+
+
+
+
+
+## 第四部分、使用Spring访问数据
+
+
+
+Spring为了简化开发，抽象出了数据访问层，主要可以划分为三个部分：
+
+- 统一的数据访问异常层次体系：统一抽象出了异常层次体系，使得我们在使用任何数据访问技术可以完全搬用一套代码的异常处理机制
+- JDBC API最佳实践：JDBC在某些方面是非常成功的，成功统一了各个数据库厂商的数据访问接口，单数在设计层面而言存在缺陷：
+  - SQLException异常太过抽象，完全交给厂商自己构建有可能会抛出的异常，这就导致了一个问题，抛出的SQLException我们需要去进行判断可能是哪些情况抛出的异常。
+  - 使用起来非常繁琐，接近底层，最常见的例子就是资源释放。
+- 以统一的形式对各种ORM方案的集成：集成了现代ORM框架，也将这些ORM框架的异常统一封装，纳入他的异常层次体系当中
+
+> 也就是本部分的目录了
+
+总的来说：Spring的数据访问层实际上就是以统一的数据访问异常层次体系为核心，以JDBC API的最佳实践和统一集成各种ORM方案为两翼，为Java平台的数据访问进行了极大地简化
+
+
+
+
+
+
+
+### 第十三章、统一的数据访问异常层次体系
+
+
+
+了解Spring为什么提供这个体系之前，首先得了解DAO模式
+
+
+
+还是为了简化对数据访问操作，J2EE提出了DAO（Data Access Object，数据访问对象）模式，屏蔽底层数据存储的差异，例如对于数据存储在本地文件、csv文件、关系型数据库等等都可以完全忽视这种差距
+
+主要就是我们现代设计的三层，DAO层使用接口的方式，在Service层需要使用的时候使用IoC的 自动注入，将容器中定义了的DAOImpl注入进来，可能最开始是基于MySQL的，只需要向容器中提供一个基于MySQL的DAOImpl即可，后续可能基于MongoDB，只需要提供基于该技术的DAOImpl就可以了。
+
+这样设计的好处就是客户端代码（这里指的是Service层代码）完全不需要改动。这就是DAO层屏蔽不同数据访问机制所带来的好处。
+
+
+
+当然想法是美好的，但是忽略了一个问题，DAOImpl的代码。最要命的是DAOImpl的异常处理，通常都是直接抛出SQLException（cheched exception）到Service层/客户端层，避免生吞异常
+
+但是这样就出现了问题：
+
+- 数据访问接口对于客户端来说通用性降低了，对于各个DAOImpl的实现所抛出的异常往往都需要特定的逻辑代码去实现，无法统一
+- DAO层的方法声明出现了问题，因为需要指定抛出了什么异常，随着DAOImpl的增多，需要指定抛出的异常也在增多
+
+实现起来简直天方夜谭
+
+
+
+解决问题：
+
+应该将SQLException封装成unchecked exception再抛出，因为SQLException通常是系统无法处理的，还带来了一个好处：unchecked exception无需编译器进行检查，DAO方法声明的时候不用带上throws了。
+
+当然仅仅只有这是不够的，各个厂商对SQLException都有不同的定义，有的使用vendorCode来存储错误信息，有的采用SQLState来存储信息。解决起来也非常简单，提供各个数据库厂商的SQLException处理即可，并将其封装成细小的unchecked异常抛出。
+
+这样对于开发和运维的人员都非常的友好，完全可以实现看到异常名字就大概知道是什么问题了。
+
+因此，我们只需要一套unchecked exception类型的面向数据访问领域的异常层次体系
+
+
+
+Spring已经提供了，需要导入一个Spring Data的starter即可看到`DataAccessException`
+
+![image-20200725103736094](images/image-20200725103736094.png)
+
+具体的异常类型职责：
+
+- CleanupFailureDataAccessException：对数据访问资源进行清理却失败的时候抛出的异常
+- DataAccessResourceFailureException：无法访问相应的数据资源的情况下抛出，通常是因为数据库服务器挂掉的情况
+- DataSourceLookupFailureException：尝试对JNDI（Java Naming and Directory Interface，Java命名和目录接口）服务上或者其他位置上的DataSource进行查找，而查找失败的时候抛出异常
+- ConcurrencyFailureException：并发进行数据库操作失败的时候抛出异常，主要是锁的冲突
+- InvalidDataAccessApiUsageException：以错误的方式使用了数据访问层的API，例如封装的SQL语句查询出多个结果，接收的对象是单个对象
+- InvalidDataAccessResourceUsageException：以错误方式访问资源
+- DataIntegrityViolationException：数据一致性冲突，通常是主键Id重复
+
+种种，比较完善
+
+
+
+小结：
+
+本章讲了数据访问层的异常抽象体系及其出现的必要
+
+
+
+
+
+
+
+
+
+### 第十四章、JDBC API的最佳实践
+
+
+
+Spring提供两种JDBC API的最佳实践，一种是基于JDBCTemplate为核心的基于Template的JDBC使用方式，另一种是在JDBCTemplate基础之上构建的基于操作对象的JDBC使用方式（感觉描述的有点像Hibernate）
+
+
+
+先来看基于Template操作的JBDC使用
+
+
+
+作者也明着说了，很有可能出现JDBC编码不规范的情况，例如Statement不关闭等等
+
+并且将所有异常都封装进SQLException更要命的是将SQLException设置成为了checked exception，然而数据库操作大部分错误是系统无法修正的。除此之外SQLException没有具体的子类化，而仅仅是通过errorCode的方式来标识错误类型和信息，并且各个数据库供应商的errorcode都有可能不同。导致在获取errorcode进行判断之前还必须先判断SQLException是哪个厂商的，更加降低了开发效率。
+
+当然后面JDBC规范有所改善，吸收了Spring的JDBC Template
+
+Spring提出了JDBC Template，其他框架大部分都依赖与Template所带来的遍历
+
+主要是通过模板方法对数据库操作进行封装，这样就能保证我们每一次执行的JDBC代码都是规范的了，并且对返回的异常进行了统一的转译，使用起来方便快捷，完全可以摆脱JDBC的底层细节。
+
+
+
+
+
+JdbcTemplate类的继承结构非常简单，拓展了抽象类JdbcAccessor，实现了接口JdbcOperations
+
+
+
+先来看他的父类JdbcAccessor
+
+抽象类，具有属性：
+
+DataSource：可以被看做是JDBC的连接工厂，具体实现可以引入对数据库连接的缓冲池以及分布式事务支持，基本上可以看做是获取数据库资源的统一接口。
+
+ SQLExceptionTranslator：直译：SQL异常转换器，完成对SQLException进行转译这一工作，是一个函数式接口
+
+
+
+另一个接口JdbcOperations：规定了一系列的标准执行方法，JDBCTemplate需要去实现这些方法，在父类JdbcAccess的支持下，这些方法通常被称为模板方法，可以分为四组：
+
+- 面向Connection的模板方法：自由度大，除非必要条件没必要使用
+- 面向Statement的模板方法：对比Connection具有更高的安全性
+- 面向PreparedStatement的模板方法：避免SQL攻击
+- 面向CallableStatement的模板方法
+
+以上都是基于callable的参数进行传递的
+
+
+
+可以发现JDBCTemplate获取Connection不是直接使用DataSource的getConnection方法，而是通过Spring自身提供的DataSourceUtils中的静态方法来获取Connection的，具体代码如下：
+
+```java
+public static Connection getConnection(DataSource dataSource) throws CannotGetJdbcConnectionException {
+    try {
+        return doGetConnection(dataSource);
+    } catch (SQLException var2) {
+        throw new CannotGetJdbcConnectionException("Failed to obtain JDBC Connection", var2);
+    } catch (IllegalStateException var3) {
+        throw new CannotGetJdbcConnectionException("Failed to obtain JDBC Connection: " + var3.getMessage());
+    }
+}
+```
+
+主要如果直接使用DataSource的getConnection需要与抛出的SQLException打交道，因为DataSource是J2EE的标准，还是直接兼容大部分数据厂商的。另外使用DataSourceUtils还有一个好处就是会将获取到的Connection绑定到当前线程，所以可以实现一个线程对同一个Connection的重用，另外也方便了使用Spring的统一事务抽象层进行事务管理的时候使用。
+
+
+
+Spring还默认提供了数据库连接池的JDBCTemplate实现类，使得我们可以非常简单的使用
+
+
+
+JDBCTemplate将SQLException的转译工作交给了SQLExceptionTranslator对象来完成，该对象在JDBCAccessor中定义，其主要的实现类有三个：SQLErrorCodeSQLExceptionTranslator、SQLStateSQLExceptionTranslator、SQLExceptionSubclassTranslator
+
+最后一个是处理随Java6版本发布的JDBC4中新增的异常（已经说过了JDBC已经开始借鉴Spring JDBC的异常细化）
+
+SQLErrorCodeSQLExceptionTranslator是JDBC默认采取的判断方法，会根据各个厂商的SQLErrorcode来判断异常，只有当判断不出来，条件不足时，才会使用SQLStateSQLExceptionTranslator来帮助转译。通常转译结果Code比State更具有准确性。
+
+
+
+当Code转译不成功时，我们可以扩展SQLErrorCodeSQLExceptionTranslator或者在classpath路径下添加固定的配置文件，在GeekTime中有提到
+
+SQLErrorCodeSQLExceptionTranslator的转译流程大致如下：
+
+1. 使用其定义的转译方法对SQLException进行转译，如果成功了返回结果，否则返回null表示转译失败
+2. 如果处于Java6之上，就尝试使用SQLExceptionSubclassTranslator进行转译，如果失败返回null继续进行
+3. 通过SQLErrorCodesFactory所加载的SQLErrorcode进行转译，加载SQLErrorCode的流程为
+   1. 首先记载位于\org\springframework\jdbc\support\sql-error-codes.xml的配置文件，这里在玩转Spring全家桶里面有提到
+   2. 其次加载ClassPath的根路径下名为sql-error-codes.xml的配置文件，如果有冲突则会进行覆盖操作
+4. 最后迫不得已才尝试使用SQLStateSQLExceptionTranslator去进行解析
+
+
+
+这里仅仅演示基于代码的实现，基于XML配置的（使用较多）去Spring全家桶里面看
+
+```java
+@Component
+public class ErrorCodeExtension extends SQLErrorCodeSQLExceptionTranslator {
+    @Override
+    public DataAccessException customTranslate(String task, String sql, SQLException ex) {
+        // 判断222异常
+        if (ex.getErrorCode() == 222) {
+            return new CannotSerializeTransactionException("Serialize Error Occurs");
+        }
+        return null;
+    }
+}
+```
+
+别直接重写了SQLExceptionTranslator的translate方法，而是建议重写SQLErrorCodeSQLExceptionTranslator的customTranslate方法
+
+最后需要将DataSource和ExceptionTranslator相互绑定
+
+```java
+translator.setDataSource(dataSaource);
+dataSource.setExceptionTranslator(translator);
+```
+
+达到目的，不过作者也推荐使用基于XML的方式
+
+记得到复制Bean信息，因为bean会直接替换的，如果没有复制就替换了默认的ErrorCode，得不偿失
+
+
+
+作者也很真实，摘自原文：
+
+> 说了这么多JDBCTemplate的实现细节和原理，无非是想让读者们知道如果需要这一个轮子需要怎么造出来，但是我们往往不会耗费人力物力财力去造一个出来
+
+
+
+
+
+使用JdbcTemplate，默认配置的DataSource是HikariDataSource，估计是Hikari连接池对DataSource的定制化
+
+JDBC的操作我就直接跳过了，用的时候去网上找best practice
+
+可以使用占位符`？`来占位，避免String的大量拼接
+
+涉及到的主要操作就是CRUD，更包括批量的CRUD，接收`String[] Sql`
+
+甚至还支持存储过程的调用（不是所有的DBMS都支持存储过程的）
+
+
+
+
+
+Spring中的DataSource
+
+DataSOurce的基本功能是ConnectionFactory，根据功能的强弱可以划分为以下三类
+
+- 简单的DataSource
+
+通常只提供DataSource的基本功能ConnectionFactory，**只建议在开发或者测试环境中使用，不建议在生产环境中使用**。
+
+包括：DriverManagerDataSource和SingleConnectionDataSource
+
+DriverManagerDataSource只是简化我们使用过程中的一个步骤：从DriverManagement中请求一个Connection的时候。每次我们向该DataSource时候，他就会去请求DriverManagement尝试获取一个新的链接
+
+SingleConnectionDataSource是基于DriverManagerDataSource构建的一个DataSource，从名字可以看出每次向他发送请求尝试获取Connection的时候他会维持Connection的单例模式，即他本身是一个单例的ConnectionFactory，内部实现逻辑也非常简单：
+
+```java
+synchronized(this.connectionMonitor) {
+    if (this.connection == null) {
+        this.initConnection();
+    }
+
+    if (this.connection.isClosed()) {
+        throw new SQLException("Connection was closed in SingleConnectionDataSource. Check that user code checks shouldClose() before closing Connections, or set 'suppressClose' to 'true'");
+    } else {
+        return this.connection;
+    }
+}
+```
+
+更有趣的是他的构造方法，他可以接收一个Connection作为单例
+
+```java
+public SingleConnectionDataSource(Connection target, boolean suppressClose) {
+    Assert.notNull(target, "Connection must not be null");
+    this.target = target;
+    this.suppressClose = suppressClose;
+    this.connection = suppressClose ? this.getCloseSuppressingConnectionProxy(target) : target;
+}
+```
+
+
+
+
+
+- 拥有连接缓冲池的DataSource实现
+
+除了ConnectionFactory的基本功能，内部还会通过连接池对数据库连接进行管理
+
+获取到的Connection的close方法是直接将该连接返回到DataSource中去，实现Connection的重用
+
+至于实现就不是Spring做的事儿了，需要自己去第三方集成，例如C3P0，DBCP，Druid等等，Spring自动帮我们集成了HikariDataSource
+
+
+
+
+
+- 支持分布式事务的DataSource实现类
+
+XADataSource接口的实现类，默认也支持连接缓冲池。如果应用不需要分布式事务的支持，完全没有必要使用这一类DataSource
+
+
+
+访问远程的DataSource通常使用JNDI来进行实现
+
+自定义DataSource（只是提供思路，不会真有人认为可以实现的比那些厂商的好吧）
+
+去实现抽象类AbstractDataSource或者是他的子抽象类AbstractRoutingDataSource（实现一组DataSource）。只有当现有的DataSource无法满足需求时候再去尝试。
+
+
+
+为现有的DataSource添加新的行为，可以使用接口DelegatingDataSource类，这个类在内部持有一个DataSource，默认在获取Connection会直接委托到内部的DataSource，我们可以重写getConnection方法在获取Connection之前做一些事情，很像是AOP的一个Advice。
+
+Spring提供了几个具有实际价值的DelegatingDataSource，分别是：
+
+- UserCredentialsDataSourceAdapter
+
+对内部的DataSource调用getConnection时候优先使用`getConnection(String username,String password);`的重载方法
+
+- TransactionAwareDataSourceProxy
+
+对取出的Connection将自动加入事务管理，内部实际上是依赖于DataSourceUtils工具类来进行事务管理的，也可以不用这个DataSource去获取，直接使用DataSourceUtils的getConnection方法获取到的Connection自动加入来事务管理的功能。
+
+- LazyConnectionDataSourceProxy
+
+保证当前DataSource获取的Connection只有在被使用时候才会进行初始化
+
+
+
+上面大部分都是直接使用JDK的动态代理技术来对方法进行了增强，而没有依赖于Spring AOP的语法。
+
+
+
+
+
+到此JdbcTemplate的部分告一段落了，进入下一部分——基于操作对象的JDBC使用方式
+
+> 暂时还没搞懂是什么意思，能和Hibernate的概念类比吗
+
+
+
+Spring对各种数据库操作以面向对象的形式进行建模，类体系如图：
+
+![image-20200726143311297](images/image-20200726143311297.png)
+
+
+
+实际上，基于对象操作的JDBC使用方式和基于JdbcTemplate的JDBC使用方式是统一的，只不过 看待的角度有所不同而已。
+
+根据操作分为三个分支：查询，更新，存储，对应着上图最下面的三个部分。
+
+
+
+接下来就是具体的操作细节了，浏览一遍就好了，基本上不会打交道了。P303
+
+
+
+底层同样是使用JdbcTemplate来进行数据访问，只不过对操作的结果进行了基于对象的封装使得在外部看起来是面向对象的JDBC操作，当然，需要我们对入参进行检查
+
+确实比JdbcTemplate的操作进了一步，在查询中会有类似于如下方法的声明：
+
+```java
+Object mapRow(ResultSet rs,int row);
+```
+
+可以重写这个方法，完成ResultSet到Object之间的转换。
+
+
+
+
+
+小结：
+
+JDBC是作为Java对数据访问的标准模式 ，各个厂商也做了适配
+
+但是JDBC的糟糕最佳实践使得开发过程繁琐且复杂
+
+Spring对JDBC进行了封装，提供了JdbcTemplate和基于对象操作的实践方式
+
+不过访问数据层，JDBC并不是唯一的选择，ORM在Java平台上格外盛行，接下来看看Spring框架是如何为现有的各种ORM解决方案提供封装和集成的。
