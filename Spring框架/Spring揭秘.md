@@ -3206,3 +3206,119 @@ JDBC是作为Java对数据访问的标准模式 ，各个厂商也做了适配
 Spring对JDBC进行了封装，提供了JdbcTemplate和基于对象操作的实践方式
 
 不过访问数据层，JDBC并不是唯一的选择，ORM在Java平台上格外盛行，接下来看看Spring框架是如何为现有的各种ORM解决方案提供封装和集成的。
+
+
+
+
+
+
+
+### 第十五章、Spring对各种ORM的集成
+
+
+
+主要就是对Hibernate、Mybatis的集成
+
+
+
+Spring 对ORM框架的集成主要体现在如下方面：
+
+- 统一的资源管理方式：确保在整个Spring中，JDBC和ORM它们的使用方式和资源管理方式是统一的
+- ORM的数据访问异常到Spring的统一异常体系的转译
+- 统一的数据访问事务管理以及控制方式：准确的说是对整个Spring Data体系都有这样的一层事务管理，通过这层事务管理抽象层，可以进行统一的管理
+
+其实这就是Spring对整个Spring Data体系的支持。
+
+> 书上此时的MyBatis仍然是寄存在Apache基金会下的一个顶级项目IBatis，后来脱离Apache去到了Google Code蜕变成为MyBatis
+
+其实集成的策略都大同小异，前两点的集成策略在前面Spring集成JDBC的时候就有提到过。
+
+
+
+侧重Spring对ORM框架的集成而不是框架的自身使用
+
+
+
+Hibernate也存在和JDBC一样的问题需要与大量复杂的数据访问API打交道，捕获各种异常，关闭资源，Spring以JDBCTemplate的封装思路来对Hibernate进行了类似的封装。对Hibernate默认提供的事务管理，Spring也通过AOP的方式剥夺了出去，避免代码的复杂性
+
+
+
+Hibernate的数据操作好像都和Session挂钩，提供了org.hibernate.Session接口
+
+Spring帮我们做了Session的获取和释放，让我们可以集中精力在使用Session上，提供给了开发者HibernateTemplate简化开发，也JdbcTemplate一样定义了大量的模板方法。
+
+
+
+Hibernate也没学好，抛出的异常全是checked exception，如果直接使用hibernate会存在大量try/catch代码，当然在后期还是改成了unchecked的，Spring都将这些异常转换为Spring异常体系中去。
+
+
+
+和Jdbc一样抽象出了XXXOperations接口来预定义可以使用的方法，XXXTemplate即实现这些接口实现指定的方法。
+
+
+
+这都是以前编码式的Hibernate使用方法使用Template中的模板方法，到后来配合注解封装程度更高。
+
+
+
+初始化HibernateTemplate可以通过构造函数：
+
+```java
+public HibernateTemplate(SessionFactory sessionFactory) {
+    this.setSessionFactory(sessionFactory);
+    this.afterPropertiesSet();
+}
+```
+
+而SessionFactory好似Jdbc的DataSource
+
+一般不直接和SessionFactory或者其实现类打交道，而是和SessionFactoryBean打交道，可以传入一个DataSource进行初始化。
+
+
+
+ORM框架都默认支持事务管理特性
+
+
+
+Spring对MyBatis的支持
+
+很形象的比喻：如果把Hibernate比作自动步枪，将JDBC比作手枪的话，那么MyBatis就得算作是半自动步枪了
+
+
+
+没有像Hibernate一样提供ORM的完整解决方案，例如对象查询语言，透明持久化等等。但是仍然能占有一席之地，就因为其平滑的学习曲线，只要精通SQL就没有太大的问题，就像是更加灵活的JDBC。
+
+
+
+MyBatis的原本面貌
+
+书上讲的类都不存在了，应该是项目迁移的时候重写了
+
+依旧是老毛病：冗杂的事务管理和异常检查
+
+都是讲的集成过程和基本的使用
+
+
+
+在最后讲到Spring对JPA的集成时候JPA的概念
+
+JPA（Java Persistence API，Java持久化API）是Sun于Java EE 5之后提出的ORM解决方案的统一标准，具体实现由不同的提供商提供，包括：Hibernate、Toplink等，就好似当年的JDBc一样，只不过JPA是面向ORM的统一
+
+
+
+
+
+小结：
+
+Spring框架为ORM结局方案提供了统一的集成支持：
+
+- 数据访问资源的模块化管理
+- 特定的数据访问异常到Spring的异常层次体系的转译
+- Spring事务管理支持
+
+
+
+
+
+
+
