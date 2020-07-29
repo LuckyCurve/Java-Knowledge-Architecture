@@ -3414,3 +3414,394 @@ JDBC基于操作对象的实践方式并不受欢迎，将在Spring3.0中变更�
 
 
 
+
+
+
+
+
+
+## 第五部分、事务管理
+
+
+
+本部分的目的是阐述Spring事务管理抽象层的理念以及内容
+
+
+
+
+
+
+
+### 第十七章、有关事务的楔子
+
+
+
+认识事务本身，得从事务存在的目的说起
+
+
+
+对于软件系统来说，往往需要数据资源（数据库、文件系统）来保存相应的状态，对这些数据资源访问的过程中，为了保证正确的状态，必须对这些访问加一些必要的限定，以此来保证系统的完整性。
+
+**事务就是以可控的方式对数据资源进行访问的一组操作。**
+
+事务有四个特性：ACID：原子性（Atomicity）、一致性（Consistency）、隔离霜（Isolation）和持久性（Durability）
+
+原子性：事务包含的全部操作是一个不可分割的整体
+
+一致性：在事务执行前后数据资源的一致性状态
+
+隔离性：可以通过指定事务的隔离级别来做到各个事务对该数据资源访问的不同行为，预设有四种隔离级别：
+
+- Read Uncommitted：最低的隔离级别，一个事务可以读取未提交事务的更新结果，以较低的隔离度来换取较高的性能，无法避免几个问题（都是由于并发访问导致的）：
+
+1、脏读：如果被读取的事务发生了回滚，那么读取的结果必然是错误的，是一笔脏数据
+
+2、不可重复读：在同一事务的整个事务过程当中对同一笔数据进行读取，每次读取的结果不同，可能出现这种情况，在被读取数据更新操作之前读取和被读取数据更新操作之后读取就是不一致的数据
+
+3、幻读：幻读是指在同样一个查询在整个事务过程中多次执行后，查询所得到的的结果集是不一样的。幻读针对的是多笔记录。例如第一次事件A进行了查询操作，统计数据总量为100条，事务B新增了100条数据，事务A再次统计数据，发现此时有200条，平白无故增加了100条数据，称为幻读
+
+> 不可重复读和幻读的区别：不可重复读是由update操作引起的、幻读是由insert和delete操作引起的
+
+- Read Committed：大部分数据库默认的隔离级别，只能读取已经提交事务的结果。于是可以避免脏读问题，但无法避免不可重复读和幻读的问题（应该是事务的并发性造成的）
+- Repeatable Read：保证在整个事务的过程中，对同一笔数据的读取结果是相同的，可以避免脏读和不可重复读，但无法避免幻读
+
+- Serializable：最严格的隔离级别。所有的事务操作都是串行执行，感觉毫无卵用，这就是最原始的事务执行方式，效率极低。很少会使用它，通常都是使用前三种加上并发锁的机制来保证安全和吞吐量
+
+Oracle仅仅支持Read Committed和Serializable
+
+EJB、Spring、JDBC等数据访问方式，都允许我们为事务指定以上提到的4种隔离级别，但最终事务是否以指定的隔离级别执行，则由底层的数据资源来决定
+
+通常来说：事务隔离级别与系统并发性成反比，与数据一致性成正比
+
+持久性：一旦整个事务操作完成提交，对数据所做的变更将被记载并不可逆转
+
+
+
+
+
+事务家族成员：
+
+- Resources Manager。RM、负责存储并管理系统数据资源的状态，比如数据库服务器，JMS消息服务器都是RM
+- Transaction Processing Monitor。简称TPM或者TP Monitor。职责在于分布式事务场景中协调包括多个RM的事务处理。通常对应特定的软件中间件（Middleware）
+- Transaction Manager。简称TM。可以认为是TP Monitor的核心组件，直接负责多RM之间的事务处理的协同工作，并提供事务界定、事务上下文传播等功能接口
+- Application。以独立形式存在的或者运行于容器中的应用程序，可以被认为是事务边界的触发点
+
+并非所有事务的场景中都有上面的全部。
+
+
+
+根据RM的多寡来分，可以将事务分为以下两类：
+
+- 全局事务
+
+存在多个RM参与者，需要引入TP Monitor来协同多个RM之间的事务处理
+
+TP Monitor会采用两阶段提交协议来保证整个事件的ACID特性，这种场景下的事务被称为全局事务或者是分布式事务
+
+![image-20200728104955824](images/image-20200728104955824.png)
+
+Application只与TP Monitor打交道，由TP Monitor中的TM统一管理协调。
+
+>  两阶段事务的提交最形象的比喻：
+>
+> 西方婚礼的过程，婚礼的主持是TM，会询问两位新人（RM）是否愿意，如果都是"I do"，那么结为夫妻（事务提交成功），如果一方不是I do，婚礼无法继续进行（事务回滚）
+
+
+
+
+
+- 局部事务
+
+只有一个RM参与其中，就被称为是局部事务
+
+
+
+> 局部事务与全局事务的区别是：当前事务所涉及到的RM而不是系统中所有的RM，在多RM的系统中也很有可能存在局部事件
+
+
+
+以上是概念支持，具体实现各个厂商有所不同，下一章看看Java平台的事务解决方案如何
+
+
+
+
+
+
+
+### 第十八掌、逐鹿群雄下的Java事务管理
+
+
+
+Java平台对事务的支持，包括：局部事务、全局事务（分布式事务）的支持
+
+
+
+局部事务支持
+
+Java对局部事务的支持是直接在Connection（不单只Connection接口，指所有连接资源）的API上的，而不是去新创建事务的API
+
+往往都可以在相应的资源获取API上（Connection）找到对应的API，这是Java平台或者是框架为我们提供好了的。
+
+
+
+分布式事务支持事
+
+https://xiaomi-info.github.io/2020/01/02/distributed-transaction/
+
+> 好像这些技术都已经过时了，这本书是零几年的，现在普遍用的分布式事务架构也是那时候提出的
+>
+> 主要也就是上面小米的那篇文章里面谈到的：两阶段提交/XA、TCC、可靠消息最终一致性、本地消息表、最大努力通知的概念模型
+
+书中提到的概念模型有：JTA和JCA。
+
+当然存在着许多的瑕疵，但Spring的事务抽象框架正是我们要了解的解决方案
+
+JTA和CMT在如今的Spring文档的Transaction中仍有介绍，虽然被作为反面教材
+
+
+
+
+
+
+
+### 第二十章、使用Spring进行事务管理
+
+
+
+使用方式和AOP差不多，编程式事务和声明式事务
+
+
+
+编程式事务
+
+需要我们引入一个Data系列的starter，里面才会包含项目spring-tx
+
+毕竟是事务是数据层的操作
+
+可以使用两个接口：TransactionTemplate和PlatformTransactionManager
+
+建议使用前者
+
+和其他的Template一样，提供一个Callback入参`TransactionCallback<T>`，我们只需要将需要处理的逻辑传入即可
+
+```java
+@FunctionalInterface
+public interface TransactionCallback<T> {
+    @Nullable
+    T doInTransaction(TransactionStatus var1);
+}
+```
+
+传入的TransactionCallback内部方法抛出的异常TransactionTemplate会将其封装成一个TransactionException并抛出并回滚方法，而不是像后者需要全部在内部处理。
+
+也可以在方法内部使用`TransactionStatus的setRollBackOnly()`方法仅仅只是回滚方法而不用抛出TransactionException异常，这里需要记录日志，要不然就是生吞异常了。
+
+
+
+可以这样设置Savepoint让TransactionStatus回滚到指定的SavePoint上而不是直接回滚到整个事务执行之前（感觉用的不是很多，了解即可）
+
+```java
+Object savePoint = transactionStatus.createSavepoint();
+try{
+	//do something。。。
+} catch(Exception e) {
+    transactionStatus.rollbackToSavepoint(savePoint);
+} finally{
+    transactionStatus.releaseSavepoint(savePoint);
+}
+```
+
+
+
+声明式事务管理（推荐）
+
+和以前一样，编程式的事务管理方式极大的侵入了业务代码，使得代码不够简洁
+
+并且声明式代码非常的方便书写和阅读
+
+配合基于注解检查的Spring AOP，为加上特定注解（驱动事务的元数据）的方法织入事务处理
+
+估计是为了对老版本的AOP的支持，采用了编码方式的AOP实现的，实现类为`TransactionInterceptor`
+
+
+
+然后就是应用了：XML和注解形式都提供了
+
+官网上目前也提供了这两种，感觉差不多，没有明显的感情倾向
+
+
+
+XML元数据驱动的声明式事务，直接跳过了，看起来蛮痛苦，SpringBoot也不推荐使用XML配置了，而是推荐使用Java配置类的形式
+
+
+
+
+
+注解元数据驱动的声明式事务
+
+可以直接将`@Transactional`注解标注在业务方法或者业务方法所处的对象上
+
+如果直接标注 在对象上的话，在对象方法没有标注Transactional，就默认使用对象头上的Transactional注解
+
+在此之前必须开启TransactionManagement支持，否则这个注解只起到了标注作用，IoC不会对其进行扫描，使用注解`@EnableTransactionManagement`开启事务管理
+
+具体使用看Spring全家桶，这里作者直接跳过了
+
+
+
+小结
+
+分别就如何对Spring进行编程式事务管理和声明式事务管理进行了描述
+
+> Spring的事务支持仅仅只是JTA标准实现的技术细节，非常依赖于自身Spring AOP提供的特性
+
+
+
+
+
+
+
+
+
+### 第二十一章、Spring事务管理之扩展篇
+
+
+
+
+
+理解并使用ThreadLoacl
+
+
+
+ThreadLocal可以保证每个线程都有独一份的数据
+
+ThreadLocal的实现：自身完全不会保存每个线程应该持有的对象状态，而是直接将对象交给各个线程自身去管理
+
+可以看下Thread的内部结构：
+
+```java
+/* ThreadLocal values pertaining to this thread. This map is maintained
+     * by the ThreadLocal class. */
+ThreadLocal.ThreadLocalMap threadLocals = null;
+
+/*
+     * InheritableThreadLocal values pertaining to this thread. This map is
+     * maintained by the InheritableThreadLocal class.
+     */
+ThreadLocal.ThreadLocalMap inheritableThreadLocals = null;
+```
+
+内部持有threadLocals对象用来存储通过ThreadLocal设置给该线程的变量资源的地方
+
+具体实现代码可以查看ThreadLocal类中的方法描述：
+
+```java
+public void set(T value) {
+    Thread t = Thread.currentThread();
+    ThreadLocalMap map = getMap(t);
+    if (map != null) {
+        map.set(this, value);
+    } else {
+        createMap(t, value);
+    }
+}
+```
+
+会直接将this（这里是ThreadLocal对象）作为key，需要存储的数值为value存储到当前线程的ThreadLocalMap中
+
+取出的话也是直接用this作为key去Map中取出Value
+
+
+
+ThreadLocal像是一个窗口，我们通过ThreadLocal窗口操作
+
+
+
+ThreadLocal的应用场景：
+
+- 管理应用程序实现中的线程安全
+
+Spring的事务管理对Connection进行管理的时候采取的就是使用ThreadLocal保证每个线程都有独一个的Connection从而达到线程安全的目的。
+
+- 实现当前程序执行流程内的数据传递
+
+这通常都是框架在后面帮我们做的事儿，将有可能使用到的资源存入到ThreadLocal中去，在需要的时候可以直接取出，框架帮我们管理资源的创建，获取，销毁等操作。
+
+- 性能优化
+
+对每个线程没有必要共享的变量设置成ThreadLocal减少程序的串行率。
+
+
+
+ThreadLocal管理多数据源切换的条件里面好像没有太多的细节，直接将数据源以Map方式存储到ThreadLocal中去，再将ThreadLocal存储到了IoC容器当中去，在需要的时候从IoC中取得ThreadLocal再通过Key（指定的几个枚举类型）来获取Map中对应的Value。
+
+
+
+
+
+Strategy模式在开发过程中的应用
+
+
+
+Strategy的本意是：封装一系列可以相互替换的算法逻辑，使得具体计算的演化独立于使用它们的客户端代码
+
+但是我们可以不用局限于算法，只要希望有效地剥离客户端代码与特定关注点之间的东西，使用Strategy模式就可以很好地解决
+
+策略模式来Spring源码中也大量使用：
+
+- Spring AOP动态代理的时候，会根据情况是使用java反射还是CGLIB来进行对象的实例化操作，默认有两种操作策略供选择
+- Spring的Validation框架中也根据不同的验证场景，提供了差异性的验证试验
+
+
+
+可见，只要针对同一件事情有多种选择的时候，我们都可以考虑使用Strategy模式来进行统一抽象接口，为客户端代码造福
+
+> 能否这样理解，在Web的MVC层的Spring和Struct都是可供选择的策略实现，而MVC的概念就是抽象接口呢？
+
+
+
+在客户端代码的使用过程中又可以分为两类：客户端整个生命周期内只依赖于单一的策略、客户端整个生命周期内可能动态依赖多个策略
+
+后者的常规客户端代码：
+
+```java
+public Object func() {
+    Strategy strategy;
+    if() {
+        strategy = ...;
+    } else {
+        strategy = ...;
+    }
+}
+```
+
+
+
+如果上述代码大量出现，可以抽象成一个单独方法来解决，并不推崇与书上将其结果转换成一个Map，然后将此时的判断条件转换为Map的Key然后进行查找Value
+
+
+
+事实上，Strategy模式是多态（Polymorphism）的完美体现
+
+
+
+Spring中有对JtaTransactionManager进行分布式管理的支持，可以使用JNDI远程获取DataSource，而不是直接使用本地配置的普通DataSource
+
+正常情况下我们只需要使用DataSourceTransactionManager来对DataSource进行事务控制，可以为什么会出现JTATransactionManager呢？还是Spring直接对JTA规范的支持
+
+使用JtaTransactionManager是为了与JTA概念中的TP组件直接进行通信，TP中包含一个或者多个RM，至于最后JTATransactionManager能与哪个RM进行通讯则是由TP Monitor决定
+
+客户端即可直接获取某个RM（由TP Monitor所分配）的Connection，通过Connection来建立连接信息并在关闭Connection的时候RM完成事务的提交（其中包括对其他RM的扫描）
+
+当然这个过程不是JTA规范强制要求的，只是基于JNDI的实现是这样做的而已，有可能其他家的产品不按照这个实现。
+
+
+
+
+
+小结
+
+挖掘了事务抽象框架中有关ThreadLocal的实践，策略模式的实践，分布式事务的简单应用（基于JNDI，可能用的不是很多了，Spring现在应该提出了自己的分布式事务支持，不必依赖与传统的Java EE框架）。
+
+
+
