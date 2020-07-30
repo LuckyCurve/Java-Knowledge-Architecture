@@ -3805,3 +3805,150 @@ Spring中有对JtaTransactionManager进行分布式管理的支持，可以使�
 
 
 
+
+
+
+
+## 第六部分、Spring的Web MVC框架
+
+
+
+
+
+### 第二十二章、迈向Spring MVC的旅程
+
+
+
+回顾Java平台的Web开发历程：Servlet-> JSP -> MVC框架
+
+
+
+Servlet在那个年代是超前的代表，但是或许是利用不当，Servlet被赋予了过多的使命，开发人员直接将各种逻辑混杂在doGet/doPost方法中，包括：流程控制逻辑、视图显示逻辑、业务逻辑、数据访问逻辑等，造成了难以维护的问题。
+
+以上问题都可以通过学习Spring将代码逻辑抽象出来使用，例如SQL的执行需要抽象出一个工具类提供方法直接执行SQL，从而简化Servlet子类的代码复杂度。
+
+最要命的是
+
+```java
+PrintWriter out = response.getWriter();
+out.println("<...>");
+out.println("<...>");
+out.println("<...>");
+out.println("<...>");
+```
+
+繁琐的页面显示，需要以HTML格式呈现出来，非常的麻烦，随着网站规模的增大，标签数量也会指数级提升。
+
+问题在于Java的后端代码无法与前端开发者的HTML页面美化代码分开来，且每次修改页面代码Servlet还是需要重新编译的
+
+
+
+于是JSP出现了，为了将Servlet中的视图渲染逻辑以独立的单元抽取出来。
+
+于是可以摆脱Java文件中的out.println方法，将HTML等前端代码统一放置到.jsp后缀的模板文件中
+
+但是人们过度依赖于JSP文件，因为其为转换成为Servlet运行，所以人们直接将业务代码，数据库连接代码一股脑的塞进JSP文件当中去，JSP的初衷是为了剥离显示层的业务逻辑，但是人们却将JSP仅仅只看做是简化out.println方法的工具。于是大量项目内部几乎全部都是.jsp的文件，自身被赋予了视图模板之外的太多功能了。
+
+
+
+完全可以将JSP作为视图端，Servlet作为业务逻辑处理端，良好的程序架构就被这么破坏了。前端人员只需要与jsp打交道，后端通过Servlet向前端传输数据，分离了Java开发人员与视图开发人员。所幸后面J2EE开始推广这种规范化的使用，正是这种标准的推广促进了MVC设计模式的广泛应用。
+
+
+
+但是当前架构还不是严格意义上的MVC
+
+![image-20200730101651206](images/image-20200730101651206.png)
+
+最初意义上的是由Controller将数据从Model push到View，但是现在我们使用的往往都是Controller从Model中pull数据发送给View，这种意义上的MVC被称为Web MVC。
+
+
+
+上述J2EE推广的架构非常类似于Web MVC的概念了，但是还是存在一些问题的。
+
+- 最初都是一个Servlet（类似于Controller）对应一个请求，然后导致可能出现多个Controller的情况，且需要在Web.xml中指定URL映射关系，渐渐淡出我们视野
+- Web应用程序中使用单一的Servlet作为集中控制器，不会带来web.xml的文件膨胀，但是Servlet本省就会非常大了，需要分析请求URL做出不同的响应，且早期这种URL是硬编码的，往往无法满足灵活性和可扩展性。
+
+当然后期Servlet通过引入设计模式都解决了这些问题。
+
+
+
+制约Servlet的到后期就成了Servlet中的大量URL分析，流程控制，视图页面等等，没有重用性
+
+在这种架构下发展起来的Web MVC应用框架，恰好顺应了历史的需求
+
+
+
+Web框架的两种形式：
+
+- 请求驱动的Web框架：基于Servlet的request/response的模型建立的，大都是上面框架进化而来，以Web MVC模式为指导，如Struts，Spring MVC等
+- 事件驱动Web开发框架/基于组件的Web开发框架：类似于Swing GUI框架的思想，为每个组件绑定事件，一旦组件触发，事务执行，例如现在的JSF（Java Server Faces）框架
+
+
+
+着重了解请求驱动的Web框架，不会直接使用一个Controller（Servlet）一次性处理所有请求，而是一级一级的依赖于下一级的控制器
+
+
+
+作者在当初Struts没有爆出安全问题的时候便看好了Spring MVC，看来一个框架的成功不仅仅需要一个契机，更需要的是其背后的强大实力。
+
+
+
+
+
+
+
+### 第二十三章、Spring MVC初体验
+
+
+
+开头讲述了Spring MVC的组件优势，都是对比其他框架，没啥经验，看看热闹
+
+
+
+Spring MVC通过引入ViewResolver和View，分离了视图的选择和渲染与具体控制器之间的耦合，使得视图技术可以轻易的集成到Spring MVC框架中，常见的视图技术如：JSP、FreeMarker、甚至是二进制格式的视图形式都可以。
+
+
+
+可以轻松得到Spring中间层如IoC、AOP、数据访问、事务管理的支持。
+
+
+
+Spring MVC的实践则略：与其他的Web框架大体表现相同，通过引入Front Controller和Page Controller的概念来分离流程控制逻辑与具体的Web请求处理逻辑
+
+在Spring MVC中，DispatcherServlet就是Front Controller，负责接收和处理所有Web请求，只不过针对各种URL会委派个下一级的Controller去实现，也就是我们自己实现的Page Controller
+
+![image-20200730154946900](images/image-20200730154946900.png)
+
+只有上面两个Controller还远不能称之为Web MVC框架，还需要其他的组件来进行协助，但都是围绕DispatcherServlet来展开，开始DispatcherServlet之旅
+
+
+
+建议先参考最原始的控制器Servlet会处理那些步骤：
+
+- 获取请求信息，如路径、各种参数值
+- 调用具体的服务对象处理具体的Web请求
+- 处理完成后，将要在视图中显示的模型数据通过request进行传递，最后通过RequestDispatcher选择具体的JSP视图并显示
+
+
+
+再来看看DispatcherServlet的处理流程：
+
+- HandlerMapping：完成Web请求与对应的处理类之间的映射关系，避免这种映射关系直接在DispatcherServlet中写死
+- Controller：Web请求的具体处理者，返回ModelAndView对象，其中包含视图的逻辑名称和数据模型（这里是前后端不分离的架构）
+- ViewResolver和View：Web视图处理抽象层，由Spring MVC提供对各个视图处理的支持，包括文本形式和二进制形式的视图输出。通过引入View接口来统一抽象视图的生成策略。有时候我们传入的是viewname而不是直接传入View对象，这时候就需要我们使用ViewResolver来找到相应的view实现类
+
+![image-20200730163157578](images/image-20200730163157578.png)
+
+
+
+这时候的一次请求就完成了，然后书本上开始讲解起了web.xml文件配置路径映射关系、Filter、Listener的几个步骤，然而现在都不需要了，WebMvcAutoConfiguration帮我们完成了。
+
+真的非常麻烦了，我反正是有点受不了了，还要制定外置Tomcat的配置文件
+
+
+
+
+
+小结
+
+Spring  MVC的设计和实现流程进行了简单的介绍。

@@ -3463,3 +3463,73 @@ Spring Cloud替我们抽象出来了一套一致性编程模型，例如：抽�
 - 分布式消息 
 - 分布式追踪
 - 各种云平台支持
+
+
+
+
+
+## 22、Spring Cloud服务注册与发现
+
+
+
+使用Netflix的Eureka来完成
+
+不是AWS服务上的不建议使用Eureka，并且不再开源，仅仅学习就好。产线上面可能有更合适的选择
+
+
+
+Eureka Server环境搭建非常简单：
+
+依赖引入Eureka-Server
+
+加上注解@EnableEurekaServer
+
+端口：8761		自身不注册进Eureka中去
+
+ ```properties
+server.port=8761
+
+# 不向Eureka注册自身
+eureka.client.register-with-eureka=false
+# 不去获取注册相关内容
+eureka.client.fetch-registry=false
+ ```
+
+
+
+> 线上如果真要使用Eureka要部署Eureka集群，就不要只是简单使用EnableEurekaServer注解就完事儿了，要不然Eureka出了问题就会比较麻烦了
+
+
+
+
+
+Eureka Client环境搭建
+
+引入Eureka-Client依赖
+
+使用注解开启Spring的发现注册支持：
+
+- EnableDiscoveryClient（SpringCloud对服务发现的抽象）
+- EnableEurekaClient（仅仅只是支持Eureka）
+
+基本等价，**可以不用加，Configuration会根据引入的starter帮我们自动去进行注册。建议还是加上**
+
+默认直接注册到本地8761端口，没有加任何的配置
+
+
+
+
+
+
+
+从Eureka中获取服务地址
+
+EurekaClient的方法抽象：getNextServerFromEureka();
+
+DiscoveryClient的方法抽象：getInstances();
+
+强烈建议使用后者，Spring对注册中心的集成远远不止Eureka，后者可以通用
+
+消费过程是通过LoadBalanceClient组件来完成的，可以给RestTemplate或者是WebClient加上@LoadBalanced注解来实现其负载均衡的特性（将RestTemplate注入到Bean中的时候加比较好，反正都是需要自己注入的），底层是通过LoadBalancerInterceptor这个类来做了AOP的Advice，具体的注入是在LoadBalancedAutoConfiguration，默认是使用Ribbon的负载均衡器。
+
+> 可以通过注入discoveryClient的方式来获取到当前连接的注册中心的所注册的机器的ip地址，端口等信息
