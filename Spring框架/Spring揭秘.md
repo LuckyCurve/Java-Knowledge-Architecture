@@ -3952,3 +3952,250 @@ Spring MVC的实践则略：与其他的Web框架大体表现相同，通过引�
 小结
 
 Spring  MVC的设计和实现流程进行了简单的介绍。
+
+
+
+
+
+
+
+
+
+### 第二十四章、近距离接触Spring MVC主要角色
+
+
+
+主要角色包括：
+
+- HandlerMapping
+- Controller
+- ModelAndView
+- ViewResolver
+- View
+
+
+
+想避免Web开发中的重复工作，就去了解这些组件
+
+
+
+HandlerMapping
+
+进行Web请求的URL到具体处理类之间的匹配
+
+之所以这里是处理类而不是Controller是因为Controller不是唯一的次级控制器，Spring内部还提供了其他的次级控制器，另外第三方也可以提供自己的次级控制器。这些次级控制器在Spring MVC中统称为Handler，这就是HandlerMapping的名字由来了
+
+于是HandlerMapping的具体定义为：Web请求到具体的Handler之间的映射关系
+
+
+
+接口摘要：
+
+```java
+public interface HandlerMapping {
+    String BEST_MATCHING_HANDLER_ATTRIBUTE = HandlerMapping.class.getName() + ".bestMatchingHandler";
+    String LOOKUP_PATH = HandlerMapping.class.getName() + ".lookupPath";
+    String PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE = HandlerMapping.class.getName() + ".pathWithinHandlerMapping";
+    String BEST_MATCHING_PATTERN_ATTRIBUTE = HandlerMapping.class.getName() + ".bestMatchingPattern";
+    String INTROSPECT_TYPE_LEVEL_MAPPING = HandlerMapping.class.getName() + ".introspectTypeLevelMapping";
+    String URI_TEMPLATE_VARIABLES_ATTRIBUTE = HandlerMapping.class.getName() + ".uriTemplateVariables";
+    String MATRIX_VARIABLES_ATTRIBUTE = HandlerMapping.class.getName() + ".matrixVariables";
+    String PRODUCIBLE_MEDIA_TYPES_ATTRIBUTE = HandlerMapping.class.getName() + ".producibleMediaTypes";
+
+    @Nullable
+    HandlerExecutionChain getHandler(HttpServletRequest var1) throws Exception;
+}
+```
+
+HandlerExecutionChain中确实包含了用于处理具体Web请求的Handler
+
+
+
+默认提供的Handler：Debug一次请求出来的
+
+RequestMappingHandlerMapping
+
+BeanNameUrlHandlerMapping
+
+RouterFunctionMapping
+
+SimpleUrlHandlerMapping
+
+WelcomePageHandlerMapping
+
+
+
+BeanNameUrlHandlerMapping：最早接触的HandlerMapping
+
+进行Web请求到具体的Handler之间的映射管理，保证视图模板的请求路径与容器中对应的Handler的beanName一致即可通过BeanNameURLHandlerMapping映射到Handler上，限制蛮大的
+
+
+
+SimpleUrlHandlerMapping
+
+不像BeanNameURLHandlerMapping那么呆板，允许视图一方和handler一方自由活动，当然映射关系还是统计在SimpleUrlHandlerMapping中
+
+这里就开始支持基于Ant路径的匹配规则了，可以将前缀一样的请求直接映射到同一Handler上
+
+
+
+其他的书本上就没有提到了
+
+
+
+
+
+HandlerMapping执行序列（Chain Of HandlerMapping）
+
+DispatcherServlet按照内部定义的HandlerMapping优先级进行排序，优先选择优先级在前的HandlerMapping，如果当前HandlerMapping可以返回Handler则使用当前Handler，并不再询问后续的HandlerMapping，否则继续执行
+
+这是Debug出来的Handler优先级排序
+
+![image-20200731113011015](images/image-20200731113011015.png)
+
+可以使用Order注解来指定
+
+HandlerMapping部分完结
+
+
+
+Controller部分 
+
+Controller是Spring MVC提出的用于处理Web请求的handler
+
+Spring以前的编程方式（没有对注解有很好的支持）
+
+```java
+@FunctionalInterface
+public interface Controller {
+    @Nullable
+    ModelAndView handleRequest(HttpServletRequest var1, HttpServletResponse var2) throws Exception;
+}
+```
+
+但是不常用，因为参数写死了，无法实现一些细节如：请求参数获取、请求编码设定、国际化信息处理、Session管理等。
+
+好像AbstractController更加实用一点
+
+于是需要关注Controller的实现，Spring官方文档里面只提供了Annotation-based Controller，完全没有编码方式的Controller，书中提到了但是许多类都已经无效了。
+
+Controller部分跳过了，只是讲述了几个Controller实现类的使用场景，然而现在根本不用区分了
+
+掺杂着大量视图和XML配置处理
+
+基于代码形式的Validator认证实现
+
+可以查看官方代码：https://docs.spring.io/spring/docs/5.2.8.RELEASE/spring-framework-reference/web.html#mvc-config-validation
+
+
+
+
+
+ModelAndView
+
+以前前后端没有分离时候Controller的推荐返回对象，字段摘要：
+
+```java
+public class ModelAndView {
+
+	/** View instance or view name String. */
+	@Nullable
+	private Object view;
+
+	/** Model Map. */
+	@Nullable
+	private ModelMap model;
+
+	/** Optional HTTP status for the response. */
+	@Nullable
+	private HttpStatus status;
+}
+```
+
+大体上两部分组成：
+
+视图相关内容，可以是逻辑视图名称，也可以是具体的View实例
+
+模型数据，视图渲染过程中会将这些模型数据合并最终的视图输出
+
+其中可能出现`public ModelAndView(String viewName, String modelName, Object modelObject)`构造函数，这种构造函数适用于数据只有一条的情况下
+
+除非必要，不推荐使用View，使用View Name的形式可以实现视图的解耦，保证视图选择的灵活性
+
+
+
+
+
+ViewResolver
+
+主要职责：根据ModelAndView中的逻辑视图名，为DispatcherServlet返回一个有效的View实例
+
+接口摘要非常简单：
+
+```java
+public interface ViewResolver {
+	@Nullable
+	View resolveViewName(String viewName, Locale locale) throws Exception;
+}
+```
+
+除了BeanNameViewResolver直接实现接口，一般都是直接和AbstractCachingViewResolver抽象类打交道的。
+
+因为AbstractCachingViewResolver的自带缓存功能，在生产环境中极为有用，但是在开发环境中可能使得我们的修改得不到及时的响应
+
+
+
+Spring对ViewResolver的描述
+
+The following table provides more details on the `ViewResolver` hierarchy:
+
+| ViewResolver                     | Description                                                  |
+| :------------------------------- | :----------------------------------------------------------- |
+| `AbstractCachingViewResolver`    | Sub-classes of `AbstractCachingViewResolver` cache view instances that they resolve. Caching improves performance of certain view technologies. You can turn off the cache by setting the `cache` property to `false`. Furthermore, if you must refresh a certain view at runtime (for example, when a FreeMarker template is modified), you can use the `removeFromCache(String viewName, Locale loc)` method. |
+| `XmlViewResolver`                | Implementation of `ViewResolver` that accepts a configuration file written in XML with the same DTD as Spring’s XML bean factories. The default configuration file is `/WEB-INF/views.xml`. |
+| `ResourceBundleViewResolver`     | Implementation of `ViewResolver` that uses bean definitions in a `ResourceBundle`, specified by the bundle base name. For each view it is supposed to resolve, it uses the value of the property `[viewname].(class)` as the view class and the value of the property `[viewname].url` as the view URL. You can find examples in the chapter on [View Technologies](https://docs.spring.io/spring/docs/5.2.8.RELEASE/spring-framework-reference/web.html#mvc-view). |
+| `UrlBasedViewResolver`           | Simple implementation of the `ViewResolver` interface that affects the direct resolution of logical view names to URLs without an explicit mapping definition. This is appropriate if your logical names match the names of your view resources in a straightforward manner, without the need for arbitrary mappings. |
+| `InternalResourceViewResolver`   | Convenient subclass of `UrlBasedViewResolver` that supports `InternalResourceView` (in effect, Servlets and JSPs) and subclasses such as `JstlView` and `TilesView`. You can specify the view class for all views generated by this resolver by using `setViewClass(..)`. See the [`UrlBasedViewResolver`](https://docs.spring.io/spring-framework/docs/5.2.8.RELEASE/javadoc-api/org/springframework/web/reactive/result/view/UrlBasedViewResolver.html) javadoc for details. |
+| `FreeMarkerViewResolver`         | Convenient subclass of `UrlBasedViewResolver` that supports `FreeMarkerView` and custom subclasses of them. |
+| `ContentNegotiatingViewResolver` | Implementation of the `ViewResolver` interface that resolves a view based on the request file name or `Accept` header. See [Content Negotiation](https://docs.spring.io/spring/docs/5.2.8.RELEASE/spring-framework-reference/web.html#mvc-multiple-representations). |
+
+
+
+SpringBoot默认提供的ViewResolvor序列：
+
+![image-20200731174315751](images/image-20200731174315751.png)
+
+原来需要自己手动注入到IoC容器并加上order标识顺序
+
+
+
+
+
+各司其职的View
+
+剥离视图层和控制层的关键
+
+将数据渲染成表现层的模板代码
+
+可用的ViewSpringBoot都已经给我们进行了集成，没必要再去纠结到底是哪一个View了，需要的时候Debug一下就出来了。当然View还有面向二进制的View
+
+View接口的方法摘要：
+
+```java
+void render(@Nullable Map<String, ?> model, HttpServletRequest request, HttpServletResponse response) throws Exception;
+```
+
+直接将model写入到response中，非常像原生的Servlet操作。
+
+
+
+
+
+小结
+
+本章介绍了Spring MVC中几个重要的组成部分：HandlerMapping、Controller、ModelAndView、ViewResolver和View。但这并非Spring MVC的全部。
+
+
+
+
+
