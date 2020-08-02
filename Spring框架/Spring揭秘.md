@@ -4049,7 +4049,7 @@ HandlerMapping执行序列（Chain Of HandlerMapping）
 
 DispatcherServlet按照内部定义的HandlerMapping优先级进行排序，优先选择优先级在前的HandlerMapping，如果当前HandlerMapping可以返回Handler则使用当前Handler，并不再询问后续的HandlerMapping，否则继续执行
 
-这是Debug出来的Handler优先级排序
+这是Debug出来的HandlerMapping优先级排序
 
 ![image-20200731113011015](images/image-20200731113011015.png)
 
@@ -4194,6 +4194,514 @@ void render(@Nullable Map<String, ?> model, HttpServletRequest request, HttpServ
 小结
 
 本章介绍了Spring MVC中几个重要的组成部分：HandlerMapping、Controller、ModelAndView、ViewResolver和View。但这并非Spring MVC的全部。
+
+
+
+
+
+
+
+### 第二十五章、认识更多SpringMVC家族成员
+
+
+
+主要内容：
+
+- 文件上传与MultipartResolver
+- Handler与HandlerAdaptor
+- 框架内处理流程拦截与HandlerInterceptor
+- 框架内的异常处理与HandlerExceptionResolver
+- 国际化视图与LocaleResolver
+- 主题（Theme）与ThemeResolver
+
+![image-20200801152632164](images/image-20200801152632164.png)
+
+上图是上一章讲述到的Spring MVC核心组件
+
+补充之后的流程图：
+
+![image-20200801152752629](images/image-20200801152752629.png)
+
+
+
+MultipartResolver：位于HandlerMapping之前，如果有文件上传的请求在这里会进行处理
+
+HandlerInterceptor：对处理流程进行拦截，有三处位置可以进行拦截
+
+HandlerAdaptor：Handler的适配器，用于适配其他类型的Handler（Controller之外的）
+
+HandlerException：异常的统一处理
+
+LocaleResolver：解析用户的Locale，根绝Locale显示不同的视图
+
+ThemeResolver：提供给用户选择不同的主题
+
+
+
+
+
+MultipartResolver文件上传
+
+使用起来非常简单：
+
+```java
+@GetMapping("/file")
+@ResponseBody
+public String file(MultipartFile file) {
+    return file.getOriginalFilename();
+}
+```
+
+上传文件，文件的key为file即可。
+
+
+
+```java
+public interface MultipartResolver {
+    boolean isMultipart(HttpServletRequest var1);
+
+    MultipartHttpServletRequest resolveMultipart(HttpServletRequest var1) throws MultipartException;
+
+    void cleanupMultipart(MultipartHttpServletRequest var1);
+}
+```
+
+在DispatcherServlet中会首先调用isMultipart来检查是否为文件上传实例，如果是的话就使用其中的resolveMultipart方法来对实例进行解析并返回HttpServletRequest的子类MultipartHttpServletRequest，如果不是的直接将HttpServletRequest继续执行
+
+MultipartHttpServletRequest的能力来源于他的父接口MultipartRequest，其中包含大量文件相关操作可以直接使用，赋予了当前Request更多的操作方法
+
+
+
+> 文件操作可以使用Spring工具类FileCopyUtils，非常好用，如果是自己实现的话要记得关闭资源如Stream等等
+>
+> 建议配合Apache Tomcat的FileUtils一起实现文件操作
+
+
+
+书上的MultipartResolver实现类已经过期了，现在使用的是StandardServletMultipartResolver实现类
+
+文件上传操作到此为止
+
+
+
+
+
+Handler和HandlerAdaptor
+
+出现HandlerAdaptor就是因为Spring的HandlerExecutionChain可以获取到一个Object类型的Handler而不直接指定死成COntroller，是Spring对其他框架的Handler（只要是处理Web请求的处理对象就行）的兼容，但是为了增加Handler的灵活性，防止DispatcherServlet中对Handler处理的硬编码（对每种格式都罗列出不同的处理方法），提出了HandlerAdaptor概念。HandlerAdapter的出现就是为了让DispatcherServlet可以以统一的方式调度各种类型的Handler，将Handler调用的差距直接封装进Adapter当中去
+
+接口摘要：
+
+```java
+public interface HandlerAdapter {
+	boolean supports(Object handler);
+
+	@Nullable
+	ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception;
+
+    //不是主要方法，为HTTP响应头提供相应的时间值，可以不支持该功能直接返回-1
+	long getLastModified(HttpServletRequest request, Object handler);
+}
+```
+
+确实达到了目标，方法的职责一眼就可以看出来，DispatcherServlet可以不用和Handler打交道了
+
+Adapter也正是为了屏蔽不同底层实现所带来的困扰
+
+可以非常容易实现扩展
+
+
+
+Handler部分：
+
+Spring MVC提供的除了Controller的Handler（可用的Handler类型）：
+
+Handler在SpringMVC中只是一个抽象的概念，并不存在Handler接口
+
+Spring MVC没有提供任何的Handler直接注册到IoC中来，倒是有不少的HandlerMapping和HandlerAdaptor在IoC当中，可以通过ApplicationContext来查看
+
+在2.5版本是可以通过@Handler注解而不是去实现一个接口来定义Handler的，其中要包含处理Request和Response的业务逻辑代码，但是现在已经没有了
+
+
+
+**虽然Handler自身没有任何的限制，但是对应的HandlerMapping和HandlerAdaptor才是真正让Handler没有限制的原因所在**
+
+如果我们自定义Handler，得先需要提供一个可以查找到当前Handler的HandlerMapping并将该HandlerMapping注册到IoC容器当中（准确来说是注册到DispatcherServlet当中，但是相信Spring Boot会自动加载该HandlerMapping到DispatcherServlet当中去）
+
+查看到了其中RequestMappingHandlerMapping的isHandler方法实现，如下：
+
+```java
+@Override
+protected boolean isHandler(Class<?> beanType) {
+    return (AnnotatedElementUtils.hasAnnotation(beanType, Controller.class) ||
+            AnnotatedElementUtils.hasAnnotation(beanType, RequestMapping.class));
+}
+```
+
+非常的简单，直接根据注解来判断即可，我们也可以仿照这样来写，定义自己的一套注解
+
+
+
+当然现在的HandlerMapping可以找到对应的Handler，但是DispatcherServlet只会与HandlerAdaptor打交道，我们需要提供相应的实现才行。
+
+先来看看HandlerAdaptor接口：
+
+```java
+public interface HandlerAdapter {
+	boolean supports(Object handler);
+
+	@Nullable
+	ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception;
+
+	long getLastModified(HttpServletRequest request, Object handler);
+
+}
+```
+
+Adaptor里面需要包含对Handler对象操作的细节了。
+
+Debug一下SpringBoot默认为我们提供的Adaptor
+
+![image-20200801204013603](images/image-20200801204013603.png)
+
+如果需要自定义的话可以直接参考
+
+上面好些方法都是直接在supports方法和handle方法内部调用protected的XXXInternal方法，supports和handler方法的默认实现在AbstractHandlerMethodAdapter当中，在子类中只需要写对应的XXXInternal方法即可。
+
+
+
+在官方文档中好像完全不推荐我们自己定义Handler处理Web请求了，只是提出了底层的实现原理，完全没有给出任何最佳实践哪怕是实践的思路
+
+
+
+
+
+HandlerInterceptor
+
+前面DispatcherServlet对HandlerMapping发起getHandler请求之所以返回一个封装了的HandlerExecutionChain而不是直接返回Handler是因为在HandlerExecutionChain的内部还有HandlerInterceptor的信息保存，
+
+在后续获取HandlerExecutionChain执行之前之后都存在类似的代码（mappedHandler是HandlerExecutionChain的实例化对象）：
+
+```java
+if (!mappedHandler.applyPreHandle(processedRequest, response)) {
+    return;
+}
+```
+
+可以看下HandlerExecutionChain内部的部分成员变量：
+
+```java
+public class HandlerExecutionChain {
+
+	private static final Log logger = LogFactory.getLog(HandlerExecutionChain.class);
+
+	private final Object handler;
+
+	@Nullable
+	private HandlerInterceptor[] interceptors;
+
+	@Nullable
+	private List<HandlerInterceptor> interceptorList;
+
+	private int interceptorIndex = -1;
+}
+```
+
+在点进HandlerInterceptor看一下：
+
+```java
+public interface HandlerInterceptor {
+    // Handler处理web请求之前
+	default boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+			throws Exception {
+
+		return true;
+	}
+	// Handler返回ModelAndView对象之后
+	default void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+			@Nullable ModelAndView modelAndView) throws Exception {
+	}
+	// 整个流程结束之后
+	default void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
+			@Nullable Exception ex) throws Exception {
+	}
+}
+```
+
+会发现一个Interceptor里面会有三次拦截，如果没有定义的话方法体默认是空的，相当于只是增加了调用栈的深度但是不影响代码的执行效果
+
+
+
+这里可以直接在MVC的配置类里面设置，之前好像做过。返回true表示继续执行，false表明方法不允许后继流程的执行（postHandle和afterCompletion方法除外）
+
+非常的清晰了。
+
+几个实现倒是有意思UserRoleAuthorizationInterceptor可以初步实现用户检查，是否在指定范围之内，默认如果在则通过，不在则返回错误，可以调用其中方法来设置变量状态，也可以继承该类然后重写方法来实现检查逻辑的改变。
+
+
+
+
+
+自定义HandlerInterceptor
+
+查看常见错误&基础结论中的拦截器不生效部分
+
+
+
+HandlerInterceptor之外的选择：
+
+既然Spring MVC是依赖于Servlet的，那么Servlet的Filter组件同样可以在这里生效，以下是拦截的具体流程图：
+![image-20200801212602692](images/image-20200801212602692.png)
+
+
+
+Filter是Servlet的标准组件，是独立于DispatcherServlet之外的，更加宏观，但是无法细粒度的控制，HandlerInterceptor是位于DispatcherServlet之内的，可以借助Spring的体系架构来实现参数校验等功能，完成细粒度的控制。
+
+
+
+接下来是HandlerExceptionResolver
+
+官方给出的解释：
+
+If an exception occurs during request mapping or is thrown from a request handler (such as a `@Controller`), the `DispatcherServlet` delegates to a chain of `HandlerExceptionResolver` beans to resolve the exception and provide alternative handling（替换处理）, which is typically an error response.
+
+
+
+全被封装在了doDispatcher中的processDispatchResult方法当中
+
+
+
+Debug出来的SpringBoot默认提供的HandlerExceptionResolver：![image-20200802111711431](images/image-20200802111711431.png)
+
+IDEA好像提供了查看容器中Bean的操作，还是很舒服的，和Debug出来的结果一样，当然还是建议Debug，毕竟DispatcherServlet不一定会直接使用IoC当中的所有Bean
+
+
+
+HandlerExceptionResolver接口的摘要信息：
+
+```java
+public interface HandlerExceptionResolver {
+
+	@Nullable
+	ModelAndView resolveException(
+			HttpServletRequest request, HttpServletResponse response, @Nullable Object handler, Exception ex);
+
+}
+```
+
+在DispatcherServlet中会直接捕获handler的执行异常，将异常打包然后调用HandlerExceptionResolver，会返回一个ModelAndView对象，会根据抛出的异常将其封装进ModelAndView中
+
+上面SpringBoot提供的两个HandlerExceptionResolver的处理方式：
+
+DefaultErrorAttributes（伪代码）：
+
+```java
+request.setAttribute(ERROR_ATTRIBUTE, ex);
+return null;
+```
+
+HandlerExceptionResolverComposite：
+
+```java
+if (this.resolvers != null) {
+    for (HandlerExceptionResolver handlerExceptionResolver : this.resolvers) {
+        ModelAndView mav = handlerExceptionResolver.resolveException(request, response, handler, ex);
+        if (mav != null) {
+            return mav;
+        }
+    }
+}
+return null;
+```
+
+内部持有List<HandlerExceptionResolver>，会依次执行
+
+关于HandlerExceptionResolverComposite的内部ExceptionResolver会在程序开始执行的时候就发生了初始化，初始化的结果如下：
+
+![image-20200802113149275](images/image-20200802113149275.png)
+
+
+
+书上举例的SimpleMappingExceptionResolver现在在SpringBoot当中都没有使用到了。
+
+详细讲述了用法，现在都没有使用了，而且配置是基于XML的。
+
+
+
+
+
+LocaleResolver的国际化支持
+
+对返回的View对象之前进行相应的国际化处理，主要是ViewResolver的支持，ViewResolver的方法摘要：
+
+```java
+View resolveViewName(String viewName, Locale locale) throws Exception;
+```
+
+但是这里面需要传入一个Locale信息，Locale信息的传入依赖于LocaleResolver的支持
+
+LocaleResolver提供了两个方法：
+
+- `Locale resolveLocale(HttpServletRequest request);`
+- `void setLocale(HttpServletRequest request, @Nullable HttpServletResponse response, @Nullable Locale locale);`
+
+具体的实现类就直接跳过了，现在大多都是前后端分离，完全不会返回View
+
+
+
+SpringMVC对Theme的支持：根据操作系统的主题桌面，Web浏览器自适应布局。说是SpringMVC提供的技术，倒不如说是下面的模板引擎提出的解决方案，Spring只不过是在上面做了一层抽象，类似于Handler加了一层Adaptor而已。
+
+
+
+
+
+小结
+
+Spring MVC的所有家族成员已经介绍完毕
+
+Spring为了简化Spring MVC的开发，在Spring2.5提供了基于注解的Controller实现。
+
+
+
+
+
+
+
+### 第二十六章、Spring MVC中基于注解的Controller
+
+
+
+在当时看来已经即为先进了，Spring2.5就开始了对Controller的注解方式的支持，但是随着后来的发展，Spring MVC完全不应该只是限制于基于Controller的注解形式，其他的组件也可以实现注解方式的配置才对。
+
+
+
+> 本章内容：
+>
+> 初识基于注解的Controller
+>
+> 基于注解的Controller原型分析
+>
+> 近看基于注解的Controller
+
+使用部分非常的基础，也就是我们现在常用的一套注解
+
+
+
+来看原型分析
+
+基于注解的Controller也是用于处理Web请求的Handler，和其他的并没有什么区别
+
+
+
+是通过RequestMappingHandlerMapping，DispatcherServlet才可以获取到他的
+
+Debug了半天，在getHandle中可以找到，至于内部的处理逻辑，全在RequestMappingHandlerMapping的父抽象类中包装着，建议直接去Debug，Jump Code太折磨了
+
+
+
+其实实现就Java层面上来说应该不难，还是基于Spring平台的，可以直接使用Spring AOP读取Controller标注的类，获取到类信息后可以使用Java的反射机制来获取类中的信息，包括哪类中方法所标注的requestMapping路径信息就完全暴露在了HandlerMapping之中了
+
+
+
+书上讲的Spring2.5的Controller注解方式支持的HandlerMapping实现类已经不存在了，差距还是有点大的，还好Spring AOP和IoC的部分没有什么太大的变化
+
+
+
+当然，使用一个Handler不仅需要HandlerMapping的支持，还需要提供HandlerAdaptor的支持来供DispatcherServlet统一调用
+
+Debug出的基于注解的Controller的HandlerAdaptor是：RequestMappingHandlerAdapter
+
+
+
+在Debug过程中发现基于注解的Controller的HandlerMapping和HandlerAdaptor都是在List中的最前面的，就是为了第一次遍历就可以遍历得到，提高效率。
+
+> 从这里也可以看出来Spring还是极力推崇基于注解的Controller的
+
+
+
+
+
+基于注解的Controller方法可接收参数（框架提供）：
+
+Request/Response/Session
+
+> 忘记在哪儿看到的了，好像是getSessioon(Boolean b)方法中
+>
+> 如果b为true则session不存在创建方法，如果为false就直接返回null了
+>
+> 这里注入Session，如果服务器没有对应的Session会尝试去创建
+
+Locale
+
+Map/ModelMap：模型数据，也就是ModelAndView当中的数据，可以直接在Controller中进行CRUD操作。还是建议使用后者，因为是Spring提供的，而且没有泛型的约束，非常方便。
+
+Errors/BindingResult：查询数据验证的结果，还是建议使用后者
+
+
+
+
+
+Spring MVC的参数绑定：
+
+
+
+1、 默认绑定行为：根据名称匹配原则进行的参数绑定，当请求中的参数名与方法参数名称一致的时候完成绑定
+
+如果有些参数没有绑定成功，默认是赋值null，不会报任何错误出来，但是如果接受参数的参数类型是原始数据类型，无法赋值null就会报错，因此建议遵循原始数据类型和包装类的编程规范来进行使用
+
+同样只需要保证请求参数名称和指定的Javabean对应的属性名匹配，也可以完成参数的绑定
+
+
+
+2、使用`@RequestParam`明确指定绑定关系：如果不想遵守默认的绑定规则可以使用这个方式来进行参数绑定
+
+只需要将`@RequestParam`注解标注在方法参数上即可
+
+但是使用该注解与默认绑定有一个区别：如果没有从请求中查找到指定参数就会报错，因为该注解里面的required字段默认是true，如果想要和默认的保持一致可以设置required属性变成false即可解决。
+
+
+
+3、@PathVariable（书上并没有提到）
+
+
+
+4、添加自定义数据绑定规则（感觉有点用不上）
+
+
+
+
+
+
+
+操作视图数据的另一种方法：@ModelAttribute
+
+前面提到的方法有：Spring MVC自动注入ModelMap或者是Map到Controller即可实现数据的操作
+
+Spring MVC提供的注解对添加数据的支持：@ModelAttribute注解
+
+可以加在方法和参数上用于对视图数据完整的存取操作
+
+如果加在方法上，会将方法的返回值添加到模型数据中去，key为使用注解时候指定
+
+如果加在方法参数上，就是怼数据模型数据的读取，同样也需要自己指定key
+
+
+
+
+
+对Session域操作的另一种方法：@SessionAttributes
+
+往往在Controller引入参数显得比较“土”（确实，Swagger生成文档也不好生成）
+
+不行，仅仅支持表单方式的提交操作，仍旧需要结合Controller接收到的SessionStatus参数来解决，还不如直接注入一个HttpSession来得实在
+
+
+
+
+
+小结
+
+基于注解形式的Controller，更加灵活，没有对框架的内容有所扩展，只是支持了注解形式而已
 
 
 
