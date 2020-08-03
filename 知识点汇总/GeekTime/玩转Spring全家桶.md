@@ -3533,3 +3533,58 @@ DiscoveryClient的方法抽象：getInstances();
 消费过程是通过LoadBalanceClient组件来完成的，可以给RestTemplate或者是WebClient加上@LoadBalanced注解来实现其负载均衡的特性（将RestTemplate注入到Bean中的时候加比较好，反正都是需要自己注入的），底层是通过LoadBalancerInterceptor这个类来做了AOP的Advice，具体的注入是在LoadBalancedAutoConfiguration，默认是使用Ribbon的负载均衡器。
 
 > 可以通过注入discoveryClient的方式来获取到当前连接的注册中心的所注册的机器的ip地址，端口等信息
+
+
+
+可以使用Spring Cloud提供的Feign来完成对Eureka的负载均衡访问策略，使用起来也清爽很多取代了RestTemplate调用的繁琐	
+
+环境搭建：
+
+```java
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+```
+
+主类上添加`@EnableFeignClients`注解
+
+
+
+使用如下的Service接口来对Eureka中的服务进行调用：
+
+```java
+@FeignClient(name = "waiter-service", contextId = "coffeeOrder")
+public interface CoffeeOrderService {
+    @GetMapping("/order /{id}")
+    CoffeeOrder getOrder(@PathVariable("id") Long id);
+
+    @PostMapping(path = "/order/", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_UTF8_VALUE)
+    CoffeeOrder create(@RequestBody NewOrderRequest newOrder);
+}
+```
+
+```java
+@FeignClient(name = "waiter-service", contextId = "coffee", path = "/coffee")
+// 不要在接口上加@RequestMapping
+public interface CoffeeService {
+    @GetMapping(path = "/", params = "!name")
+    List<Coffee> getAll();
+
+    @GetMapping("/{id}")
+    Coffee getById(@PathVariable Long id);
+
+    @GetMapping(path = "/", params = "name")
+    Coffee getByName(@RequestParam String name);
+}
+```
+
+然后我们便可以注入Service接口并在程序中调用了
+
+
+
+
+
+
+

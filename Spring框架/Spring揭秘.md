@@ -4707,3 +4707,41 @@ Spring MVC提供的注解对添加数据的支持：@ModelAttribute注解
 
 
 
+
+
+### 第二十七章、Spring MVC之扩展篇
+
+
+
+随着Ruby On Rails这一Web框架的流行，Convention Over Configuration的理念愈发受到大家的欢迎
+
+> 这里虽然在介绍Spring MVC对Convention Over Configuration的支持，但是在后续的SpringBoot项目当中整个Spring技术栈都开始有了这个特性
+
+Ruby On Rails所集成的ORM框架在当时便已经有了PO对象的类名与数据库的表名相对应的特性了，这都是自动配置所带来的好处。
+
+在事先的约定无法达到效果的情况下仍然可以采用外部配置的方式（在当时主要指的是XML配置文件的方式）。
+
+
+
+接下来就是Spring MVC默认配置的约定部分
+
+好多都失效了，大部分还是对XML配置的取代。
+
+
+
+Spring3.0展望：
+
+基于注解的Controller被大力推崇
+
+Spring3.0对REST的支持将成为重头戏，`@PathVariable`注解在此时被提出，难怪上面没提到
+
+
+
+
+
+小结
+
+Spring MVC的良好架构使得引入Convention Over Configuration特性非常的容易，只需要加一个HandlerMapping和一个HandlerAdaptor即可。实际上Spring MVC无论是当初引入的注解特性还是现在的Convention Over Configuration都是非常容易的。
+
+
+
