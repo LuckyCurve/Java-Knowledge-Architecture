@@ -3536,7 +3536,7 @@ DiscoveryClient的方法抽象：getInstances();
 
 
 
-可以使用Spring Cloud提供的Feign来完成对Eureka的负载均衡访问策略，使用起来也清爽很多取代了RestTemplate调用的繁琐	
+可以使用Spring Cloud提供的Feign来完成对Eureka的服务访问，使用起来也清爽很多取代了RestTemplate调用的繁琐	
 
 环境搭建：
 
@@ -3586,5 +3586,61 @@ public interface CoffeeService {
 
 
 
+Spring Cloud对服务注册与发现所提供的抽象：
 
+服务注册抽象：ServiceRegistry抽象
+
+客户发现抽象：DiscoveryClient抽象和LoadBalancerClient抽象
+
+对DiscoveryClient抽象无论是使用什么注册中心，都可以使用@EnableDiscoveryClient注解来启动服务发现功能
+
+
+
+可以看下Eureka提供的EurekaServiceRegistry的注册与取消注册的方法以及EurekaAutoServiceRegistration
+
+具体的抽象在Spring-cloud-commons
+
+
+
+其他可用的注册中心/服务发现：
+
+Zookeeper
+
+Hadoop的一个组件，后面从Hadoop中剥离出来成为Apache的顶级项目。
+
+特点：简单、多副本（通常上线至少三副本）、有序、快（在读写比较大的情况下）
+
+问题：无法保证因为注册中心自己的问题而破坏了服务之间的连通性。
+
+建议：不要让Zookeeper跨机房注册
+
+需要去搭建Zookeeper环境，建议使用Docker方式去搭建，2181端口，不像Eureka可以直接将环境打包成为一个jar然后执行这样来得方便
+
+
+
+推荐阅读：[阿里巴巴为什么不用 ZooKeeper 做服务发现？](http://jm.taobao.org/2018/06/13/做服务发现？/)
+
+阿里开源了Dubbo才导致Dubbo+Zookeeper的名声大噪，但是阿里自身却放弃了Zookeeper
+
+
+
+
+
+环境配置：引入spring-cloud-starter-zookeeper-discovery即可
+
+使用`spring.cloud.zookeeper.connect-string`属性来指定Zookeeper地址
+
+
+
+内部的注册信息存储就类似于Linux的文件存储一样，为application都创建一个文件夹
+
+
+
+
+
+**服务注册与发现都可以通过Autowired一个DiscoveryClient对象来实现获取当前连接信息，是Spring Cloud给的抽象**
+
+
+
+无论是服务的提供者还是消费者都需要注册到注册中心上去
 

@@ -4745,3 +4745,171 @@ Spring MVC的良好架构使得引入Convention Over Configuration特性非常�
 
 
 
+
+
+
+
+
+
+## 第七部分、Spring框架对J2EE服务的集成和支持
+
+
+
+由于Java EE（原来的J2EE）给出的API都过于底层，开发人员往往需要花费很多精力在API的调度上，Spring对Java EE的各种服务进行了合适的封装，帮助我们简化日常的开发工作
+
+
+
+
+
+
+
+### 第二十八章、Spring框架内的JNDI支持
+
+
+
+JNDI（Java Naming and Directory Interface，Java命名与目录接口），其主要目的是为了统一各种命名与目录服务的访问接口，类似于JDBC规范的提出
+
+现有的许多Java EE服务都需要依赖于JNDI来访问相应资源。
+
+
+
+Spring对JNDI的集成在spring-context包中，也提供了相应的Template——JndiTemplate
+
+核心方法execute
+
+
+
+小结
+
+了解了Spring对JNDI的集成
+
+
+
+
+
+
+
+### 第二十九章、Spring框架对JMS的集成
+
+
+
+在JMS之前就有很多MOM（Message-Oriented Middleware，面向消息中间件）产品，访问的API各不相同，为了能在Java平台使用消息机制开发的应用程序有一个统一的访问不同MOM产品的方式，JMS规范就此诞生了
+
+
+
+JMS两个主要版本，1.02和1.1，在JMS1.02上定义了如下两种明确的消息模型：
+
+- 点对点模式（Point-to-Point），简称PTP模式。消息发送者将消息发布到指定的消息队列，消息接受者也是从同一消息队列中顺序获取数据，并对获取的消息进行处理，类似于多线程环境下的生产者消费者模型
+- 发布订阅模式（Publish/Subscribe），即Pub/Sub模式。消息发送者将消息发送到指定的消息主题（Topic），多个消息接受者可以从相应主题中获取某个相同的消息拷贝并进行处理。
+
+JMS1.1则是将1.02中提出的两种方案所对应的API进行了整合，推荐使用1.1之后的。
+
+
+
+经典的JMS应用应该由以下几个部分组成：
+
+- JMS类型的客户端程序（JMS Client）。使用Java语言编写的用于发送或者接受消息的程序，这也就是开发人员需要编写实现的东西
+- 非JMS类型的客户端程序（non-JMS Client）。JMS规范诞生之前的本地API
+- 消息（Message）：主要的消息类型有
+
+The following table describes the six message types:
+
+| Message type  | Description                                                  |
+| :------------ | :----------------------------------------------------------- |
+| Message       | The base class. This message type is used for event notification, and does not have a payload. |
+| BytesMessage  | The payload is stored as an array of bytes. This message type is useful for exchanging data in a format that is native to the application, and when JMS is used as a transport between two systems, where the JMS client does not know the message payload type. Use this message type to transmit XML messages to ensure that the message is transmitted efficiently, and is not subject to unnecessary data conversion. |
+| TextMessage   | Data is stored as a string. This message type is useful for exchanging simple text messages. |
+| StreamMessage | A Stream message is a sequence of primitive Java™ types. The message object tracks the order and the types of these primitives within the stream. Formal conversion rules apply; for example, an exception is thrown if a JMS application tries to read a double value as a short value. Refer to the [Java Message Service Specification](https://www.ibm.com/links?url=http%3A%2F%2Fjava.sun.com%2Fproducts%2Fjms%2Fdocs.html) version 1.1 or 2.0 for a full list of the conversion rules.`21ABCDEFGH32.345` is an example of a StreamMessage payload. It consists of the following three fields:An Integer, `21`A String, `ABCDEFGH`A Float, `32.345`If the data structure is unknown, the generic method `readObject()` can be used to return the next object in the stream. If the structure of the data is known, the JMS client can be specific about the type of object being accessed. |
+| MapMessage    | The payload of a MapMessage is stored as a set of name-value pairs. The name is defined as a string and the value is typed. The MapMessage is useful for delivering keyed data that can change from one message to the next.`NumberOfCopies:5` is an example of a MapMessage payload, where `NumberOfCopies` is the key and `5` is the value.Data can be accessed by using `getMapNames()`, which returns a Java Enumeration object. It is possible to iterate through the MapMessage by using `hasMoreElements()` to retrieve the mapped name-value pairs. |
+| ObjectMessage | The Object message carries a serializable Java Object as its payload. It is useful for exchanging Java objects. |
+
+
+
+- JMS Provider：加入JMS规范的各种MOM产品，需要根据规范提供相应的JMS接口实现
+- 受管理对象（Adminnistered Object）
+
+
+
+JMS可以用于系统中各个组件之间的交互和通信，不过因为引入了分布式的概念，在这种场景下使用JMS要确保其必要性
+
+平时开发很少用到JMS。
+
+
+
+使用JMS原始开发套路是非常糟糕的，特别是在生产环境下，效率会非常的低下，提供的API都太过底层了
+
+使用起来和JDBC规范是如此的相似，都需要手动获取资源，然后进行操作，释放资源
+
+
+
+Spring对JMS进行了封装——JMSTemplate
+
+同样是模板方法
+
+
+
+但是感觉使用的也非常少，都直接使用具体到MOM的封装操作，做了分层处理，增加了系统的灵活性和可扩展性
+
+
+
+几个最佳实践就直接跳过了，毕竟工作过程中应该是不会直接使用到的
+
+
+
+客户端与服务器的交互架构演进（还真的蛮有用的）：
+
+![image-20200804145222034](images/image-20200804145222034.png)
+
+![image-20200804145230985](images/image-20200804145230985.png)
+
+![image-20200804145238230](images/image-20200804145238230.png)
+
+![image-20200804145246928](images/image-20200804145246928.png)
+
+都不是普遍适用的，需要自己去做出选择
+
+
+
+上面都是同步消息的情况，下面看看Spring对异步消息的支持
+
+MessageListenerContainer：Spring规定用于处理消息的消息驱动POJO必须实现MessageListener接口，而MessageListenerContainer就负责对MessageListener的管理，主要职责有：
+
+- 负责到指定的Destination接收符合处理条件的消息
+- 将接收到的消息通过某种策略转发给指定类型的MessageListener实现类来处理
+
+有三个实现类，但都不是直接实现该接口，而是继承该接口的抽象类AbstractMessageListenerContainer
+
+
+
+后面的消息驱动POJO就直接实现了MessageListener接口，然后就紧密的和XML配置结合了，
+
+
+
+直到最后都没有应用过程，只是讲了Spring对JMS的抽象而已
+
+
+
+
+
+
+
+### 第三十章、使用Spring发送E-mail
+
+
+
+三个方面：
+
+- 过去Java发送Email邮件
+- Spring的Email抽象层分析
+- Spring的Email支持在实际开发中的应用
+
+
+
+都是Spring2.5版本对Email的集成了，具体的使用细节再去关注吧
+
+
+
+
+
+
+
