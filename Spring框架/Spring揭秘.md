@@ -4913,3 +4913,44 @@ MessageListenerContainer：Spring规定用于处理消息的消息驱动POJO必�
 
 
 
+
+
+### 第三十一章、Spring中的任务调度和线程池支持
+
+
+
+Spring对批处理的支持：也就是Spring Batch子项目发布的原因。
+
+管理批处理任务的执行
+
+
+
+讲的是与第三方任务调度程序的结合，但是好些都已经过时了，例如JDK1.3的Timer现在已经不支持使用了
+
+
+
+可以查看文档：https://spring.io/guides/gs/batch-processing/
+
+
+
+
+
+
+
+### 第三十二章、Spring框架对J2EE服务的集成之扩展篇
+
+
+
+对Spring集成的短板进行了阐述和对“未来”的Spring3.0的展望
+
+
+
+
+
+
+
+### 第三十三章、Spring远程方案
+
+
+
+这个世界上好像没有什么是不变的，唯一不变的是时间，但我们不能跟时间抗衡。既然变化是不可避免的，那就让我们拥抱变化，拥抱新的Spring吧！
