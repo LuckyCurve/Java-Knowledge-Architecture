@@ -3624,8 +3624,6 @@ Hadoop的一个组件，后面从Hadoop中剥离出来成为Apache的顶级项�
 
 
 
-
-
 环境配置：引入spring-cloud-starter-zookeeper-discovery即可
 
 使用`spring.cloud.zookeeper.connect-string`属性来指定Zookeeper地址
@@ -3636,11 +3634,86 @@ Hadoop的一个组件，后面从Hadoop中剥离出来成为Apache的顶级项�
 
 
 
-
-
 **服务注册与发现都可以通过Autowired一个DiscoveryClient对象来实现获取当前连接信息，是Spring Cloud给的抽象**
 
 
 
 无论是服务的提供者还是消费者都需要注册到注册中心上去
 
+
+
+
+
+Consul
+
+支持多数据中心
+
+关键特性：服务发现、健康检查、KV存储、多数据中心支持、安全的服务间通信
+
+
+
+环境配置：
+
+引入spring-cloud=starter-consul-discovery
+
+简单配置：
+
+```yaml
+spring:
+	cloud:
+		consul:
+			host: localhost
+			port: 8500
+			discovery:
+				prefer-ip-address: true
+```
+
+
+
+仍然需要使用dockers启动Consul来做注册中心，我们将服务注册进去
+
+自带控制台，在8500端口
+
+访问时候仍旧需要使用RestTemplate来访问，Feign只能和Eureka联动，可惜了
+
+
+
+
+
+> 目前可以用作生产环境的注册中心主要是：Zookeeper和Consul了，如果不是AWS就没必要使用Eureka了
+
+
+
+Nacos
+
+阿里巴巴的动态服务发现组件
+
+关键特性：动态服务配置、服务发现与管理、动态DNS服务
+
+
+
+环境搭建：
+
+引入Spring-cloud-starter-alibaba-nacos-discovery
+
+配置：
+
+```yaml
+spring:
+	cloud:
+		nacos:
+			discovery:
+				server-addr: 默认8848端口
+```
+
+Dockers本地启动Nacos，控制台也在8848端口，用户名和密码统一Nacos
+
+依旧使用RestTemplate来调用
+
+
+
+> 所有的服务发现配置都可以使用Spring提供的抽象层：@EnableDiscoveryClient和@LoadBalanced
+
+
+
+可以在依赖中的spring.factories查看默认启动的自动配置
