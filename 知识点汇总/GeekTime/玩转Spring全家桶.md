@@ -3717,3 +3717,145 @@ Dockers本地启动Nacos，控制台也在8848端口，用户名和密码统一N
 
 
 可以在依赖中的spring.factories查看默认启动的自动配置
+
+
+
+![image-20200807091002074](images/image-20200807091002074.png)
+
+
+
+**是可以实现openFeign和其他的注册中心相结合的，不是固定于Eureka上的**，课程只是为了演示方便直接谁用了RestTemplate，比较繁琐
+
+
+
+建议使用consul和openFeign的组合
+
+> 可以查看character13的circuit-break-demo项目案例
+
+
+
+
+
+## 23、服务熔断
+
+
+
+实现平滑的服务降级
+
+核心思想：
+
+- 在断路器对象中封装受保护的方法调用
+- 该对象监控调用和断路情况
+- 调用失败触发阈值后，后续调用直接由断路器返回错误，不再执行实际调用
+
+感觉这里并没有平滑的实现服务降级，估计是逐步放弃后端其他服务的步骤。
+
+
+
+AOP手动实现断路保护：
+
+```java
+@Aspect
+@Component
+@Slf4j
+public class CircuitBreakerAspect {
+    private static final Integer THRESHOLD = 3;
+    private Map<String, AtomicInteger> counter = new ConcurrentHashMap<>();
+    private Map<String, AtomicInteger> breakCounter = new ConcurrentHashMap<>();
+
+    @Around("execution(* geektime.spring.springbucks.customer.integration..*(..))")
+    public Object doWithCircuitBreaker(ProceedingJoinPoint pjp) throws Throwable {
+        String signature = pjp.getSignature().toLongString();
+        log.info("Invoke {}", signature);
+        Object retVal;
+        try {
+            if (counter.containsKey(signature)) {
+                if (counter.get(signature).get() > THRESHOLD &&
+                        breakCounter.get(signature).get() < THRESHOLD) {
+                    log.warn("Circuit breaker return null, break {} times.",
+                            breakCounter.get(signature).incrementAndGet());
+                    return null;
+                }
+            } else {
+                counter.put(signature, new AtomicInteger(0));
+                breakCounter.put(signature, new AtomicInteger(0));
+            }
+            retVal = pjp.proceed();
+            counter.get(signature).set(0);
+            breakCounter.get(signature).set(0);
+        } catch (Throwable t) {
+            log.warn("Circuit breaker counter: {}, Throwable {}",
+                    counter.get(signature).incrementAndGet(), t.getMessage());
+            breakCounter.get(signature).set(0);
+            throw t;
+        }
+        return retVal;
+    }
+}
+```
+
+记得显式地开启Aspect支持：`@EnableAspectJAutoProxy`，好像SpringBoot会直接为我们默认开启，但是还是建议显式声明。
+
+其中带有心跳检查机制，当然实现起来非常简单，是根据调用次数来的
+
+
+
+接下来就是集成Hystrix，在Spring实战中已经完成了，这里不再赘述
+
+如果服务方法不可用，可以指定使用其他方法（FollBack Method）
+
+![image-20200807143429036](images/image-20200807143429036.png)
+
+指定的配置方式与单独使用Hystrix有点不同，这里的@EnableCircuitBreaker应该是Spring Cloud对服务熔断层的抽象。
+
+使用案例有单一使用Hystrix的，就如Spring实战中演示的那样，也有结合Feign注解来实现的，如下：
+
+```java
+@FeignClient(name = "waiter-service", contextId = "coffee",
+        qualifier = "coffeeService", path="/coffee",
+        fallback = FallbackCoffeeService.class)
+// 如果用了Fallback，不要在接口上加@RequestMapping，path可以用在这里
+public interface CoffeeService {
+    @GetMapping(path = "/", params = "!name")
+    List<Coffee> getAll();
+
+    @GetMapping("/{id}")
+    Coffee getById(@PathVariable Long id);
+
+    @GetMapping(path = "/", params = "name")
+    Coffee getByName(@RequestParam String name);
+}
+```
+
+难怪老师当时不让我们使用RequestMapping将公共路径提取出去，原来是Feign结合Hystrix之后怕会出现问题。
+
+FallbackCoffeeService如下：
+
+```java
+@Slf4j
+@Component
+public class FallbackCoffeeService implements CoffeeService {
+    @Override
+    public List<Coffee> getAll() {
+        log.warn("Fallback to EMPTY menu.");
+        return Collections.emptyList();
+    }
+
+    @Override
+    public Coffee getById(Long id) {
+        return null;
+    }
+
+    @Override
+    public Coffee getByName(String name) {
+        return null;
+    }
+}
+```
+
+> 感觉FallbackCoffeeService不应该注入到IoC容器当中去，因为如果要使用Feign的CoffeeService还需要单独指定BeanName
+
+第一种方法签名保持一致，第二种直接重写父类方法就无所谓了。
+
+Hystrix和Eureka一样，Netflix都已经说不再维护了，可能用不长久。
+
