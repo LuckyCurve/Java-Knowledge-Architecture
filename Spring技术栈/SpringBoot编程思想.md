@@ -290,3 +290,204 @@ public void run(WebServerInitializedEvent event){
 
 
 一旦引入了这些依赖到classpath路径，我们就可以利用SpringBoot的自动装配特性来完成后续的配置工作。
+
+
+
+
+
+
+
+## 第五章、理解自动装配
+
+
+
+SpringBoot自动装配的对象是Spring Bean，比如通过XML方式和Java配置类方式组装Bean
+
+
+
+启用自动装配的方式：在@Configuration类上标注@EnableAutoConfiguration或者是@SpringBootApplication，至于如何装配@Configuration类这里并没有说明，依赖于Spring Framework的装配规则：**XML方式、@Import注解和@ComponentScan注解都可以完成自动装配**，前者需要ClassPathXmlApplicationContext加载，后者需要AnnotationConfigApplicationContext进行注册。
+
+由此看来，SpringBoot程序的自动装配来源于@SpringBootApplication注解的支持
+
+
+
+SpringBoot官方给出的
+
+@SpringBootApplication = @Configuration + @EnableAutoConfiguration + @ComponentScan注解，且他们都是用默认配置
+
+
+
+实际上并没有这么简单，SpringBoot在1.3的文档中即是这样描述的，SpringBoot2.0的文档并没有真实的反映SpringBootApplication的全部作用
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan(excludeFilters = {
+		@Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
+		@Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class) })
+public @interface SpringBootApplication {
+    // ...
+}
+```
+
+上述文档中描述的ComponentScan使用默认值，不准确，这里排除了FilterType的两个实现：
+
+- TypeExcludeFilter：在SpringBoot1.4中引入，用于查找BeanFactory中已经注册的TypeExcludeFilter Bean作为代理执行对象
+- AutoConfigurationExcludeFilter：在1.5的时候引入，用于排除其他同时标注@Configuration和@EnableAutoConfiguration的类
+
+而在SpringBootApplication注解中使用了这两个Filter
+
+不过还有一个不是很大的区别：SpringBootApplication标注的不是@Configuration而是@SpringBootConfiguration，不过在运行上的行为没有差异，这种类似于对象之间的继承关系好似Component和Configuration，Controller，Service之间的关系一样。
+
+
+
+官方还提到了SpringBootApplication上面使用了EnableAutoConfiguration和ComponentScan的属性别名来实现定制化
+
+这里跟着源码走就行了，实践通过
+
+具体是通过Spring Framework4.2，SpringBoot1.2引入的注解@AliasFor
+
+
+
+从这里可以看到SpringBootApplication是一个聚合注解，类似于@RestController
+
+
+
+
+
+如果SpringBootApplication标注于非引导类之上，仍然可以通过SpringApplication的run方法来指定到被SpringBootApplication标注的类上，被run方法指定的类需要具有自动装配的特性，即至少需要@EnableAutoConfiguration注解标注才可执行。
+
+对于Configuration则不强制要求，发现即使run指定的类没有指定@Configuration注解也可以将内部声明的bean加载到容器当中去，就相当于是SpringBoot自动将EnableAutoConfiguration类注册到容器当中去了吧。
+
+
+
+
+
+@SpringBootApplication作为@Configuration的继承注解的特性：
+
+ 
+
+在普通的Component中声明的@Bean对象被称为“轻量模式”的Bean，而在@Configuration 中声明的Bean是“完全模式”的Bean，后者会执行CGLIB提升的操作，前者只是简单的将对象注册到IoC容器当中来。
+
+> 可以通过查看容器中Bean的ClassName来得出结论
+
+这里的CGLIB的提升并非是@Bean对象提供的，而是为@Configuration类准备的
+
+实例代码：
+
+```java
+//@Configuration
+@EnableAutoConfiguration
+public class FirstAppByGuiApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(FirstAppByGuiApplication.class, args);
+	}
+
+	@Bean
+	public String hello() {
+		return "hello";
+	}
+
+	@Bean
+	public ApplicationRunner runner1(ApplicationContext context) {
+		return args -> {
+			System.out.println(context.getBean(String.class).getClass().getName());
+			System.out.println(context.getBean(FirstAppByGuiApplication.class).getClass().getName());
+		};
+	}
+}
+```
+
+> EnableAutoConfiguration千万不能省略掉，要不然项目启动会出现问题
+
+没有加@Configuration的输出：
+
+```
+java.lang.String
+thinking.in.spring.boot.firstappbygui.FirstAppByGuiApplication
+```
+
+加了@Configuration的输出：
+
+```
+java.lang.String
+thinking.in.spring.boot.firstappbygui.FirstAppByGuiApplication$$EnhancerBySpringCGLIB$$d72d5601
+```
+
+明显的看出代理，Configuration类是被CGLIB增强了的。
+
+
+
+
+
+自动装配机制
+
+SpringBoot的自动装配机制是依赖于Spring Framework的Bean生命周期管理和Spring编程模型，单Spring Framework自身是不支持@Configuration的自动装配了，SpringBoot1.0便添加了约定配置化导入@Configuration类的方式
+
+实现自动导入配置类的条件判断是依赖于注解：@ConditionalOnClass和@ConditionalOnMissingBean（标注于@Configuration之上），可以指定在特定条件下（当依赖的类找到了，但没有声明配置类）的时候起效。进而实现配置类上@Import注解的导入到更多的依赖类和其他的自动配置
+
+
+
+那么最初始的一批配置该如何导入呢？不可能一个个去Import吧，实际上在spring-boot-autoconfigure项目的spring.factories文件中都写着了初始化容器时候加载的Configuration
+
+每个starter都会提供一个autoconfigure包来，可以查看这个包中的spring.factories文件来实现该starter自己的自动装配
+
+
+
+
+
+实践：创建自己的starter：
+
+实现环境搭建：
+
+非常简单，让引导类处于三级包下，让另一个配置类也处于三级包下，由于默认只会加载引导类的目录下的所有类，因此配置类不会被加载到，我们通过自动配置类来实现自动加载配置类的功能：
+
+![image-20200810174041103](images/image-20200810174041103.png)
+
+在resources目录下创建META-INF/spring.factories文件，其中应该指定EnableAutoConfiguration注解作为配置类的key，因为自动配置一定会开启（引导类必须指定@EnableAutoConfiguration）也就相当于我们指定的配置类一定会被加载到，
+
+```
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+thinking.in.spring.boot.autoconfigure.WebAutoConfiguration
+```
+
+/只是换行符，如果有多个类需要加载，中间用逗号隔开，如下
+
+```
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+thinking.in.spring.boot.autoconfigure.WebAutoConfiguration,\
+thinking.in.spring.boot.autoconfigure.WebAutoConfiguration
+```
+
+> 需要注意的一点：类命名均要以AutoConfiguration作为后缀
+
+从而加载到WebAutoConfiguration配置类（只是写着是AutoConfiguration而已）：
+
+```java
+/**
+ * Web 自动装配类
+ */
+@ConditionalOnWebApplication
+@Configuration
+@Import(WebConfiguration.class)
+public class WebAutoConfiguration {
+}
+```
+
+这里又是Web环境，因此会引入WebConfiguration类，可以在WebConfiguration中做一些输出来验证是否自动配置成功。
+
+从而可以完全实现基于注解的Bean组装。
+
+
+
+不可否认的是，随着 越来越多starter的引入，大量的Spring Boot装配变成黑盒，并且搭配条件注解之后显得更加复杂，为了支持以配置化的方式调整应用行为，如Web服务器端口等，Spring Boot提供了Production-Ready特性
+
+
+
+
+
