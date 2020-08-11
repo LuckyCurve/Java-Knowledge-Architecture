@@ -491,3 +491,119 @@ public class WebAutoConfiguration {
 
 
 
+
+
+## 第六章、理解Production-Ready特性
+
+
+
+官方的解释为：Provide production-ready features such as metrics,health check and externalized configuration
+
+production-ready 的一般性定义：
+
+https://github.com/mitodl/handbook/blob/master/production-ready.md
+
+
+
+主要是通过Spring-Boot-actuator来实现的
+
+提供HTTP和JMX两种方式来监控和管理Spring
+
+
+
+需要手动添加依赖到pom文件，通过暴露的endpoint来实现对程序情况的访问，默认情况下仅仅暴露health和info，要想增加其他，得使用management.endpoints.web.exposure.include=*配置到配置文件或者启动参数当中，这类配置被称为外部化配置
+
+
+
+现在只剩下Production-Ready的最后 一个特性——externalized Configuration
+
+官方给出的解释：
+
+> Spring Boot allows you to externalize your configuration so you can work with the same application code in different environments,You cna use properties file,YAML files,environment variables and command-line arguments to externalize configuration
+
+
+
+外部化配置的三个用途：
+
+- Bean的@Value注入
+- Spring Environment读取
+- @ConfigurationProperties绑定到结构化对象
+
+
+
+PropertySource之间存在顺序，顺序高的配置可以覆盖掉顺序低的配置（就相当于是配置覆盖了）
+
+https://docs.spring.io/spring-boot/docs/current/reference/html/spring-boot-features.html#boot-features-external-config
+
+感觉SpringBoot的核心文档在Spring Boot Features中
+
+
+
+外部化配置的概念：与外部化配置相对应的是内部化配置，如各种set方法就是内部化配置的典型代表，配置数据是来源于应用内部实现的，缺少相应的弹性
+
+SpringBoot采取的外部化配置类似于使用properties文件，命令行参数，系统参数来达到不干预内部代码的情况下实现定制化。
+
+
+
+理解约定大于配置：
+
+结合SpringBoot官方给出的最后一个特性：
+
+> - Absolutely no code generation and no requirement for XML configuration
+
+前半句话说明绝无中间代码生成，从而影响SpringBoot应用运行时行为，后半句则是耳熟能详的约定大于配置了。
+
+从技术的角度看，大多数人以为注解驱动是SpringBoot提供的，其实是Spring Framework自身提供的，因此SpringBoot依赖于Spring Framework
+
+Spring Framework的注解在2.5版本时候便开始推广，那时候推荐的是在XML中配置Componentscan，然后在Java代码中使用一系列DI注解实现，依然依赖于XML
+
+到了Spring3.0提供了@Configuration来代替XML，Bean标签也可以被@Bean注解代替，框架还提供了@Import注解来导入@Configuration class并将其注册为Spring Bean，尽管在Bean的装配上有所提升，但仍然需要以硬编码的方式指定范围
+
+Spring3.1发布了@ComponentScan注解来取代了XML的ComponentScan标签，实现了XML的完全可替代性，还提供了部分激活注解@EnableXXX来将指定类装配的 方法，但是被@EnableXXX标注的类需要自己被IoC容器感知到，这就成为了一个先有鸡还是先有蛋的问题了。
+
+> 例如你声明了一个@ComponentScan注解到一个类上，但是在当时脱离了XML后IoC是加载不到该类的，自然无法扫描到@ComponentScan注解了，仍然无法实现自动配置
+
+Spring4.0提出的Conditional注解使得自动配置成为可能，因为官方给出的描述——**“whenever possible”**。
+
+
+
+SpringBoot官方给出的六大特征如第三点是maven提供的，第六点是Spring Framework3.1就已经完全支持的，综上 ，Spring Boot的主要五大特征为：
+
+- SpringApplication
+- 自动装配
+- 外部化配置
+- Spring Boot Actuator
+- 嵌入式Web容器
+
+这五大特征构成了SpringBoot作为微服务中间件的基础，又提供了SpringCloud的基础设施
+
+
+
+其实微服务开发完全没有技术的限制，传统的Java EE容器也可以实现微服务
+
+只不过由于Spring社区十几年的开源策略和技术演进使得Spring Boot在微服务的世界中独占鳌头
+
+
+
+
+
+虽然Spring Boot提供了丰富的功能特性，但是其天生缺少快速构建分布式系统的能力，为此，Spring官方在SpringBoot的基础上开发出Spring Cloud，致力于为开发人员提供一些快速的通道构建通用的分布式系统，核心特性包含：
+
+- Distributed/versioned Configuration（分布式配置）
+- Service registration and discovery（服务注册与发现）
+- Routing（路由）
+- Service-to-service calls（服务调用）
+- Load Balancing（负载均衡）
+- Circuit Breaker（熔断机制 ）
+- Distributed messaging（分布式消息）
+
+Spring Cloud想提供的这些特性被大多数互联网公司所实现了，Spring官方的最大优势在于其强大的API设计能力（统一抽象，屏蔽技术实现细节），在 云平台Java语言（及其派生语言）处于垄断地位，Spring Cloud高度抽象的接口对于开发人员而言，底层实现是透明的，当需要更换底层时候只需要更换一个starter即可，就类似于Tomcat换Jetty，无需过多的业务回归测试。
+
+
+
+Spring Cloud的第二大优势在于Spring Cloud Stream的整合，通过Stream编程模式达到数据传输的目的，感觉是有偷Java语言层面设计的。
+
+
+
+SpringBoot的成功使得Spring社区焕发出了第二春，主要是因为SpringBoot的自动装配机制，但自动装配底层依赖的是Spring Framework的注解支持。
+
