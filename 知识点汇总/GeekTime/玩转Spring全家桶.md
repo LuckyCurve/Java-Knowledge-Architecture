@@ -3740,6 +3740,10 @@ Dockers本地启动Nacos，控制台也在8848端口，用户名和密码统一N
 
 
 
+在consume中使用服务熔断
+
+
+
 实现平滑的服务降级
 
 核心思想：
@@ -3859,3 +3863,44 @@ public class FallbackCoffeeService implements CoffeeService {
 
 Hystrix和Eureka一样，Netflix都已经说不再维护了，可能用不长久。
 
+
+
+了解熔断情况的方法：打日志、看监控
+
+后者Spring已经为我们提供了对应的dashboard，直接使用就好了，在Spring实战中服务熔断的时候有介绍，Hystrix会帮我们自动开启一个Stream的Endpoint方式实现自身信息的发送，建议结合dashboard实现图形化界面的信息查看
+
+![image-20200811152543999](images/image-20200811152543999.png)
+
+可以观察到熔断信息，对人们来说是pull系统运行情况的方式
+
+> dashboard项目是单独启用起来的，类似于Spring Boot Admin，只能起到监控的效果
+
+如果我们需要程序自己push，可以预先设置一个阈值，当失败达到阈值的时候做对应的处理如发送邮件。
+
+
+
+上面演示的是单机的服务熔断，如果是集群情况再次使用上面这个就会导致一个问题：
+
+每个机器都有自己的运行情况，那么就需要多个dashboard去进行监控，非常不方便
+
+
+
+可以使用聚合集群熔断信息——spring-cloud-starter-netflix-turbines来获取turbines.stream在输出到我们的dashboard控制面板上即可，可以理解turbines项目只是聚合了几个Hystrix的输出，然后将其整理后交给dashboard
+
+
+
+因为netflix不支持Hystrix了，上面的一系列netflix产品可能会出现后续无法使用的情况（发现在github上项目还是在运作的）
+
+官方推荐换到别的服务熔断如Resilience4j
+
+
+
+Resilience4j十分轻量，基本无外部依赖，有针对 Java8的设计函数式编程
+
+并不像Hystrix直接给了一个大而全的依赖，是拆分成许多小的依赖
+
+![image-20200811154643266](images/image-20200811154643266.png)
+
+![image-20200811154725546](images/image-20200811154725546.png)
+
+要使用个话直接使用spring-boot2即可，不用额外单独书写配置类了，直接使用外部化配置基本能搞定

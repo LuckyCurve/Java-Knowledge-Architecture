@@ -607,3 +607,329 @@ Spring Cloud的第二大优势在于Spring Cloud Stream的整合，通过Stream�
 
 SpringBoot的成功使得Spring社区焕发出了第二春，主要是因为SpringBoot的自动装配机制，但自动装配底层依赖的是Spring Framework的注解支持。
 
+
+
+
+
+
+
+# 第二部分、走向自动装配
+
+
+
+随着微服务的发展，开发人员开始更加重视SpringBoot了
+
+殊不知Spring Framework是SpringBoot的核心，Java规范才是他们的基石
+
+对Java EE来说，SpringBoot这种优秀的技术架构遵从着“兼容并包，继往开来”的原则，兼容旧的技术实现，发展新的技术理念
+
+
+
+
+
+
+
+## 第七章、走向注解驱动编程（Annotation-Driven）
+
+
+
+在Spring Framework第一个版本时候，Java Annotation尚未发布，结合J2EE（Java EE的前身，当时称之为J2EE）的传统，通过XML文件的方式管理Bean之间的依赖关系
+
+
+
+
+
+注解驱动发展史
+
+
+
+2003年发布了Spring Framework1.0版本
+
+Spring1.2.0版本开启了Spring Framework对Annotation的支持
+
+主要也是当时注解的流行导致Java在语言层面开启了对Annotation的支持，随后Spring也做出了相应的支持。
+
+框架层面已经支持了@ManagedResource和@Transactional注解，但是被注解标注的SpringBean对象仍然需要以XML的方式进行装配，对于Spring Framework1.0来说，XML是唯一的选择
+
+
+
+2006年Spring2.0正式发布
+
+完全兼容1.0框架，且添加了如数据相关的Repository和AOP相关的Aspect注解，同时支持扩展XML编写，这为XML配置的价值提升了一个阶段
+
+重要版本还是2.5，引入了骨架式的Annotation ：
+
+- 依赖注入Annotation：@Autowired
+- 依赖查找Annotation：@Qualifier
+- 组件声明Annotation：@Component，@Service
+- Spring  MVC Annotation：@Controller，@RequestMapping，@ModelAttribute
+
+>  @Autowired支持注入SpringBean集合
+
+不建议使用Qualifier，建议使用Resource注解
+
+
+
+@Qualifier还可以用于“逻辑类型”限定，例如以下的两个注解都被@Qualifier标注
+
+@LoadBalanced和@ConfigurationPropertiesBinding，可以先经过@Qualifier筛选
+
+支持JSR-250的@Resource注入，当然还支持JSR250的生命周期回掉函数@PostConstruct和@PreDestroy，可以被XML替换掉
+
+尽管2.5版本提供的注解不少，但是仍然摆脱不了XML，主要是因为仍然需要在XML中使用如下标签：<context:annotation-config >用于注册Annotation处理器，还需要使用< context:component-scan>用于寻求需要注册成Spring Bean的类
+
+且在2.0的时候提供了@order注解代替Ordered接口来进行对多个Spring Bean进行排序
+
+虽然Spring2.0时期被称为注解的过渡时代，但是在这个版本Spring MVC却完成了蜕变，官方推荐使用注解的方式代替XML的 方式完成编码
+
+
+
+
+
+2009年Spring Framework3.0正式发布
+
+被称为注解驱动的黄金时代，Spring Annotation雨后春笋般的出现，体现了Spring官方对替换XML配置的决心
+
+> 就我感觉这是非常伟大的，因为Spring在XML配置的PropertyEditor上是花了大心思的，并且Spring为了提供与产品的整合刚开始也都是使用的XML配置方式，现在却自己要推倒自己最强势的地方了，有远见的公司
+
+
+
+这个阶段引入了@Configuration注解，@Component的另一个“派生”注解
+
+遗憾的是这时候并未直接替代XML元素ComponentScan而是采用了过度注解的方式——@ImportResource和@Import，前者允许导入遗留的XML配置文件，后者允许导入类作为Spring Bean，通常这些类无需标注Spring模式注解如Service等等。
+
+通常@Import和@ImportResource需要和@Configuration注解一起使用
+
+但是被标注的类有谁来引导呢？提出了定制的ApplicationContext——AnnotationConfigApplicationContext注册@Configuration class，然后通过这个@Configuration class上面标注的Inport注解来实现对依赖的导入。
+
+用起来还是感觉非常的别扭
+
+
+
+于是在Spring 3.1提出了@ComponentScan注解实现了对XML元素的替换，且这时候就出现了初步的条件注解@profile，如以下用法：
+
+```java
+@Profile("!production")  //非生产环境
+@Configuration
+public class Configuration {
+    // ...
+}
+```
+
+实现对非生产环境下Configuration的注册
+
+
+
+在Web方面更是开启了全面的支持，请求处理注解@RequestHeader、@CookieValue和@RequestPart。但是更重要的是开启了REST开发，提供@PathVariable，@RequestBody反序列化请求体，@ResponseBody将处理方法返回对象序列化为REST主体内容，并且@ResponseStattus补充HTTP响应状态
+
+主要还抽象了一套全新并统一的配置属性API，包括配置属性存储接口Environment，配置源抽象PropertySources，奠定了Spring外部化配置的基础，Spring为了简化获取外部化配置 ，提供了@PropertySource简化实现。
+
+其次还支持了缓存抽象，异步支持，检验方面的支持。
+
+即使是这样，Spring作者仍然继续添加“@Enable模块驱动”来实现模块化的Bean装配，例如@EnableWebMVC被标注在Spring Bean上后，RequestMappingHandlerMapping、RequestMappingHandlerAdaptor，HandlerExceptionResolver等Bean就被装配上了，当然这需要手动声明在配置类上，只能算作手动配置，也离自动配置更近了一步
+
+仍然存在缺陷如：@Profile条件注解仍然功能单一太过简单等等
+
+
+
+2013年的Spring4.0
+
+注解驱动完善时代
+
+不像Spring3.0版本中注解的大爆发侵入，有的只是完善的注解体系补充
+
+提升装配能力的条件判断，引入了@Conditional注解，以至于曾经的@Profile注解都以Conditional注解的方式实现了一遍
+
+从条件判断注解的完善标志着SpringBoot项目的基础正式打牢
+
+Spring在4.2提出了EventListener作为ApplicationListener的备选方案
+
+使用注解@AliasFor使得注解属性可以使用别名
+
+
+
+
+
+2017年的Spring5.0
+
+已经作为SpringBoot2.0的核心框架了，还没发行完，万一后面引入了什么新的特性了呢
+
+
+
+Spring Framework个个版本引入的核心注解可以查看7.2节
+
+
+
+
+
+深度展开：
+
+- 元注解
+- Spring模式注解
+- Spring组合注解
+- Spring注解属性别名和覆盖
+
+元注解：能声明在其他注解上的注解，如@Documented注解可以成为任何注解的元注解，
+
+在Spring世界中@Component就是标准的元注解
+
+
+
+Spring注解模式就是特定场景下的注解，如Service之于 Component，因为Java语言层面是不允许注解之间的继承，因此需要通过给元注解特殊化的方式实现注解之间的派生
+
+
+
+使用Spring Version模拟自定义@Component派生类：
+
+![image-20200812155247930](images/image-20200812155247930.png)
+
+剩下的就是简单的验证过程了，单有一个地方非常有趣：
+
+在引导类 中出现了如下代码：
+
+![image-20200812155327550](images/image-20200812155327550.png)
+
+来实现Spring对Java8的兼容，测试用例：
+
+![image-20200812155426580](images/image-20200812155426580.png)
+
+主要为了证明派生注解也拥有元注解的作用。
+
+
+
+派生性原理：初始化一个Bean定义解析器
+
+componentScan标签的Bean定义解析器为：ComponentScanBeanDefinitionParser
+
+于是开始解析出需要装配的BeanDefinitionHolder，方法摘要如下：
+
+```java
+public BeanDefinition parse(Element element, ParserContext parserContext) {
+    String basePackage = element.getAttribute(BASE_PACKAGE_ATTRIBUTE);
+    basePackage = parserContext.getReaderContext().getEnvironment().resolvePlaceholders(basePackage);
+    String[] basePackages = StringUtils.tokenizeToStringArray(basePackage,
+                                                              ConfigurableApplicationContext.CONFIG_LOCATION_DELIMITERS);
+
+    // Actually scan for bean definitions and register them.
+    ClassPathBeanDefinitionScanner scanner = configureScanner(parserContext, element);
+    Set<BeanDefinitionHolder> beanDefinitions = scanner.doScan(basePackages);
+    registerComponents(parserContext.getReaderContext(), beanDefinitions, element);
+
+    return null;
+}
+```
+
+于是对BeanDefinition的加载还要归属到ClassPathBeanDefinitionScanner#doScan方法上去：
+
+```java
+protected Set<BeanDefinitionHolder> doScan(String... basePackages) {
+   Assert.notEmpty(basePackages, "At least one base package must be specified");
+   Set<BeanDefinitionHolder> beanDefinitions = new LinkedHashSet<>();
+   for (String basePackage : basePackages) {
+      Set<BeanDefinition> candidates = findCandidateComponents(basePackage);
+      for (BeanDefinition candidate : candidates) {
+         ScopeMetadata scopeMetadata = this.scopeMetadataResolver.resolveScopeMetadata(candidate);
+         candidate.setScope(scopeMetadata.getScopeName());
+         String beanName = this.beanNameGenerator.generateBeanName(candidate, this.registry);
+         if (candidate instanceof AbstractBeanDefinition) {
+            postProcessBeanDefinition((AbstractBeanDefinition) candidate, beanName);
+         }
+         if (candidate instanceof AnnotatedBeanDefinition) {
+            AnnotationConfigUtils.processCommonDefinitionAnnotations((AnnotatedBeanDefinition) candidate);
+         }
+         if (checkCandidate(beanName, candidate)) {
+            BeanDefinitionHolder definitionHolder = new BeanDefinitionHolder(candidate, beanName);
+            definitionHolder =
+                  AnnotationConfigUtils.applyScopedProxyMode(scopeMetadata, definitionHolder, this.registry);
+            beanDefinitions.add(definitionHolder);
+            registerBeanDefinition(definitionHolder, this.registry);
+         }
+      }
+   }
+   return beanDefinitions;
+}
+```
+
+还有一次调用：findCandidateComponents的调用栈
+
+然后归结到方法：PathMatchingResourcePatternResolver#getResources方法得到资源集合，这个类在Spring揭秘中见过 ，是Spring提供的资源操作类，解析出Resource[]对象
+
+```java
+public Resource[] getResources(String locationPattern)
+```
+
+根据传入的basepackage，获取到所有的Resource然后进行candidate进行筛选
+
+至于筛选的标准，则需要看最开始的ComponentScanBeanDefinitionParser#parse的第八行
+
+关注ClassPathBeanDefinitionScanner对象，其中是含有includeFilters和excludeFilters的
+
+查看他父类的方法ClassPathScanningCandidateComponentProvider：
+
+```java
+protected void registerDefaultFilters() {
+    this.includeFilters.add(new AnnotationTypeFilter(Component.class));
+    ClassLoader cl = ClassPathScanningCandidateComponentProvider.class.getClassLoader();
+    try {
+        this.includeFilters.add(new AnnotationTypeFilter(
+            ((Class<? extends Annotation>) ClassUtils.forName("javax.annotation.ManagedBean", cl)), false));
+        logger.trace("JSR-250 'javax.annotation.ManagedBean' found and supported for component scanning");
+    }
+    catch (ClassNotFoundException ex) {
+        // JSR-250 1.1 API (as included in Java EE 6) not available - simply skip.
+    }
+    try {
+        this.includeFilters.add(new AnnotationTypeFilter(
+            ((Class<? extends Annotation>) ClassUtils.forName("javax.inject.Named", cl)), false));
+        logger.trace("JSR-330 'javax.inject.Named' annotation found and supported for component scanning");
+    }
+    catch (ClassNotFoundException ex) {
+        // JSR-330 API not available - simply skip.
+    }
+}
+```
+
+只需要关注第一行即可，后面是对JSR的支持，默认通过AnnotationTypeFilter指定添加包含@Component的AnnotationTypeFilter实例，而excludeFilters字段为空。
+
+归根结底还是由AnnotationTypeFilter的识别功能来判断是否注册此BeanDefinition到容器中
+
+ClassPathBeanDefinitionScanner允许我们自定义过滤规则，从而实现与Spring的解耦
+
+~~只需要注入ClassPathBeanDefinitionScanner~~，他的父类中实现了addIncludeFilter、addExcludeFilter等方法可以直接使用，达到指定注解添加到IoC的目的
+
+> Spring并没有将ClassPathBeanDefinitionScanner注入到IoC当中去
+
+自己尝试了下，最新版本的Spring并未使用ClassPathBeanDefinitionScanner
+
+可以参考SpringBootApplication中的ComponentScan注解使用，如下：
+
+```java
+@EnableAutoConfiguration
+@SpringBootConfiguration
+@ComponentScan(excludeFilters = { @ComponentScan.Filter(type = FilterType.CUSTOM, classes = TypeExcludeFilter.class),
+        @ComponentScan.Filter(type = FilterType.CUSTOM, classes = AutoConfigurationExcludeFilter.class) },
+includeFilters = {@ComponentScan.Filter(type = FilterType.ANNOTATION,classes = Candidate.class)})
+public class ThinkingInSpringBootSamplesApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ThinkingInSpringBootSamplesApplication.class, args);
+    }
+
+    @Bean
+    public ApplicationRunner runner(TestBean testBean) {
+        return args -> {
+            testBean.sayHello();
+        };
+    }
+}
+```
+
+因为SpringBootApplication没有提供includeFilter这一属性，我们需要手动代替掉SpringBootApplication注解，然后通过给@ComponentScan加上一个includeFilter属性即可
+
+
+
+IDEA也会给出提示的，只要你注入到容器当中就不会报错了。
+
+
+
+Spring对多重派生的支持：从3开始支持两层结构的派生，到4支持任意深度的派生，因为SpringBoot1.0是基于Spring4.0的，因此SpringBoot完美继承Spring的多重派生
