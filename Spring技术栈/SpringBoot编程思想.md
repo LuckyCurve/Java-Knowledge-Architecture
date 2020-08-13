@@ -933,3 +933,127 @@ IDEA也会给出提示的，只要你注入到容器当中就不会报错了。
 
 
 Spring对多重派生的支持：从3开始支持两层结构的派生，到4支持任意深度的派生，因为SpringBoot1.0是基于Spring4.0的，因此SpringBoot完美继承Spring的多重派生
+
+
+
+
+
+Spring组合注解：
+
+Spring组合注解中的元注解允许是Spring模式注解与其他Spring功能性注解的任意结合
+
+常见的如：@RestController就是由元注解@Controller和功能注解@ResponseBody组合而成，~~又如@TransactionService就是由元注解@Service和功能注解@Transactional组合而来~~
+
+书上举的例子，但是在引入MyBatis的starter的时候并未发现存在该注解
+
+
+
+Class对象是类的元信息载体，承载着其成员的元信息对象，包括：字段、方法、构造器以及注解等，于是提供了获取当前类标记的注解 的方法：AnnotationMetadata#getAnnotationAttributes（String）
+
+该方法的底层实现是由Java的反射编程模型作为基础，Java语言默认所有注解实现Annotation接口，被标注的对象用AnnotatedElement表示，通过AnnotatedElement#getAnnotation（Class）方法返回指定类型的注解对象
+
+使用方法：
+
+```java
+@SpringBootApplication(scanBasePackages = {"cn.luckycurve.thinkinginspringbootsamples"})
+public class ThinkingInSpringBootSamplesApplication {
+
+    public static void main(String[] args) {
+        AnnotatedElement element = ThinkingInSpringBootSamplesApplication.class;
+        SpringBootApplication springBootApplication = element.getAnnotation(SpringBootApplication.class);
+        System.out.println(Arrays.toString(springBootApplication.scanBasePackages()));
+    }
+}
+```
+
+别想着直接通过ThinkingInSpringBootSamplesApplication去获取@@ComponentScan注解，会找不到的，注解之间不仅仅是相互堆叠的关系，一个注解标注在另一个注解上在语法层面是没有任何意义的，但是Spring的类加载器会递归所有的注解这才导致了内层注解会生效。
+
+上面终归还是指定了获取SpringBootApplication中的哪个属性，完全的反射使用如下：
+
+```java
+public static void main(String[] args) {
+    AnnotatedElement element = ThinkingInSpringBootSamplesApplication.class;
+    SpringBootApplication springBootApplication = element.getAnnotation(SpringBootApplication.class);
+    // 可以学习一下
+    ReflectionUtils.doWithMethods(SpringBootApplication.class,
+                                  method -> System.out.printf("@TransactionalService.%s() = %s\n",
+                                                              method.getName(),
+                                                              ReflectionUtils.invokeMethod(method, springBootApplication)),
+                                  method -> method.getParameterCount() == 0);
+}
+```
+
+以上方法调用了所有无参method，但因为其中混杂着Annotation的方法，需要将这些方法排除方可看到SpringBootApplication的方法，将最后一个筛选方法的条件替换掉。
+
+
+
+使用Spring提供的注解递归实现：
+
+```java
+/**
+     * 使用Spring提供的Annotation操作递归获取所有派生Annotation信息
+     * 只能输出String和boolean等基本数据类型，碰到Class就直接输出了
+     */
+public static void baseSpringAnnotation() {
+    // 获取AnnotationMetadata信息
+    AnnotationMetadata annotationMetadata = AnnotationMetadata.introspect(ThinkingInSpringBootSamplesApplication.class);
+
+    // 获取所有的元注解类型集合
+    Set<String> types = annotationMetadata.getAnnotationTypes()
+        // 如果不这样处理就只能看到一个SpringBootApplication注解，其他都没有
+        .stream()
+        // 读取单注解的所有元注解集合
+        .map(annotationMetadata::getMetaAnnotationTypes)
+        // 合并元注解
+        .collect(LinkedHashSet::new, Set::addAll, Set::addAll);
+
+    System.out.println(types);
+
+    // 逐条获取属性输出
+    types.forEach(metaAnnotation -> {
+        // 读取元注解的属性
+        Map<String, Object> annotationAttributes = annotationMetadata.getAnnotationAttributes(metaAnnotation);
+        if (!CollectionUtils.isEmpty(annotationAttributes)) {
+            annotationAttributes.forEach((key, value) -> {
+                System.out.printf("注解 %s 属性 %s = %s\n", ClassUtils.getShortName(metaAnnotation), key, value);
+            });
+        }
+    });
+}
+```
+
+
+
+详细看下第三种方法，使用Spring提供的Utils来进行的操作：
+
+```java
+/**
+     * 使用Spring提供的Utils来直接输出当前注解的属性，比第一种方便许多
+     * 但是无法做到第二种对该注解的派生注解的属性输出
+     * 使用这个方法有个直接的好处就是可以直接查看到元注解的属性
+     */
+public static void useSpringUtil() {
+    AnnotationAttributes attributes = AnnotatedElementUtils.getMergedAnnotationAttributes(ThinkingInSpringBootSamplesApplication.class,
+                                                                                          ComponentScan.class);
+    System.out.println(attributes);
+}
+```
+
+将注解属性抽象成为了AnnotationAttributes，通过这种方式可以直接获取到元注解的AnnotationAttributes，Spring提供的最大便利了。
+
+AnnotationAttributes直接扩展子：`LinkedHashMap<String,Object>`
+
+
+
+获取AnnotationAttributes的时候存在一个覆盖问题，因为使用了@AliasFor注解，那么如果对于RestController来说，是Controller的value属性作数，还是Component的Value属性作数呢 ？因为都有默认值“”，结果发现是派生注解的属性作数，可以覆盖元注解的字段。
+
+存在着显性覆盖和隐性覆盖两种原则：
+
+- 隐性覆盖：派生注解能够覆盖元注解的同名属性
+- 显性覆盖：标注@AliasFor注解的字段有权利进行覆盖
+
+这都是Spring提供的特性，在Java语言层级是不会出现派生注解，元注解的关系，元注解在Java语言层面是无效的。
+
+
+
+当然也会存在同一注解中两个属性相互的AliasFor 情况，要求这两个值必须相等，只要别同时赋值就行了。另外，如果Value属性显式得使用了AliasFor注解去别名其他注解，他的隐式覆盖规则仍然 生效。
