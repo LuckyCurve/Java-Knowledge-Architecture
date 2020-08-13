@@ -3680,7 +3680,7 @@ spring:
 
 
 
-> 目前可以用作生产环境的注册中心主要是：Zookeeper和Consul了，如果不是AWS就没必要使用Eureka了
+> 目前可以用作生产环境的注册中心主要是：Zookeeper和Consul了，如果不是AWS就没必要使用Eureka了，Eureka虽然仍然在Netflix的维护范围之内
 
 
 
@@ -3740,7 +3740,7 @@ Dockers本地启动Nacos，控制台也在8848端口，用户名和密码统一N
 
 
 
-在consume中使用服务熔断
+为服务提供保护
 
 
 
@@ -3861,7 +3861,7 @@ public class FallbackCoffeeService implements CoffeeService {
 
 第一种方法签名保持一致，第二种直接重写父类方法就无所谓了。
 
-Hystrix和Eureka一样，Netflix都已经说不再维护了，可能用不长久。
+Hystrix项目Netflix都已经说不再维护了，最后一次提交在2018年，可能用不长久。
 
 
 
@@ -3904,3 +3904,57 @@ Resilience4j十分轻量，基本无外部依赖，有针对 Java8的设计函�
 ![image-20200811154725546](images/image-20200811154725546.png)
 
 要使用个话直接使用spring-boot2即可，不用额外单独书写配置类了，直接使用外部化配置基本能搞定
+
+用法和下面两个限流操作基本都是一样的，配合注解使用方便
+
+
+
+
+
+Resilience4j的限流：
+
+两种方式，第一种是限制同一时刻的请求数量，相当于是控制并发量的方式来实现限流
+
+第二种方式是限制一段时间内的请求链接数量，当超过这个数量这段时间服务器将不再提供服务，需要等到下一个时间段
+
+
+
+第一种方式：Bulkhead方式
+
+有两个作用：1、防止下游的应用被大量请求冲击，2、防止下游发生故障，导致该项目的线程数过多，线程池爆满导致的问题
+
+主要的配置就是在properties中声明这个：
+
+![image-20200813222527412](images/image-20200813222527412.png)
+
+至于名字需要在Controller层使用`@io.github.resilience4j.bulkhead.annotation.Bulkhead(name = "order")`注解来制定，从而可以在properties文件中配置
+
+
+
+
+
+第二种方式：RateLimiter
+
+限制特定时间段内的执行次数
+
+用起来和上面差不多，只不过注解方式改成了`@RateLimiter(name = "xxx")`
+
+![image-20200813223251306](images/image-20200813223251306.png)
+
+用起来还是蛮简单的，可以单独使用呀，没必要偏要结合Spring Cloud，单独使用也可以
+
+后面还有两个属性，是结合Actuator的，这里没有列举出来
+
+![image-20200813230043372](images/image-20200813230043372.png)
+
+暴露event和健康状况
+
+
+
+强烈建议使用Resilience4j
+
+
+
+
+
+可以学习下Google Guava，其中就包含了像ratelimit的工具类，在Java中有举足轻重的地位，非常棒的框架。
