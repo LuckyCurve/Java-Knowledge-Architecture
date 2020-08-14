@@ -4024,3 +4024,7 @@ bootstrap.yaml和application.yaml差不多，建议配置写在这里面
 建议结合 Actuator，可以非常清楚的查看到配置，并且config-Client还结合着Actuator发布了refresh的endpoint
 
 > 应该也可以改，将需要改的加载成配置类，然后在配置类头上加上@RefreshScope即可
+
+
+
+没事儿多看看官方文档，整个Git配置通过SSL方式搞了好久还好搞成了，总结：SSL协议不熟悉，Spring Cloud默认是不支持最广义的OpenSSL密钥的，更改加密规则即可达到效果
