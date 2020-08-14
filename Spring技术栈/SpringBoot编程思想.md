@@ -1057,3 +1057,299 @@ AnnotationAttributes直接扩展子：`LinkedHashMap<String,Object>`
 
 
 当然也会存在同一注解中两个属性相互的AliasFor 情况，要求这两个值必须相等，只要别同时赋值就行了。另外，如果Value属性显式得使用了AliasFor注解去别名其他注解，他的隐式覆盖规则仍然 生效。
+
+
+
+
+
+
+
+## 第八章、Spring注解驱动设计模式
+
+
+
+前面主要集中讨论在单一Annotation例如Component和少数组件上，这一章讲解“@Enable模块驱动”部分，系统地介绍这部分内容
+
+
+
+Spring Framework在3.1开始支持@Enable模块驱动
+
+这里的模块是指具备相同领域的功能组件集合，所形成的一个独立的单元，比如Web MVC模块，AspectJ代理模块，Cache模块，JMX模块，Async模块等等
+
+Spring提供的@Enable模块驱动这种设计模式有别于传统的23种设计模式
+
+提供的@Enable注解模块如下图：
+
+![image-20200814103402761](images/image-20200814103402761.png)
+
+这样使用就可以屏蔽组件中集合装配的细节，开发者只需要将Annotation标注在某个Bean上，即可实现装配过程，但是实现该模式的成本较高，也就是用起来爽，但是实现和理解这个功能费劲
+
+
+
+依赖于Spring Framework提供的注解@Import，该注解在3.1的时候做出了调整，在3.0的时候仅限导入一个被@Configuration标注的类，但是在3.1及以后增加了导入@Bean方法的类，以及ImportSelector或ImportBeanDefinitionRegistrar
+
+> 实际测试中直接导入一个普通的类也是可以的
+
+于是将@Configuration类和@Bean方法（如果按照我测试的，应该是任意被Import的类，除去ImportSelector和ImportBeanDefinitionRegistrar）归类为“注解驱动”，而ImportSelector和ImportBeanDefinitionRegistrar的实现类则归类于”接口编程“
+
+
+
+注解驱动可以观察@EnableWebMvc注解，模仿他我写一个类似的（以下是基于注解驱动的Spring，感觉那时候老师交Spring都是用XML，反倒忽略了Spring注解驱动带来的便利）：
+
+1、@Enable模块：
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Documented
+@Import(HelloWorldConfiguration.class)
+public @interface EnableHelloWorld {
+}
+```
+
+全部搬运@EnableWebMvc，除了Import，来看看Import
+
+```java
+public class HelloWorldConfiguration {
+
+    @Bean
+    public HelloWorld helloWorld() {
+        return new HelloWorld();
+    }
+}
+```
+
+具体的HelloWorld代码：
+
+```java
+public class HelloWorld {
+    public void sayHello() {
+        System.out.println("hello Spring");
+    }
+}
+```
+
+主测试代码，使用Spring启动的：
+
+```java
+@EnableHelloWorld
+public class ThinkingInSpringBootSamplesApplication {
+
+    public static void main(String[] args) {
+        // 使用Spring Annotation方式启动项目
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        // 注册当前引导类
+        context.register(ThinkingInSpringBootSamplesApplication.class);
+        // 启动上下文
+        context.refresh();
+        HelloWorld bean = context.getBean(HelloWorld.class);
+        bean.sayHello();
+        // 关闭上下文
+        context.close();
+    }
+}
+```
+
+> 这种启动方式即使引入了starter他们的自动配置也无法生效
+
+
+
+上面展示的注解驱动，下面的接口编程可能比较复杂
+
+ImportSelector比ImportBeanDefinitionRegistrar容易
+
+使用ImportSelector可以参考@EnableCaching，具体就是要实现：
+
+```java
+String[] selectImports(AnnotationMetadata importingClassMetadata);
+```
+
+这个方法，弹性较注解驱动较大，但是Spring实现较少
+
+
+
+至于ImportBeanDefinitionRegistrar和ImportSelector类似
+
+实现这个方法即可：
+
+```java
+default void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry);
+```
+
+
+
+
+
+这全部都要依赖于Spring的@Import的自动装配功能
+
+注解驱动模式下的实现：使用XML方式的`<Context:component-scan/>`开启的基于注解的自动配置还是使用AnnotationConfigApplicationContext开启的基于注解的配置都会帮我们向容器中注入一个对象——ConfigurationClassPostProcessor帮助我们装载@Configuration和@Bean，他是最高优先级的BeanFactoryPostProcessor实现
+
+在postProcessBeanFactory中的processConfigBeanDefinitions进行了检查
+
+@Component也可以被视为是@Configuration，只是在筛选的时候排除去@Order注解默认的排序是在@Configuration后面的
+
+
+
+基于注解的@ImportSelector和@BeanDefinitionRegistrar也是在这个类当中
+
+
+
+模块装配类似于汽车的手动挡，自动装配类似于汽车的自动档，两者并未完全排除，而是相互兼容，当然自动装配是简历在模块装配之上的。
+
+
+
+来看看Spring Framework提供的自动装配
+
+> 很多人都以为自动装配是SpringBoot独有的功能
+
+Spring3.1提供了Web自动装配的功能
+
+
+
+在3.1引入了WebApplicationInitializer接口用于实现Servlet3.0中的Initializer，后者可用于替换web.xml文件的，这是Servlet3.0所提供的特性，然而Spring在3.1版本将该特性使用Spring的方式进行了封装，使得开发人员更容易去实现，直接实现该接口即可。
+
+当然如果直接使用WebApplicationInitializer接口较为困难，那么可以使用他的抽象实现类：AbstractDispatcherServletInitializer，或者可以再具体一点，去实现AbstractDispatcherServletInitializer的抽象子类：AbstractAnnotationConfigDispatcherServletInitializer。
+
+一般都不会直接使用到WebApplicationInitializer接口，而是使用两个抽象实现类：
+
+具体用例：
+
+AbstractAnnotationConfigDispatcherServletInitializer:
+
+```java
+public class MyWebAppInitializer extends AbstractAnnotationConfigDispatcherServletInitializer {
+
+    @Override
+    protected Class<?>[] getRootConfigClasses() {
+        return null;
+    }
+
+    @Override
+    protected Class<?>[] getServletConfigClasses() {
+        return new Class<?>[] { MyWebConfig.class };
+    }
+
+    @Override
+    protected String[] getServletMappings() {
+        return new String[] { "/" };
+    }
+}
+```
+
+这种配置类似于基于Java Config配置驱动
+
+AbstractDispatcherServletInitializer：
+
+```java
+public class MyWebAppInitializer extends AbstractDispatcherServletInitializer {
+
+    @Override
+    protected WebApplicationContext createRootApplicationContext() {
+        return null;
+    }
+
+    @Override
+    protected WebApplicationContext createServletApplicationContext() {
+        XmlWebApplicationContext cxt = new XmlWebApplicationContext();
+        cxt.setConfigLocation("/WEB-INF/spring/dispatcher-config.xml");
+        return cxt;
+    }
+
+    @Override
+    protected String[] getServletMappings() {
+        return new String[] { "/" };
+    }
+}
+```
+
+基于XML的配置驱动
+
+
+
+全都是向DispatcherServlet中注册信息
+
+基于对Spring Configuration的配置驱动，深入研究这个即可
+
+
+
+完全可以在AbstractAnnotationConfigDispatcherServletInitializer#getServletConfigClasses方法中注册进一个包含了@EnableWebMvc和@ComponentScan（Basepackages）的配置类，从而实现自动开启WebMvc和自动开启扫描的功能，从而实现自动装配。
+
+
+
+当然单独依靠Spring Framework3.2（两个抽象子类是3.2提出的）是不足以Web自动装配的能力，因为Spring Framework3.1中提出的接口是基于Servlet3.0的规范，从而达到在开启Servlet容器的时候自动配置进我们的配置类
+
+
+
+Servlet3.0打破了原来的各种Servlet，filter，listener必须注册进web.xml文件的传统，实现了更高的灵活性，因为web.xml不支持占位符也不支持条件运算，绝对的静态文件。
+
+在Servlet3.0支持以编程的方式配置Servlet，Filter，Listener，通过操作ServletContext对象来完成，且方法摘要非常简单：
+
+```java
+public ServletRegistration.Dynamic addServlet(String servletName, String className);
+
+public ServletRegistration.Dynamic addServlet(String servletName, Servlet servlet);
+
+public ServletRegistration.Dynamic addServlet(String servletName,
+                                              Class<? extends Servlet> servletClass);
+```
+
+当然这还远远达不到自动装配的目的，但是给了第三方框架例如Spring MVC的很大机会，Spring MVC允许通过注解的方式标识Servlet，Filter，Listener，然后通过反射获取类信息，调用ServletContext的add方法将其注册进Servlet中。这些方法只会在容器初始化时候被调用，Spring实现了Servlet提供的Initialization接口。
+
+
+
+
+
+Spring的条件装配，在前面已经提到过，有3.1开始逐步引入的@Profile和@Conditional注解
+
+在没有这个注解之前，XML也是没有提出使用Profile属性的，那么那时候是如何对不同的生产环境实现配置的单独处理的呢？
+
+就好似现在的SpringBoot项目，默认是读取application.properties，也可以读取appliation-{env}.properties，从而实现不同环境下的配置文件需求，只不过当时是XML文件而不是properties文件
+
+而在Profile注解出来之后，容器会根据Profile注解来决定该配置类（也有可能是Component的其他派生注解标注的类）是否会加载到IoC中来，判断条件也是十分简单，只要实现简单的Profile比对即可。
+
+
+
+
+
+已知的Bean注册方式有两大类：注解驱动和传统XML配置驱动，对应的配置进行方式分别是@Profile和`<beans profile="">`
+
+![image-20200814172331907](images/image-20200814172331907.png)
+
+
+
+具体的加载方式在8.3.3，P277
+
+里面有全程的预加载BeanDefinition过程，有多种处理方式
+
+XML的Profile判断则相对单一
+
+
+
+Spring4.0提出的@Candidational具有更大的弹性，前面的Profile像是静态的激活，而Conditional更倾向于运行时候的动态选择
+
+其中允许指定一个或者多个Condition，当所有condition都满足的时候才会匹配成功
+
+
+
+可以自定义实现Conditional注解，参照283页，也可以参照Profile的实现
+
+在Spring4.0也就是Conditional注解出来的时候使用了@Conditional作为其元注解来实现的。
+
+
+
+具体的内部实现使用过ConditionEvaluator#shouldSkip方法来判断是否应该跳过当前被标注的类，返回true表示遇到了不匹配的实例，应该跳过
+
+
+
+然后再去覆盖原来Profile的判断逻辑，改变成对这个方法的调用，实现条件判断的统一
+
+
+
+当然尽管Spring Framework付出了如此多的努力，但是仍然不是特别理想，如存在以下问题：
+
+- 需要将@Enable注解标注在配置类上，并且配置类需要注册进容器中去
+- Web自动装配是依赖于外部Servlet3.0+容器中，如果换了容器就失去了该功能
+
+正因为这些原因，驱动着SpringBoot项目的出现，最终被SpringBoot的自动装配和嵌入式Web容器所解决。
+
+虽然自动装配是SpringBoot的特性，但是其在Spring Framework中的部分场景中还是有用的。
