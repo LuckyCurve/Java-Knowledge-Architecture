@@ -4023,8 +4023,56 @@ bootstrap.yaml和application.yaml差不多，建议配置写在这里面
 
 建议结合 Actuator，可以非常清楚的查看到配置，并且config-Client还结合着Actuator发布了refresh的endpoint
 
-> 应该也可以改，将需要改的加载成配置类，然后在配置类头上加上@RefreshScope即可
+> 应该也可以改，将需要改的加载成配置类，然后在配置类头上加上@RefreshScope即可，然后访问actuator/refresh端点
+
+当然可以结合Spring Cloud Bus来实现集群管理自动刷新
 
 
 
 没事儿多看看官方文档，整个Git配置通过SSL方式搞了好久还好搞成了，总结：SSL协议不熟悉，Spring Cloud默认是不支持最广义的OpenSSL密钥的，更改加密规则即可达到效果
+
+
+
+
+
+可以使用Zookeeper作为配置中心，只需要引入Zookeeper-config项目
+
+不依赖于Zookeeper的注册功能，依然可以使用consul，nacos这样类似的注册中心
+
+![image-20200815220343460](images/image-20200815220343460.png)
+
+enabled默认是开启的。
+
+
+
+需要将配置存储到ZK上，可以通过exec -it containerName bash进入容器
+
+进入到bin目录中，通过zkCli.sh连接到ZK
+
+内部存储数据需要遵循如下规则：
+
+![image-20200815221037325](images/image-20200815221037325.png)
+
+ZK的所有属性是默认带有刷新机制的，感觉比Spring Cloud Config Server方便一点
+
+
+
+
+
+Spring Cloud Config主要是定制了自己的PropertySource允许将远端的配置文件加入到该项目的外部化配置中来
+
+![image-20200815221346583](images/image-20200815221346583.png)
+
+底层是通过PropertySourceLocator的方法：`PropertySource<?> locate(Environment environment);`方法摘要来实现的，对每个环境都有各自的Locator实现
+
+
+
+ZK内部有一个Watcher用于监听ZK是否发生了配置的刷新
+
+
+
+
+
+通用的配置优先级：
+
+![image-20200815222609636](images/image-20200815222609636.png)

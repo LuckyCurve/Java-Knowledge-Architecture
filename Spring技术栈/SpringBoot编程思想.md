@@ -1353,3 +1353,334 @@ Spring4.0提出的@Candidational具有更大的弹性，前面的Profile像是�
 正因为这些原因，驱动着SpringBoot项目的出现，最终被SpringBoot的自动装配和嵌入式Web容器所解决。
 
 虽然自动装配是SpringBoot的特性，但是其在Spring Framework中的部分场景中还是有用的。
+
+
+
+
+
+
+
+## 第九章、Spring Boot自动装配
+
+
+
+当然其中可能还有一系列问题如：需要整合 Spring注解编程模型，@Enable模块驱动手动配置 及条件装配等**Spring Framework原生特性**，这种技术即是Spring Boot自动装配。
+
+Spring  Boot的自动装配可以从@SpringBootApplication注解说起：
+
+通过该注解可以激活@EnableAutoConfiguration，该类应该是使用 了Spring的@Enable特性，但是这个注解绝对是Spring Boot独有的
+
+另外还激活了@SpringBootConfiguration，相当于就是一个@Configuration的简单派生类
+
+至于@ComponentScan，则是Spring Framework4.0所提供的注解，没有什么区别
+
+
+
+
+
+理解@EnableAutoConfiguration
+
+Spring Boot项目会根据你 应用的依赖来尝试自动配置，如果要开启这种尝试，可以在配置类上面加上@EnableAutoConfiguration
+
+实际上完全可以使用@EnableAutoConfiguration在启动类上就可以开启自动配置了，完全不依赖于 @Configuration，至于为什么推荐 使用@SpringBootApplication，估计是因为免得再去指定一个ComponentScan注解，尽量减轻 开发人员的记忆负担。
+
+并且在随后官方文档指出Spring Boot自动装配不是侵入式的，开发人员可以定义自己的配置类来覆盖掉自动配置，可以理解为自定义的配置优先级高
+
+> 实际上会使用@Conditional来判断你是否进行了配置，如果没有进行配置则Conditiona为true，自动配置生效，否则自动配置失效
+
+
+
+排除自动配置：
+
+内部配置：@EnableAutoConfiguration.exclude()或者excludeName（使用场景：If the class is not on the classpath）
+
+外部配置：spring.autoconfigure.exclude
+
+
+
+可以简单猜测下实现原理：@EnableAutoConfiguration通过ImportSelector实现选择性的导入，通过@Value注解可以获取到外部配置的exclude，内部配置可以通过AnnotationMetadada获取
+
+内部实现就得看@EnableAutoConfiguration所Import的AutoConfigurationImportSelector了
+
+ImportSelector的核心方法：
+
+```java
+@Override
+public String[] selectImports(AnnotationMetadata annotationMetadata) {
+   if (!isEnabled(annotationMetadata)) {
+      return NO_IMPORTS;
+   }
+   AutoConfigurationEntry autoConfigurationEntry = getAutoConfigurationEntry(annotationMetadata);
+   return StringUtils.toStringArray(autoConfigurationEntry.getConfigurations());
+}
+```
+
+将核心代码都封装到了getAutoConfigurationEntry方法中，再进去：
+
+```java
+protected AutoConfigurationEntry getAutoConfigurationEntry(AnnotationMetadata annotationMetadata) {
+    if (!isEnabled(annotationMetadata)) {
+        return EMPTY_ENTRY;
+    }
+    AnnotationAttributes attributes = getAttributes(annotationMetadata);
+    List<String> configurations = getCandidateConfigurations(annotationMetadata, attributes);
+    configurations = removeDuplicates(configurations);
+    Set<String> exclusions = getExclusions(annotationMetadata, attributes);
+    checkExcludedClasses(configurations, exclusions);
+    configurations.removeAll(exclusions);
+    configurations = getConfigurationClassFilter().filter(configurations);
+    fireAutoConfigurationImportEvents(configurations, exclusions);
+    return new AutoConfigurationEntry(configurations, exclusions);
+}
+```
+
+可以根据方法名猜个大概了
+
+装配哪些组件可以查看：getCandidateConfigurations方法
+
+排除哪些组件的自动配置：getExclusions方法
+
+
+
+getCandidateConfigurations内部最终依赖的是SpringFactoriesLoader#loadFactoryNames方法，该方法内部的加载逻辑：
+
+1、搜索ClassLoader下所有的META-INF/spring.factories资源内容
+
+2、读取spring.factories文件，以Map方式格式化
+
+3、解析2中返回的Map，将Value，也就是权限定类名所确定的类注册进IoC容器当中去
+
+在官方文档的4.29.2. Locating Auto-configuration Candidates当中
+
+
+
+至于getExclusions就非常简单的，结合AnnotationMetadata来实现
+
+![image-20200815151528881](images/image-20200815151528881.png)
+
+
+
+继续探讨AutoConfigurationImportSelector的筛选后续，在读取完所有的Class之后，调用了fireAutoConfigurationImportEvents方法用于事件的自动装配
+
+
+
+剩下的@EnableAutoConfiguration 也是讲的排序等的组件装配
+
+排序分为绝对排序和相对排序，绝对排序提供了AutoConfigureOrder（注意：并不是Order的派生注解），相对排序提供AutoConfigureBefore和AutoConfigureAfter注解，都是元注解。
+
+
+
+在使用注解的时候尽量不要使用Value属性，而是使用其更加具体的属性，因为Value太过于通用，说不定以后就指定成别的属性的别名了。
+
+
+
+
+
+自定义SpringBoot自动装配
+
+其中有很多不成文的规则，无论 是Spring还是第三方如Mybatis都在共同遵守着：
+
+自动装配Class命名 均以 AutoConfiguration结尾
+
+包命名规则均以：
+
+```
+${root-package}
+	autoconfigure
+		${module-package}
+			*AutoConfiguration.java
+			${sub-module-package}
+				类似module-package这一级来了
+```
+
+![image-20200815165651409](images/image-20200815165651409.png)
+
+
+
+知道了命名规则后便可以开始自定义starter
+
+4.29.5. Creating Your Own Starter可以 参考
+
+项目命名：![image-20200815165937946](images/image-20200815165937946.png)
+
+建议民间使用
+
+Spring官方则采用以下命名方法：
+
+![image-20200815170001482](images/image-20200815170001482.png)
+
+
+
+当然使用starter很简单，但是专业性较强的starter却要求Configuration类需要标注一系列的@Conditional用来保证运行环境的正确，Spring官方提供的条件注解有：
+
+> 可以查看4.29.3. Condition Annotations
+>
+> 条件注解不仅可以标注在类上，还可以标注在@Bean方法上用于判断是否将该值注册IoC当中去
+
+- Class Conditions
+- Bean Conditions
+- Property Conditions
+- Resource Conditions
+- Web Application Conditions
+- SpEL Expression Conditions
+
+
+
+Class Conditions：
+
+主要有一对反义注解——@ConditionalOnClass和@ConditionalOnMissingClass，分别表述在指定类存在时和在指定类缺失时的语义
+
+> 前面推荐不要使用注解中的Value属性，这里就出现了，@ConditionalOnMissingClass的Value属性变化多样，在SpringBoot版本 升级的过程当中，且存在破坏性升级
+
+主要是避免这种情况的发生： 因为SpringBoot中间铲平的Maven依赖都有可能声明成optional为true的形式，这样是为了避免冲突，也进一步减少包的体积，然而这就会的熬制一个问题，如果SpringBoot最终产品没有包含这个Jar包，就会出现Class找不到的情况，这个注解就是用于判断Class是否存在，从在给指定场景来自动配置的。
+
+非常容易理解，autoconfig项目中在原编码中肯定都包含了各种starter的AutoConfiguration，最后他会根据我们SpringBoot最终产品来决定执行哪些自动配置
+
+难怪有时候看依赖的第三方库里面好多红色的，原来是通过指定optional为true来实现的
+
+
+
+
+
+Bean Conditions：
+
+也是成对出现的——@ConditionalOnBean和@ConditionalOnMissingBean
+
+仅仅匹配BeanDefinition中的Bean种类和名称
+
+底层依旧是基于@Conditional+SpringBootCondition实现类OnBeanCondition
+
+这里主要是防止自动配置覆盖了由开发人员主导的外部化配置
+
+当外部化配置存在的时候，该自动配置就不应该生效了。
+
+也等价于当外部配置不存在的时候自动配置才会生效
+
+完美契合@ConditionalOnMissingBean的语义，当然这里还需要结合@ConditionalOnClass来实现，避免因为依赖的关系导致运行过程中报错。
+
+只整合这两个注解就会成倍地增加项目的复杂度，当引入更多注解时候只会更加复杂，当然是先的功能也会更加丰富
+
+
+
+
+
+Property Conditions：
+
+主要就是@CoditionalOnProperty注解，配置来源于Java系统变量，环境变量和application.properties都是PropertySource的来源，也是该注解基于的环境配置
+
+该注解摘要：
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ ElementType.TYPE, ElementType.METHOD })
+@Documented
+@Conditional(OnPropertyCondition.class)
+public @interface ConditionalOnProperty {
+
+   String[] value() default {};
+
+   String prefix() default "";
+
+   String[] name() default {};
+
+   String havingValue() default "";
+
+   boolean matchIfMissing() default false;
+
+}
+```
+
+对应的配置：
+
+![image-20200816104620013](images/image-20200816104620013.png)
+
+这样就可以根据application.properties来决定是否要开启自动配置了，如：`@ConditionalOnProperty(prefix="git-config",name="enabled",havingValue="true")`
+
+这样只有在声明git-config.enabled=true 的时候才会满足配置条件
+
+当然这样就会非常麻烦，每次都要去手动开启，如何省略掉这一步骤呢？使用其提供的matchIfMissing属性，将其设置成true，这样当只要该PropertySource不存在时候即可开启自动配置，需要关闭的时候也只需要手动声明enabled=false即可，然后提供自己的配置，这也正是很多框架所使用的方法。
+
+最常见的例子就是Spring AutoConfiguration包下提供的：
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnClass({ MBeanExporter.class })
+@ConditionalOnProperty(prefix = "spring.jmx", name = "enabled", havingValue = "true")
+public class JmxAutoConfiguration {
+ 	...   
+}
+```
+
+
+
+
+
+
+
+Resource Conditions：
+
+核心租借@ConditionalOnResource，该注解摘要：
+
+```java
+@Target({ ElementType.TYPE, ElementType.METHOD })
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Conditional(OnResourceCondition.class)
+public @interface ConditionalOnResource {
+
+	String[] resources() default {};
+}
+```
+
+这部分实现的Condition接口还是比较复杂的，先跳过了
+
+默认使用的ResourceLoader就是ApplicationContext，如果传入了的话就是用传入的ResourceLoader
+
+这里需要扩展Resource用来对classpath路径下的资源扫描，即 Spring提供的ClassPathContextResource
+
+我们使用的时候就可以这样使用该注解`@ConditionalOnResource(resource="META-INF/spring.factories")`，当这个资源存在的时候，被标注的 类才会生效
+
+
+
+
+
+Web Application Conditions：
+
+提供一对注解：@ConditionalOnWebApplication和@ConditionalOnNotWebApplication
+
+由于Spring5.0对Web Flux的支持，@ConditionalOnWebApplication增加了TYPE字段用于对Web容器的筛选，有：ANY、SERVLET、REACTIVE。默认选择ANY
+
+内部的判断逻辑实现就跳过了
+
+
+
+
+
+
+
+SpEL Expression Conditions：
+
+Spring默认提供的@Conditional注解还是相对单一，虽然实现Condition接口可以实现在自定义的@Conditional注解，非常的实用，但是成本有点高，Spring为了降低使用成本，整合了SpELl表达式的Conditional方式，SpELL适用于Spring旗下的所有产品
+
+具体的文档需要在Spring Framework的Core章节中
+
+核心注解：@ConditionalOnExpression注解中的Value字段，该字段支持使用SpEL表达式并进行真伪的评判 ，默认是true
+
+由于刚开始并不支持，所以 SpringBoot内部大部分都是使用的是@ConditionalOnProperty来代替了@ConditionalOnExpression，但是我们在实际使用情况中往往可能是SpEL表达式更加的 便利。例如前面的jmx的enabled属性，可以使用如下注解来表示：`@ConditionalOnExpression("${spring.jmx.enabled:true}")`但是也间接的存在一个问题：无法达到不指定enabled默认是启用的情况，然而却支持复杂条件的交并补运算，扩展性不强，不怎么建议使用。
+
+
+
+总结
+
+在本部分花了大量时间讲解了 Spring Framework对自动装配所做出的努力，尤其是注解驱动方面的努力。是Spring Boot自动装配的基石。
+
+Spring Framework框架的兼容性比SpringBoot框架优秀太多，主要是因为SpringBoot框架在2.0版本额API破坏性升级导致很多原来的项目无法复用，降低了对Spring社区的信任度，当然这样做都是有有原因的，仍然无法否认SpringBoot是一款优秀的框架，AutoConfiguration的特性更是使得开发变得简单。
+
+Spring Framework启动时将当前应用通过将ClassPathXmlApplicationContext装配到Servlet容器中进而完成Servlet的启动，在Spring Boot时代使用SpringApplication#run()或者是SpringApplicationBuilder#run()来启动，（通过后者启动可以夹带一些配置进去，但通常不建议这么做）配合@SpringBootApplication或者EnableAutoConfiguration注解完成。
+
+那么SpringApplication和SpringApplicationBuilder底层的实现原理是什么呢？这就是第三部分理解SpringApplication的重点。
+
+
+
+
+
