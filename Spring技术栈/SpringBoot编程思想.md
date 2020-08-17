@@ -1684,3 +1684,350 @@ Spring Framework启动时将当前应用通过将ClassPathXmlApplicationContext�
 
 
 
+
+
+# 第三部分、理解SpringApplication
+
+
+
+
+
+在Spring Boot中使用的SpringApplication是全新的Spring应用API
+
+因此从本章开始才算是对Spring Boot的功能特性的讨论。
+
+本部分抛开官方文档中SpringApplication部分（4.1），因为里面都是使用方法的介绍，完全没有深入到如何启动，于是本章采用：
+
+- Spring Application初始化阶段
+- SpringApplication运行阶段
+- SpringApplication结束阶段
+- SpringBoot应用退出
+
+的逻辑展开
+
+
+
+
+
+## 第十章、SpringApplication初始化阶段
+
+
+
+初始化阶段属于运行前的准备阶段，可以在run方法之前指定该容器是web容器还是非web容器，还可以进行Banner输出的调整，配置默认属性的方式。
+
+大体上的准备阶段由两部分组成：构造阶段和配置阶段。
+
+
+
+Spring Application构造阶段：
+
+当然一般开发者都不会与构造器打交道，一般使用SpringApplication.run方法来启动程序
+
+```java
+public static ConfigurableApplicationContext run(Class<?> primarySource, String... args) {
+    return run(new Class[]{primarySource}, args);
+}
+
+public static ConfigurableApplicationContext run(Class<?>[] primarySources, String[] args) {
+    // 核心代码
+    return (new SpringApplication(primarySources)).run(args);
+}
+```
+
+实际上是在内部构建了一个SpringApplication对象，然后调用了该对象的run方法
+
+
+
+primarySource（主配置类），在Spring Boot2.0引入的，通常这些类不是被标注@SpringBootApplication就是标注@EnableAutoConfiguration
+
+
+
+
+
+**先分析核心代码的构造阶段**
+
+
+
+再继续看SpringApplication的初始化过程：
+
+```java
+public SpringApplication(Class<?>... primarySources) {
+    this(null, primarySources);
+}
+
+public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySources) {
+    this.resourceLoader = resourceLoader;
+    Assert.notNull(primarySources, "PrimarySources must not be null");
+    // 存储primary source配置项
+    this.primarySources = new LinkedHashSet<>(Arrays.asList(primarySources));
+    // 存储推断出的web应用类型
+    this.webApplicationType = WebApplicationType.deduceFromClasspath();
+    // 加载Spring应用上下文初始化器
+    setInitializers((Collection) getSpringFactoriesInstances(ApplicationContextInitializer.class));
+    // 加载Spring应用事件监听
+    setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+    // 存储推断出的应用引导类
+    this.mainApplicationClass = deduceMainApplicationClass();
+}
+```
+
+
+
+然后就是对上述方法的底层描述展开：
+
+存储推断出的Web类型方法实现：
+
+```java
+private static final String[] SERVLET_INDICATOR_CLASSES = { "javax.servlet.Servlet",
+                                                           "org.springframework.web.context.ConfigurableWebApplicationContext" };
+
+private static final String WEBMVC_INDICATOR_CLASS = "org.springframework.web.servlet.DispatcherServlet";
+
+private static final String WEBFLUX_INDICATOR_CLASS = "org.springframework.web.reactive.DispatcherHandler";
+
+private static final String JERSEY_INDICATOR_CLASS = "org.glassfish.jersey.servlet.ServletContainer";
+
+static WebApplicationType deduceFromClasspath() {
+    // 先判断出Reactive的满足情况
+    if (ClassUtils.isPresent(WEBFLUX_INDICATOR_CLASS, null) && !ClassUtils.isPresent(WEBMVC_INDICATOR_CLASS, null)
+        && !ClassUtils.isPresent(JERSEY_INDICATOR_CLASS, null)) {
+        return WebApplicationType.REACTIVE;
+    }
+    // 排除Servlet的情况
+    for (String className : SERVLET_INDICATOR_CLASSES) {
+        if (!ClassUtils.isPresent(className, null)) {
+            return WebApplicationType.NONE;
+        }
+    }
+    // 只剩下了Servlet的情况
+    return WebApplicationType.SERVLET;
+}
+```
+
+通过ClassUtils#isPresent方法判断类的存在性情况从而判断出Web应用类型
+
+
+
+
+
+加载Spring应用上下文初始化器：
+
+其中先委派给了方法getSpringFactoriesInstances：
+
+```java
+setInitializers((Collection) getSpringFactoriesInstances(ApplicationContextInitializer.class));
+
+// 委派方法
+private <T> Collection<T> getSpringFactoriesInstances(Class<T> type) {
+    return getSpringFactoriesInstances(type, new Class<?>[] {});
+}
+
+// 继续委派
+private <T> Collection<T> getSpringFactoriesInstances(Class<T> type, Class<?>[] parameterTypes, Object... args) {
+    ClassLoader classLoader = getClassLoader();
+    // Use names and ensure unique to protect against duplicates
+    Set<String> names = new LinkedHashSet<>(SpringFactoriesLoader.loadFactoryNames(type, classLoader));
+    List<T> instances = createSpringFactoriesInstances(type, parameterTypes, classLoader, args, names);
+    AnnotationAwareOrderComparator.sort(instances);
+    retun instances;
+}
+```
+
+其中SpringFactoriesLoader.loadFactoryNames会读取META-INF中的以ApplicationContextInitializer为key的内容：
+
+如在spring-boot-2.3.3中
+
+```
+# Application Context Initializers
+org.springframework.context.ApplicationContextInitializer=\
+org.springframework.boot.context.ConfigurationWarningsApplicationContextInitializer,\
+org.springframework.boot.context.ContextIdApplicationContextInitializer,\
+org.springframework.boot.context.config.DelegatingApplicationContextInitializer,\
+org.springframework.boot.rsocket.context.RSocketPortInfoApplicationContextInitializer,\
+org.springframework.boot.web.context.ServerPortInfoApplicationContextInitializer
+```
+
+根据Order排序后返回
+
+最终在装配上下文初始化器的时候：
+
+```java
+public void setInitializers(Collection<? extends ApplicationContextInitializer<?>> initializers) {
+    this.initializers = new ArrayList<>(initializers);
+}
+```
+
+是直接实现的覆盖性装配，意思是在Application.run方法之前装配的上下文初始化器会直接被覆盖掉
+
+
+
+
+
+然后就是：
+
+```java
+setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+```
+
+装配应用程序监听器Listener
+
+装载逻辑与上面的Initializer十分类似，也是获取spring.factories中的Listener：
+
+```
+# Application Listeners
+org.springframework.context.ApplicationListener=\
+org.springframework.boot.ClearCachesApplicationListener,\
+org.springframework.boot.builder.ParentContextCloserApplicationListener,\
+org.springframework.boot.cloud.CloudFoundryVcapEnvironmentPostProcessor,\
+org.springframework.boot.context.FileEncodingApplicationListener,\
+org.springframework.boot.context.config.AnsiOutputApplicationListener,\
+org.springframework.boot.context.config.ConfigFileApplicationListener,\
+org.springframework.boot.context.config.DelegatingApplicationListener,\
+org.springframework.boot.context.logging.ClasspathLoggingApplicationListener,\
+org.springframework.boot.context.logging.LoggingApplicationListener,\
+org.springframework.boot.liquibase.LiquibaseServiceLocatorApplicationListener
+```
+
+并也实行覆盖性装配：
+
+```java
+public void setListeners(Collection<? extends ApplicationListener<?>> listeners) {
+    this.listeners = new ArrayList<>(listeners);
+}
+```
+
+
+
+
+
+于是到了SpringApplication构造的最后一步：
+
+```java
+this.mainApplicationClass = deduceMainApplicationClass();
+```
+
+推断应用的引导类。
+
+我们传入的类仅仅是作为参数primarySource，并不是引导类，引导类是SpringBoot内部代码实现判断的
+
+```java
+private Class<?> deduceMainApplicationClass() {
+    try {
+        StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
+        for (StackTraceElement stackTraceElement : stackTrace) {
+            if ("main".equals(stackTraceElement.getMethodName())) {
+                return Class.forName(stackTraceElement.getClassName());
+            }
+        }
+    }
+    catch (ClassNotFoundException ex) {
+        // Swallow and continue
+    }
+    return null;
+}
+```
+
+实现起来非常简单，是对当前线程执行栈进行递归调用，看哪个类包含main方法便返回该类。
+
+这样我们就可以在run的时候不用传递引导类了，可以传入核心配置类。
+
+
+
+
+
+<hr>
+
+再来回顾下核心代码摘要：`return new SpringApplication(primarySources).run(args);`
+
+
+
+既然构造阶段加载完成了，那么该进入运行阶段了，但是这个逻辑是建立在我们使用如下代码：
+
+```java
+SpringApplication.run(Class,String...);
+```
+
+的情况下的。
+
+如果我们也是这样在main函数中使用：
+
+```java
+public static void main(String[] args) {
+    SpringApplication springApplication = new SpringApplication(GitConfigurationApplication.class);
+    springApplication.run(args);
+}
+```
+
+于是在创建SpringApplication和启动SpringApplication中间便可以多了很多步对SpringApplication的定制，这是Spring提供给我们的。
+
+具体的定制内容可以看4.1.4
+
+或许new SpringApplication过于繁琐，Spring在4.1.5中提供了SpringApplicationBuilder来提升API的便携性
+
+
+
+对SpringApplication的简单定制：
+
+```java
+public static void main(String[] args) {
+    SpringApplication springApplication = new SpringApplication(GitConfigurationApplication.class);
+    // 关闭Banner
+    springApplication.setBannerMode(Banner.Mode.OFF);
+    springApplication.run(args);
+}
+```
+
+使用SpringApplicationBuilder来完成：
+
+```java
+public static void main(String[] args) {
+    new SpringApplicationBuilder(GitConfigurationApplication.class)
+        .bannerMode(Banner.Mode.OFF)
+        .run(args);
+}
+```
+
+使用：
+
+![image-20200817155250654](images/image-20200817155250654.png)
+
+![image-20200817155324192](images/image-20200817155324192.png)
+
+
+
+
+
+定制Spring Boot提供的配置源：主要是@Configuration class，XML配置文件和package
+
+摘要：
+
+```java
+public void setSources(Set<String> sources) {
+    Assert.notNull(sources, "Sources must not be null");
+    this.sources = new LinkedHashSet<>(sources);
+}
+```
+
+至于source的解析过程以后再看
+
+
+
+调整外部化配置：实际上就是通过方法：
+
+```java
+public void setDefaultProperties(Properties defaultProperties) {
+    this.defaultProperties = new HashMap<>();
+    for (Object key : Collections.list(defaultProperties.propertyNames())) {
+        this.defaultProperties.put((String) key, defaultProperties.get(key));
+    }
+}
+```
+
+来添加 application.properties之外的配置
+
+
+
+
+
+当这些配置完成后，Spring Boot应用进入下一阶段
+
