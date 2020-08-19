@@ -4116,3 +4116,143 @@ Consul有可视化界面支持GUI配置
 
 
 最后推荐了携程的Apollo也可以做配置中心，提供了相当多的特性
+
+
+
+
+
+
+
+## 25、Spring Cloud Stream
+
+
+
+在Spring Cloud中使用消息
+
+
+
+构建消息驱动的微服务应用程序的轻量级框架
+
+
+
+直接支持多种消洗件如RabbitMQ，Kafka
+
+
+
+
+
+SpringCloud Stream中的一些概念：
+
+在Spring Cloud项目中将各种消息中间件进行了统一的抽象——Binder
+
+
+
+Binding——Binder与应用程序之间的桥梁：
+
+可以使用@EnableBinding来定义一个接口在内部方法结合@Input和@Output注解实现消息的收发
+
+
+
+消费组：对同一消息，每个组件都会有一个消费者收到消息（kafka），即使是有了这个特性，仍然要在消息的消费者上做幂等处理做消息去重
+
+
+
+分区：不同生产者对特定的Partition内部可以看做是有序的
+
+![image-20200817213304881](images/image-20200817213304881.png)
+
+
+
+
+
+消费组和分区都是kafka的特性，但是使用Spring Cloud Stream可以使得RabbitMQ也具有这样的特性
+
+
+
+
+
+
+
+收发消息的方法：
+
+![image-20200817213501897](images/image-20200817213501897.png)
+
+
+
+
+
+尝试使用RabbitMQ作为Binder
+
+RabbitMQ是AMQP官方推荐的MQ实现
+
+
+
+项目搭建：
+
+引入依赖
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-stream-rabbit</artifactId>
+</dependency>
+```
+
+在这个依赖内部整合了Spring-Boot-starter-amqp，其实就是整合了Spring Boot对RabbitMQ的支持
+
+配置文件：
+
+```yaml
+spring:
+  rabbitmq:
+    host: www.luckycurve.cn
+    port: 5672
+    username: LuckyCurve
+    password: ily025123
+```
+
+不建议直接将input和outputstream直接配置到上面去
+
+
+
+定义消息发送接口：
+
+```java
+public interface QueueUtils {
+
+    @Output(value = "messageChannels")
+    MessageChannel messageChannels();
+}
+```
+
+
+
+在引导类开启对该接口的实例化支持：
+
+```java
+@EnableBinding(QueueUtils.class)
+```
+
+
+
+尝试运行，会发现在页面上出现了对应的Channels和Exchange，当项目关闭的时候Channels也随之关闭了（看来Channels就是RabbitMQ提供给第三方的通讯方式了），在Exchange会新增一个你所指定的Exchange，默认是topic的，应该是改不了，没有研究
+
+在Exchange内部绑定Queues
+
+![image-20200817224926573](images/image-20200817224926573.png)
+
+关键点：Routing Key这个地方一定要填，要不然消息发送不过去
+
+
+
+
+
+
+
+Spring提供的一些机制：
+
+![image-20200818164515916](images/image-20200818164515916.png)
+
+![image-20200818164537167](images/image-20200818164537167.png)
+
+事件就是我现在正在看的SpringBoot编程思想中的

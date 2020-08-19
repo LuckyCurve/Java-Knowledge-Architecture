@@ -2031,3 +2031,451 @@ public void setDefaultProperties(Properties defaultProperties) {
 
 当这些配置完成后，Spring Boot应用进入下一阶段
 
+
+
+
+
+
+
+## 第十一章、SpringApplication运行阶段
+
+
+
+依旧围绕着核心代码：
+
+```java
+public static ConfigurableApplicationContext run(Class<?>[] primarySources, String[] args) {
+    return new SpringApplication(primarySources).run(args);
+}
+```
+
+上一章已经说了SpringApplication的初始化阶段和Spring提供给我们的自定义配置阶段。
+
+现在来看SpringApplication的运行阶段
+
+
+
+属于Spring Boot的绝对核心，该过程是结合这SpringApplication初始化完成的状态，进一步完善运行时候需要准备的资源，随后启动Spring应用上下文，在此期间伴随着Spring Boot和Spring事件的触发，形成完整的SpringApplication生命周期。
+
+
+
+于是又可以粗略的划分成三个阶段：
+
+- SpringApplication准备阶段
+- ApplicationContext启动阶段
+- ApplicationContext启动后阶段
+
+
+
+先展示完整的运行代码：
+
+```java
+public ConfigurableApplicationContext run(String... args) {
+    StopWatch stopWatch = new StopWatch();
+    stopWatch.start();
+    ConfigurableApplicationContext context = null;
+    Collection<SpringBootExceptionReporter> exceptionReporters = new ArrayList<>();
+    configureHeadlessProperty();
+    SpringApplicationRunListeners listeners = getRunListeners(args);
+    listeners.starting();
+    try {
+        ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+        ConfigurableEnvironment environment = prepareEnvironment(listeners, applicationArguments);
+        configureIgnoreBeanInfo(environment);
+        Banner printedBanner = printBanner(environment);
+        context = createApplicationContext();
+        exceptionReporters = getSpringFactoriesInstances(SpringBootExceptionReporter.class,
+                                                         new Class[] { ConfigurableApplicationContext.class }, context);
+        prepareContext(context, environment, listeners, applicationArguments, printedBanner);
+        refreshContext(context);
+        afterRefresh(context, applicationArguments);
+        stopWatch.stop();
+        if (this.logStartupInfo) {
+            new StartupInfoLogger(this.mainApplicationClass).logStarted(getApplicationLog(), stopWatch);
+        }
+        listeners.started(context);
+        callRunners(context, applicationArguments);
+    }
+    catch (Throwable ex) {
+        handleRunFailure(context, ex, exceptionReporters, listeners);
+        throw new IllegalStateException(ex);
+    }
+
+    try {
+        listeners.running(context);
+    }
+    catch (Throwable ex) {
+        handleRunFailure(context, ex, exceptionReporters, null);
+        throw new IllegalStateException(ex);
+    }
+    return context;
+}
+```
+
+SpringApplication准备阶段从第一行开始，到第十八行refreshContext方法调用的前
+
+> 看前面书上的例子都是使用context.refresh方法来启动容器的
+
+
+
+可以先从SpringApplicationRunListeners开始，其中持有很多个SpringApplicationRunListener的引用，从而实现对一系列的SpringApplicationRunnerListener的管理，对SpringApplicationRunListeners的理解于是递归到了SpringApplicationRunListener的理解
+
+可以简单得理解为Spring Boot的运行时监听器，内部方法说明（监听方法的返回值都是void，因为不可能靠返回参数记录信息）：
+
+|                         监听方法摘要                         |                       方法运行阶段说明                       |
+| :----------------------------------------------------------: | :----------------------------------------------------------: |
+|                          starting()                          |                       Spring应用刚启动                       |
+|   environmentPrepared(ConfigurableEnvironment environment)   |       Configuration Environment准备妥当，允许将其调整        |
+|   contextPrepared(ConfigurableApplicationContext context)    |     ConfigurableApplicationContext准备妥当，允许将其调整     |
+|    contextLoaded(ConfigurableApplicationContext context)     |      ConfigurableApplicationContext已经装载，但尚未启动      |
+|       started(ConfigurableApplicationContext context)        | ConfigurableApplicationContext已经启动，此时SpringBoot已经初始化完成 |
+|       running(ConfigurableApplicationContext context)        |                      Spring应用正在运行                      |
+| failed(ConfigurableApplicationContext context, Throwable exception) |                      Spring应用运行失败                      |
+
+
+
+至于注册进这些SpringApplicationRunListeners的SpringApplicationRunListener来源于哪里，则可以进入方法getRunListeners：
+
+```java
+private SpringApplicationRunListeners getRunListeners(String[] args) {
+    Class<?>[] types = new Class<?>[] { SpringApplication.class, String[].class };
+    return new SpringApplicationRunListeners(logger,
+                                             getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, args));
+}
+```
+
+方法getSpringFactoriesInstances结合SpringFactoriesLoader机制，SpringApplicationRunListener内建实现可以轻松被定为到：
+
+```
+# Run Listeners
+org.springframework.boot.SpringApplicationRunListener=\
+org.springframework.boot.context.event.EventPublishingRunListener
+```
+
+确实，SpringApplicationRunListener接口只有唯一实现类EventPublishingRunListener
+
+
+
+这里的SpringApplicationRunListener是SpringBoot提供的事件监听机制，与Spring提供的ApplicationListener有所区别
+
+
+
+Spring底层依赖的事件/监听机制在JDK1.0中就已经实现了，也可以视为是观察者模式的一种特例，观察者模式允许Observable和Observer收发消息，但是现在已经不支持使用了，允许携带对象Object，但是事件监听模式只允许携带EventObject实现类，于是ApplicationEvent可以扩展EventObject接口，同时事件的监听者也必须是EventListener实例，当然其中使用非常不方便，于是Spring提供了ApplicationListener来对特性的Event进行监听（通过泛型的方式指定），但是通过泛型监听事件就会出现一个局限——无法同时对两种事件进行监听。
+
+于是Spring3.0提出了SmartApplicationListener接口，通过supportsEventType方法过滤出满足条件的Event了。
+
+如：监听application.properties的事件监听器ConfigFileApplicationListener就实现了SmartApplicationListener接口。
+
+然而目前讨论的范围仅限于ApplicationEvent和ApplicationListener。
+
+
+
+就目前来讲使用ApplicationEventPublisher和使用SimpleApplicationEventMulticaster来发布ApplicationEvent没有发现任何的区别，且在使用后者时候IDEA还会自动报错【误报】。
+
+但是后者有一个前者没有的特性：增删ApplicationListener
+
+当然不怎么好用，增加进的Listener好多Event都没有扫描出来，建议还是使用@EventListener注解。
+
+实际上ApplicationContext就实现了ApplicationEventPublisher接口。
+
+还为编程式Spring提供了ApplicationEventPublisherAware接口用于对ApplicationEventPublisher实现在生命周期回掉时候的赋值操作。
+
+实际上ApplicationContext内部的事件发布就是由依赖于ApplicationEventMulticaster的multicastEvent方法
+
+实际上前面提到的ApplicationEventMulticaster的注册ApplicationListener实例的方式也被ConfigurableApplicationContext中的addApplicationListener方法复用。
+
+这个ConfigurableApplicationContext是ApplicationContext的子类，于是我分别注入ApplicationContext和ConfigurableApplicationContext，发现他们两个是一个东西。
+
+最后为了弄清楚程序中使用的ApplicationContext的继承关系，我获取了使用的是AnnotationConfigApplicationContext类，其类继承图如下所示：
+
+![AnnotationConfigApplicationContext](images/AnnotationConfigApplicationContext.png)
+
+
+
+所以到此为止完全可以使用该ApplicationContext去代替SimpleApplicationEventMulticaster。
+
+
+
+于是我们可以仅关注ApplicationListener和ApplicationEvent即可（当然要注意顺序问题，需要保证事件Listener注册操作在事件发布操作之前）。但是这样做比使用@EventListener注解监听来的事件要少一些：
+
+这么做的监听结果：
+
+```java
+org.springframework.boot.context.event.ApplicationReadyEvent[source=org.springframework.boot.SpringApplication@7c51782d]
+org.springframework.boot.availability.AvailabilityChangeEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@2dd80673, started on Tue Aug 18 23:34:56 CST 2020]
+org.springframework.context.event.ContextClosedEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@2dd80673, started on Tue Aug 18 23:34:56 CST 2020]
+```
+
+@EventListener监听结果：
+
+```
+org.springframework.context.event.ContextRefreshedEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@fc258b1, started on Tue Aug 18 23:36:38 CST 2020]
+2020-08-18 23:36:39.862  INFO 26824 --- [           main] c.l.s.SpringCloudStreamApplication       : Started SpringCloudStreamApplication in 1.34 seconds (JVM running for 2.084)
+org.springframework.boot.context.event.ApplicationStartedEvent[source=org.springframework.boot.SpringApplication@15f35bc3]
+org.springframework.boot.availability.AvailabilityChangeEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@fc258b1, started on Tue Aug 18 23:36:38 CST 2020]
+org.springframework.boot.context.event.ApplicationReadyEvent[source=org.springframework.boot.SpringApplication@15f35bc3]
+org.springframework.boot.availability.AvailabilityChangeEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@fc258b1, started on Tue Aug 18 23:36:38 CST 2020]
+org.springframework.context.event.ContextClosedEvent[source=org.springframework.context.annotation.AnnotationConfigApplicationContext@fc258b1, started on Tue Aug 18 23:36:38 CST 2020]
+```
+
+第二行是输出的INFO日志信息。
+
+建议以第二个为准，至于发布信息可以与ApplicationContext打交道
+
+> 应该是ApplicationRunner的调用时机是需要容器完全准备好才能执行的
+
+其实第二个输出也不全面，因为被EventListener标注的方法也不是在容器启动之初就作为Listener就注册到IoC当中的，最全面的方法应该是这样：
+
+```java
+new SpringApplicationBuilder(GitConfigurationApplication.class)
+    .listeners(System.out::println)
+    .run(args);
+```
+
+明确指定在run之前就加载进Listener，也就是在初始化阶段进行配置
+
+
+
+Spring内建事件：
+
+- ContextRefreshedEvent：Spring ApplicationContext就绪事件
+- ContextStartedEvent：Spring ApplicationContext启动事件
+- ContextStoppedEvent：Spring ApplicationContext停止事件
+- ContextClosedEvent：Spring ApplicationContext关闭事件
+
+
+
+最常见的就是Spring ApplicationContext就绪事件
+
+下面开始逐一分析：
+
+
+
+ContextRefreshedEvent：
+
+具体的发布时间需要追溯到AnnotationConfigApplicationContext的refresh方法，而此方法是由其父类AbstractApplicationContext默认实现的：
+
+```java
+@Override
+public void refresh() throws BeansException, IllegalStateException {
+    synchronized (this.startupShutdownMonitor) {
+        // Prepare this context for refreshing.
+        prepareRefresh();
+
+        // Tell the subclass to refresh the internal bean factory.
+        ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+        // Prepare the bean factory for use in this context.
+        prepareBeanFactory(beanFactory);
+
+        try {
+            // Allows post-processing of the bean factory in context subclasses.
+            postProcessBeanFactory(beanFactory);
+
+            // Invoke factory processors registered as beans in the context.
+            invokeBeanFactoryPostProcessors(beanFactory);
+
+            // Register bean processors that intercept bean creation.
+            registerBeanPostProcessors(beanFactory);
+
+            // Initialize message source for this context.
+            initMessageSource();
+
+            // Initialize event multicaster for this context.
+            initApplicationEventMulticaster();
+
+            // Initialize other special beans in specific context subclasses.
+            onRefresh();
+
+            // Check for listener beans and register them.
+            registerListeners();
+
+            // Instantiate all remaining (non-lazy-init) singletons.
+            finishBeanFactoryInitialization(beanFactory);
+
+            // Last step: publish corresponding event.
+            finishRefresh();
+        }
+
+        catch (BeansException ex) {
+            if (logger.isWarnEnabled()) {
+                logger.warn("Exception encountered during context initialization - " +
+                            "cancelling refresh attempt: " + ex);
+            }
+
+            // Destroy already created singletons to avoid dangling resources.
+            destroyBeans();
+
+            // Reset 'active' flag.
+            cancelRefresh(ex);
+
+            // Propagate exception to caller.
+            throw ex;
+        }
+
+        finally {
+            // Reset common introspection caches in Spring's core, since we
+            // might not ever need metadata for singleton beans anymore...
+            resetCommonCaches();
+        }
+    }
+}
+```
+
+随着容器的启动，到达第39行的时候，会在里面调用publishEvent方法来发布一个ContextRefreshedEvent事件，并把自身作为 Source传入进去。
+
+```java
+protected void finishRefresh() {
+    // Clear context-level resource caches (such as ASM metadata from scanning).
+    clearResourceCaches();
+
+    // Initialize lifecycle processor for this context.
+    initLifecycleProcessor();
+
+    // Propagate refresh to lifecycle processor first.
+    getLifecycleProcessor().onRefresh();
+
+    // Publish the final event.
+    publishEvent(new ContextRefreshedEvent(this));
+
+    // Participate in LiveBeansView MBean, if active.
+    LiveBeansView.registerApplicationContext(this);
+}
+```
+
+到此时Spring ApplicationContext中的Bean已经完成了初始化，并能够投入使用。
+
+
+
+ContextStartedEvent和ContextStopedEvent：Spring应用上下文的启动停止事件
+
+非常罕见，只会在AbstractApplicationContext中的start方法和stop方法中发布
+
+> 出现了问题，在Spring-framework-5.2.8中我在start方法第一行打上了端点，然而程序并没有执行到那儿去，反倒是输出了对应的ContextStartedEvent，先按照书上的来。（后面给了解释）
+
+
+
+假设当start方法被调用后，其关联的LifeCycleProcessor实例将触发所有LifeCycle Bean的start方法调用，stop方法同理。这两个方法不仅仅是简单的发布Event那么简单，这里面涉及到LifeCycle Bean方法的回调。
+
+书上继续说道：AbstractApplicationContext尽管是LifeCycle实现类，但其并不是LifeCycle Bean，因此他的start和stop方法不会被调用。
+
+并且ContextStartedEvent和ContextStoppedEvent的传播必然在ContextRefreshedEvent之后
+
+
+
+最后一个事件：ContextClosedEvent
+
+与refresh正好相反，他对应的是AbstractApplicationContext的close方法，内部调用了被protected修饰的doClose方法：
+
+```java
+protected void doClose() {
+    // Check whether an actual close attempt is necessary...
+    if (this.active.get() && this.closed.compareAndSet(false, true)) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Closing " + this);
+        }
+
+        LiveBeansView.unregisterApplicationContext(this);
+
+        try {
+            // Publish shutdown event.
+            publishEvent(new ContextClosedEvent(this));
+        }
+        catch (Throwable ex) {
+            logger.warn("Exception thrown from ApplicationListener handling ContextClosedEvent", ex);
+        }
+
+        // Stop all Lifecycle beans, to avoid delays during individual destruction.
+        if (this.lifecycleProcessor != null) {
+            try {
+                this.lifecycleProcessor.onClose();
+            }
+            catch (Throwable ex) {
+                logger.warn("Exception thrown from LifecycleProcessor on context close", ex);
+            }
+        }
+
+        // Destroy all cached singletons in the context's BeanFactory.
+        destroyBeans();
+
+        // Close the state of this context itself.
+        closeBeanFactory();
+
+        // Let subclasses do some final clean-up if they wish...
+        onClose();
+
+        // Reset local application listeners to pre-refresh state.
+        if (this.earlyApplicationListeners != null) {
+            this.applicationListeners.clear();
+            this.applicationListeners.addAll(this.earlyApplicationListeners);
+        }
+
+        // Switch to inactive.
+        this.active.set(false);
+    }
+}
+```
+
+可以明显的看到事件的发布是在destroyBeans之前的，destroyBeans会回掉LifeCycle的onClose方法，并销毁当前Spring ApplicationContext。
+
+
+
+这四个Spring提供的内购事件都是ApplicationContextEvent的子类，更是ApplicationEvent的子类ApplicationEvent
+
+
+
+构建自己的事件非常简单，实现ApplicationEvent接口，将该类交给ApplicationEventPublisher即可，其实AbstractApplicationContext就是ApplicationEventPublisher的直接子类，于是可以直接和ApplicationContext打交道了
+
+
+
+接下来讲述了Spring Framework在4.2引入的@EventListener注解实现对Event的监听功能。
+
+
+
+@EventListener官方没有非常详细的在文档给出说明，以下直接给结论：@EventListener方法必须是Spring Boot中的public方法，并支持返回类型为非void的情况（价值几乎为零），当他监听一个或者多个ApplicationEvent的时候，其参数可以为零个或者是一个ApplicationEvent。
+
+
+
+
+
+@EventListener方法异步化的支持：只需要在当前注解上再加入一个@Async注解即可。
+
+> 记得要开启Async
+
+验证方法非常简单：
+
+```java
+public void listener(ApplicationEvent event) {
+    System.out.println(Thread.currentThread().getName());
+}
+```
+
+
+
+基于注解监听和基于编程监听的对比：
+
+![image-20200819165604207](images/image-20200819165604207.png)
+
+
+
+接下来讲述@EventListener方法的实现原理。
+
+在AnnotationConfigUtils#registerAnnotationConfigProcessors(BeanDefinitionRegistry,Object)方法中存在着@EventListener方法处理的相关Bean注册
+
+
+
+完整的EventListener的装载过程：
+
+1、使用AnnotatedElementUtils.findMergedAnnotation(method,EventListener,class)方法筛选出所有被@EventListener标注的方法，当然@Async标注是被AOP增强的，于是可以进行异步增强
+
+2、随后EventListenerMethodProcessor完成对所有扫描出来的@EventListener的装配，是将@EventListener转换成为ApplicationListener然后完成注册
+
+
+
+Spring部分事件发布完结
+
+<hr>
+
+
+
+Spring Boot事件部分。
