@@ -2477,5 +2477,34 @@ Spring部分事件发布完结
 <hr>
 
 
-
 Spring Boot事件部分。
+
+
+
+在1.4版本Spring Boot事件处理机制发生了改变
+
+在这之前是依赖的Spring Framework的事件处理机制
+
+
+
+浏览一遍吧，现在还没有达到熟练使用Spring Boot的地步，就开始要分析Spring Boot事件原理了
+
+
+
+讲着讲着又讲到了Spring中去了，有点晕，到底有多少个阶段呢？有点没有理清楚
+
+
+
+
+
+执行CommandLineRunner和ApplicationRunner
+
+在4.1.10中有详细的介绍
+
+他们两的run方法会在SpringApplication.run方法完成之前执行
+
+当出现多个ApplicationRunner或者CommandLineRunner时候，需要手动通过@Order注解来控制他们的执行顺序，默认应该是最后执行的（仅仅是猜测，取值为Integer.MAX_VALUE）
+
+就形式上来看，两者除了核心方法的传入参数不同其他都基本相同，那有什么引进的必要呢？
+
+其实也就是时代产物吧，CommandLineRunner在Spring Boot1.0的时候就引入了，然而在SpringBoot2.0ApplicationRunner才引入，为了尽可能向前兼容就没有移除CommandLineRunner
