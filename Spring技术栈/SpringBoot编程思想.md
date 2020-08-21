@@ -2508,3 +2508,74 @@ Spring Boot事件部分。
 就形式上来看，两者除了核心方法的传入参数不同其他都基本相同，那有什么引进的必要呢？
 
 其实也就是时代产物吧，CommandLineRunner在Spring Boot1.0的时候就引入了，然而在SpringBoot2.0ApplicationRunner才引入，为了尽可能向前兼容就没有移除CommandLineRunner
+
+
+
+
+
+
+
+## 第十二章、Spring Application结束阶段
+
+
+
+SpringApplication的结束阶段在SpringBoot1.0和2.0的版本的实现逻辑是相对稳定的
+
+
+
+
+
+再次回到SpringApplication中的run方法：
+
+```java
+public ConfigurableApplicationContext run(String... args) {
+    StopWatch stopWatch = new StopWatch();
+    stopWatch.start();
+    ConfigurableApplicationContext context = null;
+    Collection<SpringBootExceptionReporter> exceptionReporters = new ArrayList<>();
+    configureHeadlessProperty();
+    SpringApplicationRunListeners listeners = getRunListeners(args);
+    listeners.starting();
+    try {
+        ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+        ConfigurableEnvironment environment = prepareEnvironment(listeners, applicationArguments);
+        configureIgnoreBeanInfo(environment);
+        Banner printedBanner = printBanner(environment);
+        context = createApplicationContext();
+        exceptionReporters = getSpringFactoriesInstances(SpringBootExceptionReporter.class,
+                                                         new Class[] { ConfigurableApplicationContext.class }, context);
+        prepareContext(context, environment, listeners, applicationArguments, printedBanner);
+        refreshContext(context);
+        afterRefresh(context, applicationArguments);
+        stopWatch.stop();
+        if (this.logStartupInfo) {
+            new StartupInfoLogger(this.mainApplicationClass).logStarted(getApplicationLog(), stopWatch);
+        }
+        listeners.started(context);
+        callRunners(context, applicationArguments);
+    }
+    catch (Throwable ex) {
+        handleRunFailure(context, ex, exceptionReporters, listeners);
+        throw new IllegalStateException(ex);
+    }
+
+    try {
+        listeners.running(context);
+    }
+    catch (Throwable ex) {
+        handleRunFailure(context, ex, exceptionReporters, null);
+        throw new IllegalStateException(ex);
+    }
+    return context;
+}
+```
+
+在第33行进入结束阶段，如在执行running方法的时候抛出异常便会异常结束
+
+
+
+至于异常分析，主要是依靠FailureAnalyzer和FailureAnalysisReporter
+
+
+
+当SpringApplication执行完成后便进入了退出阶段，该阶段还是依赖于JVM提供的特性

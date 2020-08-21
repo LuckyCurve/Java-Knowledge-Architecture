@@ -4286,3 +4286,22 @@ Google Deeper论文，其中的一些术语：
   - cr：Client Received
 
 讲述了大概的原理，产品实现好像应该不是他
+
+
+
+实现产品：Spring Cloud Sleuth
+
+可以结合Spring Cloud Sleuth with Zipkin让链路调度日志输出到OpenZipkin上
+
+只需要在项目中引入spring-cloud-starter-zipkin即可引入相关依赖
+
+通常使用Docker启动zipkin，提供了UI页面
+
+简单配置：
+
+![image-20200821152006504](images/image-20200821152006504.png)
+
+
+
+
+
