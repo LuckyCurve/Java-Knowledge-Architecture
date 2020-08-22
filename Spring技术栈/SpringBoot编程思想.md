@@ -2579,3 +2579,73 @@ public ConfigurableApplicationContext run(String... args) {
 
 
 当SpringApplication执行完成后便进入了退出阶段，该阶段还是依赖于JVM提供的特性
+
+
+
+
+
+
+
+## 第十四章、SpringBoot应用退出
+
+
+
+
+
+对应文档章节：4.1.11. Application Exit
+
+
+
+主要是通过JVM的shutdown hook去关闭ApplicationContext，并且保证Bean生命周期正确执行销毁操作，如标注的@PreDestroy或者是实现了DisposableBean接口的Bean
+
+
+
+主要是借助着AbstractApplicationContext的registerShutdownHook方法来完成的
+
+
+
+可以定制退出码，如以下程序所示：
+
+```java
+public static void main(String[] args) {
+    int exitCode = SpringApplication.exit(new SpringApplicationBuilder(GitConfigurationApplication.class)
+                                          .run(args));
+    System.exit(exitCode);
+}
+
+@Bean
+public ExitCodeGenerator exitCodeGenerator() {
+    return () -> {
+        logger.info("返回码88生成 ");
+        return 88;
+    };
+}
+```
+
+但是在实践中几乎用不到，因为不会手动调用Context的exit方法，从而得到返回码
+
+
+
+本小节可以作为ApplicationContext的一个LifeCycle来看待
+
+
+
+
+
+本部分（第三部分）是围绕着SpringApplication来展开论述的，主要分为：“初始化”，“运行”和“结束”三个阶段，主要包括的核心特性为SpringApplicationRunnerListener，Spring Boot事件和Spring应用上下文的生命周期管理等
+
+
+
+还有一个疑问：为什么要提出SpringApplication，直接使AnnotationConfigApplicationContext启动ApplicationContext不好吗？
+
+小马哥给出的解释是对Spring Framework的应用上下文的补充。
+
+
+
+传统的Spring应用上下文起源于ConfigurableApplicationContext对象的创建，运行则由refresh方法，终止于close方法，在refresh方法调用过程中伴随着BeanFactory，Environment，ApplicationEventMulticaster（事件广播使用底层）和ApplicationListener的创建，不过在SpringBoot中SpringApplication让其在refresh方法执行之前就执行了
+
+
+
+
+
+完结~
