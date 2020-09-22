@@ -273,5 +273,104 @@ Create Table: CREATE TABLE `sys_user` (
 
 > 之所以加上了`\G`在最后面是因为要输出的时候不会带上大量的短横线
 
+这是查询创建表的语句，当然也可以查看到表的存储引擎。
+
+但是更多的是创建表的SQL语句，建议使用如下SQL语句：`show table status like 'sys_user'\G;`来展示，\G可以保证格式化输出，其中包含大量表统计信息。
+
+> 包括SELECT语句都可以在后面加上\G用于格式化输出
+
+得到的详细信息为：
+
+```sql
+*************************** 1. row ***************************
+           Name: sys_user
+         Engine: InnoDB
+        Version: 10
+     Row_format: Dynamic
+           Rows: 1
+ Avg_row_length: 16384
+    Data_length: 16384
+Max_data_length: 0
+   Index_length: 0
+      Data_free: 0
+ Auto_increment: 2
+    Create_time: 2020-09-06 15:39:40
+    Update_time: 2020-09-06 15:52:14
+     Check_time: NULL
+      Collation: utf8_general_ci
+       Checksum: NULL
+ Create_options: row_format=DYNAMIC
+        Comment: 用户表
+```
+
+更多的是显示当前Table的状态，而不是显示当前SQL的格式
 
 
+
+
+
+InnoDB存储引擎：MySQL默认的存储引擎
+
+适用于短期事务，即具有大部分事务都可以被正常提交，只有少量会发生事务回滚，
+
+InnoDB提供了如新的大型值BLOB的存储方式
+
+InnoDB采用MVCC来支持高并发，实现了默认的四个隔离级别，**默认是REPEATABLE READ，并且通过间隙锁的方式防止了幻读的出现**（这就意味着：InnoDB实现了不是SERIALIZABLE的条件下的所有错误发生可能）。
+
+InnoDB是根据聚簇索引建立的，对主键索引的查询速率非常高，不过二级索引中必须包含主键列
+
+InnoDB支持热备份，而这点对于其他的存储引擎是不支持的
+
+
+
+
+
+MyISAM存储引擎：在5.1之前是默认的存储引擎，提供了全文索引等特性，但是不支持事务和行级锁，且崩溃后无法安全的恢复。不是非常建议使用，后期维护成本非常高。
+
+由于不支持行级锁，所以在读取表的时候需要将涉及到的表加上共享锁，而在写入表的时候需要加上排他锁。但在查询表的过程中可以往表中查询新的记录（被称为并发插入）
+
+MyISAM可以进行表的压缩，压缩后的表示不能进行修改的，想要修改，需要先将表解压缩然后才能进行修改，压缩过的表也支持索引，但索引仍然只是只读的，仍然需要先将数据解压再进行修改索引
+
+
+
+MySQL内建的其他存储引擎：不是很建议使用，说不定在不久的将来就被不予支持，Archive引擎、Blackhole引擎，CSV引擎，Federated引擎，Memory引擎，Merge引擎等等。
+
+市场上的第三方引擎：
+
+OLTP类引擎，完全为了取代InnoDB引擎的市场地位，对InnoDB引擎进行了优化
+
+面向列的存储引擎：因为MySQL默认是面向行的，在大数据处理时候往往需要面向列，这样才能有更高的数据处理速率。
+
+
+
+MySQL对存储引擎的选择问题：“大部分时间选择InnoDB存储引擎，除非需要用到InnoDB不具备的特性，并且没有其他任何办法可以替代，否则都应该优先选择InnoDB引擎”。
+
+例如需要用到全局索引，可以使用InnoDB+Sphinx的组合，而不是去使用MyISAM存储引擎。
+
+除非迫不得已，非常不推荐混用多种存储引擎
+
+
+
+选择存储引擎的一些例子：P61
+
+
+
+转换表的引擎：`ALTER TABLE sys_user ENGINE = InnoDB;`
+
+可能会执行很长时间，因为MySQL会将表数据复制一份到新的表上面去，然后通过指定新的表的存储引擎来达到修改引擎的目的。还有一个问题：如果从InnoDB表转换为MyISAM表，再转换回InnoDB表，那么这个表上的外键将会丢失。
+
+
+
+还有一种方法是创建一个类似于当前表的表结构，然后将当前表的数据插入到新创建的表中
+
+操作如下：
+
+```sql
+CREATE TABLE book2 LIKE book;
+ALTER TABLE book2 ENGINE = Mysam;
+INSERT INTO book2 SELECT * FROM book;
+```
+
+可以达到快速更改存储引擎的目的，因为数据表是空的，修改引擎的速度非常快。
+
+如果数据量大的话可以考虑分批次插入到book2当中去
