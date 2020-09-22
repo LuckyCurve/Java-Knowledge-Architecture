@@ -191,3 +191,87 @@ InnoDB采用两阶段锁定模式，即显式锁定和隐式锁定，隐式锁�
 
 
 
+
+
+
+
+MySQL多版本并发控制：
+
+多数MySQL存储引擎都没有使用行级锁，而是基于并发速率考虑使用了MVCC（多版本并发控制）来提升效率。
+
+可以认为MVCC是一个行级锁，但是在很多情况下避免了加锁操作~~（个人理解：行级锁就相当于是一个悲观锁，而MVCC就相当于是乐观所）~~
+
+> 错误的理解，MVCC实现有乐观并发控制和悲观并发控制两种实现类型
+
+
+
+InnoDB的MVCC实现方式：通过在每行后面记录两个影藏的列来实现的，分别保存子行的创建时间和过期时间（删除时间），当然这里存储的不是真实的时间，而是系统版本号，每开启一个新的事务，系统版本号就会自动递增。分别称为行版本号和删除版本号
+
+
+
+在REPEATABLE READ，也就是默认的情况下，MVCC是如何操作的：
+
+SELECT：
+
+- 查找行的系统版本号小于当前事务系统版本号的数据行
+- 查找行的删除版本号要么是未定义，要么大于当前事务系统版本号
+
+INSERT：
+
+将当前事务系统版本号作为行版本号
+
+DELETE：
+
+将当前事务版本号作为行删除版本号
+
+UPDATE：
+
+将行版本号和删除版本号设置成当前事务的系统版本号
+
+
+
+这样可以保证绝大多数操作都可以在不加锁的情况下安全的完成
+
+
+
+MVCC只能在READ COMMITED和REPEATABLE READ这两个隔离级别下工作，其他的都不兼容。第一个是完全不能用，要保证读取的都是最新的数据，最后一个则是没必要用，读取的时候会对行加锁。
+
+
+
+MySQL的存储引擎：
+
+存储引擎对应到了每一张表上，可以通过查看表的详细信息来查看该表使用的是什么存储引擎
+
+如：`show create table sys_user \G;`即可查看到sys_user表的详细定义：
+
+```sql
+*************************** 1. row ***************************
+       Table: sys_user
+Create Table: CREATE TABLE `sys_user` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_name` varchar(20) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '用户账号',
+  `user_password` varchar(100) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '密码',
+  `real_name` varchar(20) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '用户真实姓名',
+  `dep_id` int NOT NULL COMMENT '部门id',
+  `user_code` varchar(20) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '员工工号',
+  `user_type_id` int DEFAULT NULL COMMENT '用户类型id',
+  `order_number` varchar(3) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '排序',
+  `user_email` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT 'email地址',
+  `user_tel` varchar(20) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '手机号',
+  `current_score` int DEFAULT '0' COMMENT '积分',
+  `has_approve` int DEFAULT '0' COMMENT '是否实名认证,0-未认证,1-已认证',
+  `status` int NOT NULL DEFAULT '0' COMMENT '状态是否有效,0-注册,1-有效,2-离职',
+  `news_scope` varchar(3) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '本地声音中的信息范围(0-本地，1-上级，2-下级，012-全部)',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `create_oper` int DEFAULT NULL COMMENT '创建用户id',
+  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  `update_oper` int DEFAULT NULL COMMENT '修改用户id',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='用户表'
+1 row in set (0.00 sec)
+```
+
+> 之所以加上了`\G`在最后面是因为要输出的时候不会带上大量的短横线
+
+
+
