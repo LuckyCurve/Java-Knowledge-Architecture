@@ -367,10 +367,32 @@ MySQL对存储引擎的选择问题：“大部分时间选择InnoDB存储引擎
 
 ```sql
 CREATE TABLE book2 LIKE book;
-ALTER TABLE book2 ENGINE = Mysam;
+ALTER TABLE book2 ENGINE = MyISAM;
 INSERT INTO book2 SELECT * FROM book;
 ```
 
 可以达到快速更改存储引擎的目的，因为数据表是空的，修改引擎的速度非常快。
 
-如果数据量大的话可以考虑分批次插入到book2当中去
+如果数据量大的话可以考虑分批次插入到book2当中去 
+
+
+
+MySQL的历史：
+
+最靠是MySQL公司独立研发，后来被sun公司收购，同时Oracle公司收购了InnoDB存储引擎。最后再5.5版本的时候Oracle完成对sun的收购并推出了该版本的MySQL
+
+> 难怪Java对MySQL有这么好的支持，原来都是同一个公司出品的产品，自家的适配性当然要好了。
+
+
+
+Oracle现在是为用户提供一些MySQL的服务器插件来赚取利润，MySQL本身还是遵循开源模式的
+
+
+
+
+
+总结：
+
+MySQL的分层架构：上层是服务器层的服务和查询执行引擎，下层是存储引擎。
+
+随着Oracle对MySQL和InnoDB的收购，更加有利于MySQL的发展
