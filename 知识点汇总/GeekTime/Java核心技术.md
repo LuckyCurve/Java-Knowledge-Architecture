@@ -824,3 +824,113 @@ public ThreadPoolExecutor(int corePoolSize,
 
 - CPU密集型任务：推荐设置线程数为N+1
 - 等待较多的任务：线程数 = CPU 核数 × 目标 CPU 利用率 ×（1 + 平均等待时间 / 平均工作时间）
+
+
+
+
+
+
+
+
+
+## 原子类的底层原理
+
+
+
+原子类如AtomicInteger支持对其封装的数据的原子性的访问和更新操作，底层是基于CAS操作
+
+例如AtomicInteger的getAndIncrease方法的底层实现可以导到Unsafe类的这段代码中来
+
+```java
+public final int getAndAddInt(Object o, long offset, int delta) {
+    int v;
+    do {
+        v = getIntVolatile(o, offset);
+    } while (!weakCompareAndSetInt(o, offset, v, v + delta));
+    return v;
+}
+```
+
+可以明显的看到do while这个CAS重试机制的具体使用
+
+
+
+CAS的具体底层实现是基于CPU提供的特定指令的，在大多数情况下CAS是个非常轻量级的操作，这也是他的优势所在
+
+
+
+问题：如何在实际场景中使用到CAS操作，毕竟直接调用Unsafe往往不是一个好的选择
+
+如果想要使用，可以使用AtomicLongFieldUpdater，核心APi为：
+
+```java
+public abstract boolean compareAndSet(T obj, long expect, long update);
+```
+
+但是有个局限性，只能支持Long数据类型的操作，至于其他的数据操作就需要换了
+
+
+
+在Java9以后可以使用VarHandle类中的方法：
+
+```java
+public final native
+    @MethodHandle.PolymorphicSignature
+    @HotSpotIntrinsicCandidate
+    boolean compareAndSet(Object... args);
+```
+
+传参顺序依旧是obj，expect，update
+
+
+
+不能过度依赖CAS，CAS的问题：
+
+- 通常大部分问题只要重试一次即可成功，但是如果压力过大，重试次数过多，往往会造饥饿等问题
+- ABA问题，加版本号即可解决，Java的实现类为：AtomicStampedReference 
+
+
+
+往往不会直接与CAS打交道，而是通过与Doug Lea的JUC包打交道间接使用到了CAS
+
+
+
+JUC包的基础：AbstractQueuedSynchronizer（AQS）
+
+Doug Lea选择将基础的同步操作抽象在了AbstractQueuedSynchronizer当中去
+
+
+
+对AQS内部结构和方法的简单拆分：
+
+- 一个volatile的整型成员表征状态，提供get/set方法
+
+```java
+private volatile int state;
+```
+
+- 一个FIFO队列，实现线程之间的等待和竞争
+- 基础基于CAS方法，如acquire/release方法，实现对资源的获取与释放
+
+
+
+ReentrantLock的内部实现的简单抽象：
+
+```java
+public class ReentrantLock implements Lock, java.io.Serializable {
+    // Sync是一个继承了AQS的内部类 
+    private final Sync sync;   
+    
+    public void lock() {
+        sync.acquire(1);
+    }
+    
+    public void unlock() {
+        sync.release(1);
+    }
+}
+```
+
+
+
+CountDownLatch中对AQS的利用页大差不差
