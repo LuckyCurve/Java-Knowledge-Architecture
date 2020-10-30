@@ -971,3 +971,76 @@ CountDownLatch中对AQS的利用页大差不差
 
 >  直接使用javap仅仅只会出现反编译之后的Java文件，不会出现字节码信息，如果要查看详细信息可以加上-c参数，查看全部信息使用-v参数
 
+
+
+
+
+
+
+## 有哪些方法可以在运行时动态生成一个Java类
+
+
+
+实际上就是动态代理的底层分析
+
+
+
+我们使用到的动态代理（框架底层频繁使用，Java语言层面提供支持，我们只是简单使用）本质上就是等待特定的时机，去修改已有类型实现，或者创建新的类型。
+
+
+
+那么，如果生成一个java文件了，如何将其编译成一个class文件以供JVM读取呢？
+
+可以使用java.compiler
+
+或者如果我们可以直接书写一个Class文件吗，难度太大
+
+
+
+Proxy内部实现逻辑——内部类ProxyBuilder中的代码段：
+
+```java
+/*
+ * Generate the specified proxy class.
+ */
+byte[] proxyClassFile = ProxyGenerator.generateProxyClass(
+    proxyName, interfaces.toArray(EMPTY_CLASS_ARRAY), accessFlags);
+try {
+    Class<?> pc = UNSAFE.defineClass(proxyName, proxyClassFile,
+                                     0, proxyClassFile.length,
+                                     loader, null);
+    reverseProxyCache.sub(pc).putIfAbsent(loader, Boolean.TRUE);
+    return pc;
+} catch (ClassFormatError e) {
+    /*
+     * A ClassFormatError here means that (barring bugs in the
+     * proxy class generation code) there was some other
+     * invalid aspect of the arguments supplied to the proxy
+     * class creation (such as virtual machine limitations
+     * exceeded).
+     */
+    throw new IllegalArgumentException(e.toString());
+}
+```
+
+这里就是ProxyBuilder内部读取Java文件并且通过ProxyGenerator编译成class字节流并交给Unsafe类进行读取成Class的过程
+
+
+
+Java提供的动态代理，实现过程可以简化为：
+
+- 提供一个普通接口作为共同接口，作为被调用类型和代理类之间的统一接口
+- 实现InvocationHandler接口，实现其中的invoke方法，该方法为我们使用代理对象真正调用的方法
+- 通过Proxy.newProxyInstance静态方法生成的代理对象，我们即可直接操作代理对象了
+
+
+
+
+
+字节码操作技术除了动态代理还用在什么地方：
+
+- Mock框架（测试框架）
+- ORM框架
+- IOC容器
+- 部分Profiler工具
+- 生成形式化代码的工具
