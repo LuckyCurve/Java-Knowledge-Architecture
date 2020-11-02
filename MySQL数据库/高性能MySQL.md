@@ -1228,3 +1228,105 @@ MySQL缓存也和通用缓存一个逻辑，没有任何特殊的
 
 
 很容易看出查询的核心就是查询优化器
+
+
+
+MySQL子查询非常糟糕，提别是WHERE条件中包含IN（）的子查询语句：
+
+```sql
+EXPLAIN SELECT * FROM book WHERE name IN (SELECT name FROM book2 WHERE id = 1)\G;
+```
+
+得到的结果为：
+
+```
+*************************** 1. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: book2
+   partitions: NULL
+         type: const
+possible_keys: PRIMARY
+          key: PRIMARY
+      key_len: 4
+          ref: const
+         rows: 1
+     filtered: 100.00
+        Extra: NULL
+*************************** 2. row ***************************
+           id: 1
+  select_type: SIMPLE
+        table: book
+   partitions: NULL
+         type: ALL
+possible_keys: NULL
+          key: NULL
+      key_len: NULL
+          ref: NULL
+         rows: 5
+     filtered: 20.00
+        Extra: Using where
+2 rows in set, 1 warning (0.00 sec)
+```
+
+可以看到是对内表的普通索引和对外表的全表查询，所以当外表的体量增大的时候性能会非常的糟糕。（一切都要结合测量数据说话，这里都只是一些理论结论，说不定MySQL在后期版本中进行了大量的优化呢）。
+
+子查询通常可以被关联查询代替（本书推荐使用左外连接查询方式）
+
+
+
+
+
+UNION的限制：
+
+如果想要UNION两个表的查询结果然后再LIMIT20条记录，MySQL的做法是使用一张临时表来存储UNION后的结果然后再取出前二十条数据
+
+优化策略：可以在UNION的两个子查询后面分别加上LIMIT 20子句即可解决问题
+
+> 多使用LIMIT不会有任何的负面影响，因为LIMIT只会为你截取数据，而不会为你补充数据
+
+
+
+
+
+MySQL无法提供并行执行方法，无法利用多核性能，很多其他的关系型数据库却提供了这个功能。
+
+
+
+MySQL无法实现松散索引扫描，即MySQL开始索引扫描定义了一个起点和终点，即会直接进行依次扫描，无法跳过
+
+
+
+如果直接使用UPDATE语句的WHERE字句嵌套SELECT语句，既可能因为并发原因报错
+
+![image-20201102170929280](images/image-20201102170929280.png)
+
+
+
+
+
+需要你使用连接这种方式来保证内部的SELECT语句会新建一张表而不是直接锁定原来的表
+
+
+
+
+
+查询优化器的提示（hint）：
+
+如果对优化器选择的执行计划不满意，可以使用优化器提供的几个提示（hint）来控制最终的执行计划。
+
+> 感觉这只是MySQL官方给研究任务执行的专家们提供的一种工具，生产中用的不多，可以认为MySQL的优化器是可靠的。
+
+
+
+作者有时候也蛮谜语人的，花了十几页来讲如何优化MySQL以便将MySQL做为一个任务队列，最后给出的结论是MySQL不适合做任务队列，推荐使用Redis来实现，或者直接使用现有的RabbitMQ消息队列。
+
+
+
+
+
+总结：
+
+高性能MySQL主要涉及到对Schema，索引，查询语句设计，查询本身这几个方面
+
+查询优化可以通过三个方面来解决：不做、少做、快速地做
