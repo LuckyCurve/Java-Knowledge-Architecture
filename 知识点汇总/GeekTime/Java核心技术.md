@@ -1085,3 +1085,42 @@ Java提供的动态代理，实现过程可以简化为：
 
 
 
+## 常见垃圾收集器
+
+
+
+- Serial GC：最古老的单线程收集器，会出现Stop The World的状态
+
+**对老年代采用了标记-整理算法，新生代使用复制算法**
+
+开启参数为：`-XX:+UseSerialGC`
+
+
+
+- ParNew GC：新生代的GC实现，实际是Serial GC的多线程版本，一般配合老年代的CMS GC使用
+
+开启参数为：`-XX:+UseConcMarkSweepGC -XX:+UseParNewGC`
+
+
+
+- CMS（Concurrent Mark Sweep） GC：老年代GC，基于标记-清除算法，目的是尽量减少停顿时间
+
+
+
+- Parallel GC：JDK8早期版本中的默认使用GC，特点是新生代和老年代GC都是并行的
+
+开启参数为：`-XX:+UseParallelGC`
+
+
+
+- G1 GC：兼容吞吐量和停顿时间的GC实现，JDK9之后默认的GC选项
+
+G1 GC仍然存在着年代的划分，但是将内存直接划分成一个个Region，推荐使用G1 GC
+
+
+
+可以使用参数：`java -XX:+PrintCommandLineFlags -version`来查看Java使用的GC
+
+
+
+其中GC使用的算法在《深入理解Java虚拟机》中有
