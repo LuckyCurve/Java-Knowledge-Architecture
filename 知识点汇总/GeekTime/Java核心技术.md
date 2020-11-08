@@ -1155,3 +1155,61 @@ Java程序运行在Docker环境的问题：
 
 
 如果无法更新JDK版本，可以限制堆，元数据区的大小，明确制定可用CPU核数
+
+
+
+
+
+
+
+
+
+## Java应用开发的安全
+
+
+
+注入类攻击是源于程序允许攻击者将不可信的动态内容注入到程序中并将其执行，这就可能改变最初预计的执行过程并产生恶意效果
+
+场景：
+
+
+
+- SQL注入攻击
+
+如果只是简单的生成SQL语句通过JDBC让MySQL去执行，如：
+
+`Select * from use_info where username = “input_usr_name” and password = “input_pwd”`
+
+传入参数：`“ or “”=”`
+
+于是拼接出来的SQL为：`Select * from use_info where username = “input_usr_name” and password = “” or “” = “”`
+
+这种情况下MySQL一定会返回True
+
+期望输入数值，但是用户实际输入了SQL语句片段，这就导致了问题的产生，甚至可能加上Delete语句
+
+
+
+- XML注入攻击
+
+Java提供了工具操作XML文件，如果使用不当可能导致恶意访问
+
+
+
+
+
+Java自身提供的安全检查：
+
+- 运行时安全机制
+
+主要是类加载过程中的验证，利用SecurityManager机制，限制代码的运行时行为能力
+
+- JDK提供的安全工具
+
+keytool：管理密钥、证书等
+
+jarsigner：对jar包的签名和认证等
+
+
+
+达到攻击需求也未必需要绕过各种权限设置，直接使用哈希碰撞也可以达到攻击的目的，模拟大量相同HASH值的数据，通过JSON方式发送到服务器当中去，会使得算法的复杂度上升一个数量级，从而导致严重的性能退化
