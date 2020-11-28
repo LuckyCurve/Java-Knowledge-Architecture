@@ -2307,7 +2307,7 @@ MySQL的复制功能通常是向后兼容的，即新版本的服务器可以作
 
 创建用户指令：
 
-`CREATE USER 'username'@'host' IDENTIFIED BY 'password';`
+`CREATE USER 'username'@'host' IDENTIFIED WITH 'mysql_native_password' BY 'password';`
 
 host指定登陆的主机ip，可以使用通配符%表示任意的，如指定host为：`192.%`就是可以让以192开头的host登陆
 
@@ -2364,11 +2364,11 @@ read_only = 1
 让从库连接到主库：
 
 ```
-CHANGE MASTER TO MASTER_HOST = 'HOST',
+CHANGE MASTER TO MASTER_HOST = 'www.luckycurve.cn',
 MASTER_USER = 'test',
 MASTER_PASSWORD = '123456',
-MASTER_LOG_FILE = 'mysql-bin.000001',
-MASTER_LOG_POS = 0;
+MASTER_LOG_FILE = 'mysql-bin.000003',
+MASTER_LOG_POS = 21450;
 ```
 
 
@@ -2604,3 +2604,37 @@ MySQL支持从这两种模式之间动态切换，默认情况下使用的是基
 
 
 感觉可以通过给test用户授权时候指定数据库来隔离其他的数据。
+
+
+
+试图通过增加备库的方式提升系统的吞吐量是有限制的，主要还是因为写操作无法均摊造成的限制，随着负载的增加，每台备库都需要进行同样的写操作，写操作所占比例增大，读操作所占比例自然减小，因此需要更多服务器来填补减少的读操作部分。
+
+
+
+
+
+复制操作的管理和维护
+
+
+
+使用`SHOW MASTER LOGS`或者`SHOW BINARY LOGs`查看当前有哪些二进制文件是在磁盘上的
+
+
+
+可以通过在备库上执行`SHOW SLAVE STATUS;`来查看`Seconds_Behind_Master`的值显示备库的延迟，但是往往不是非常准确：
+
+- Seconds_Behind_Master的值是由服务器当前时间戳减去二进制文件中事件的时间戳得到的，因此只有在执行事件时候才能报告延迟
+- 网络不稳定时Seconds_Behind_Master也可能显示为0而不是显示错误
+- 大事务可能导致延迟波动
+
+
+
+备库通常会由于MySQL的BUG、网络中断、服务器崩溃、非正常关闭而导致数据与主库数据不同
+
+
+
+仍然需要自己去手动同步，可以尝试使用pt-table-sync
+
+
+
+如果主库意外崩溃，
