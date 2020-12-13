@@ -108,3 +108,64 @@ JdkDynamicAopProxy——>CglibAopProxy
 5、面向模块
 
 主要是@Enable*注解
+
+
+
+
+
+## Spring IoC基础
+
+
+
+大量使用到了Java Bean，在1.1的时候引入，类似于反射，但是比Java的反射好用的太多
+
+使用示例（输出当前Bean所有的方法（构造器方法除外，即使是显式构造器也不会出现在输出当中））：
+
+```java
+public static void main(String[] args) throws IntrospectionException {
+    BeanInfo beanInfo = Introspector.getBeanInfo(Person.class, Object.class);
+
+  Arrays.stream(beanInfo.getMethodDescriptors()).forEach(System.out::println);
+}
+```
+
+输出：
+
+```java
+java.beans.MethodDescriptor[name=getName; method=public java.lang.String cn.luckycurve.beans.Person.getName()]
+java.beans.MethodDescriptor[name=setAge; method=public void cn.luckycurve.beans.Person.setAge(java.lang.Integer)]
+java.beans.MethodDescriptor[name=setName; method=public void cn.luckycurve.beans.Person.setName(java.lang.String)]
+java.beans.MethodDescriptor[name=getAge; method=public java.lang.Integer cn.luckycurve.beans.Person.getAge()]
+```
+
+
+
+核心方法是：`public static BeanInfo getBeanInfo(Class<?> beanClass, Class<?> stopClass) throws IntrospectionException`
+
+如果不使用stopClass则会直接输出所有的类，使用stopClass则会屏蔽掉stopClass中的方法，只显示当前层级的方法。
+
+
+
+通过BeanInfo还可以获取到PropertyDescriptor，Spring通过PropertyEditor来将Text转换成为相应的数据类型：
+
+```java
+public static void main(String[] args) throws IntrospectionException {
+    BeanInfo beanInfo = Introspector.getBeanInfo(Person.class, Object.class);
+
+    Arrays.stream(beanInfo.getPropertyDescriptors()).forEach(propertyDescriptor -> {
+        String propertyDescriptorName = propertyDescriptor.getName();
+        if (Objects.equals("age", propertyDescriptorName)) {
+            propertyDescriptor.setPropertyEditorClass(StringToIntegerPropertyEditor.class);
+        }
+    });
+}
+
+static class StringToIntegerPropertyEditor extends PropertyEditorSupport {
+    @Override
+    public void setAsText(String text) throws IllegalArgumentException {
+        Integer value = Integer.valueOf(text);
+        setValue(value);
+    }
+}
+```
+
