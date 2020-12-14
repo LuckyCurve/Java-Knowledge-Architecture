@@ -24,6 +24,8 @@
 
 [MySQL数据库（读书笔记：《MySQL必知必会》）](MySQL数据库/MySQL笔记.md)
 
+[高性能MySQL（读书笔记：《高性能MySQL（第三版）》）](MySQL数据库/高性能MySQL.md)
+
 
 
 ## Spring Framework

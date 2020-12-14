@@ -3127,3 +3127,18 @@ socket=/tmp/mysql_recover.sock
 ```
 
 来保证不会存在连接连接到这个数据库中了，然后就可以执行mysqlbinlog命令来重放SQL语句
+
+
+
+如果存在一个延时的备库，当主库出现问题而备库还没有执行到问题事件的时候，可以很轻易的将库恢复到问题语句之前。
+
+首先停止备库，使用START SLAVE UNTIL语句来重放事件直到要执行的问题语句，接着执行SET GLOBAL SQL_SLAVE_SKIP_COUNTER=1来跳过问题语句，如果需要跳过多个事件，可以设置大于1的值，或者直接移动指向主库的POSITION实现跳过
+
+
+
+通常使用Percona Xtrabackup来完成对InnoDB的热备份。
+
+
+
+建议使用mysqldump时候带上--opt参数
+
