@@ -134,3 +134,53 @@ cn.luckycurve.demo.character3.InternalFunctionInter$$Lambda$14/0x000000010006684
 ```
 
 获取两个Runnable的类加载器的名称，发现都是`app` ，而Object o的类加载器无法获取，使用时候会报错。
+
+
+
+
+
+## 4、
+
+实现将对象注入到容器当中，看上去不起眼的操作卡了半天，最后还是在StackOverFlow上提问才解决的。
+
+常规解决方法是在方法上标注@Bean注解，然后将该对象作为方法的返回值，这样就实现了IoC容器的注入，但是如果返回值被占用了，这种方法就不起效了，也是我遇到的这种情况。
+
+解决方法其实也找的差不多了，只是没有注意到重载的几个方法，整体思路就是操作ApplicationContext接口，将其转换为实现类GenericWebApplicationContext，调用registerBean方法即可。
+
+刚开始一直想使用：
+
+```java
+public <T> void registerBean(Class<T> beanClass, Object... constructorArgs);
+```
+
+但是不想单独为了注入一个对象而为该类增加一个构造函数，是非常麻烦的。
+
+后来的方法：
+
+```java
+@Autowired
+ApplicationContext context;
+
+@Test
+void contextLoads() {
+    Book book = Book.builder().id("222").build();
+    GenericWebApplicationContext genericWebApplicationContext = (GenericWebApplicationContext) context;
+    genericWebApplicationContext.registerBean(Book.class, () -> book);
+
+    // 验证结果
+    Book bean = context.getBean(Book.class);
+    System.out.println(bean);
+}
+```
+
+这里调用的方法是：
+
+```java
+public final <T> void registerBean(
+			Class<T> beanClass, Supplier<T> supplier, BeanDefinitionCustomizer... customizers)
+```
+
+刚开始没反应过来，因为Supplier接口是Java8里提供的，用的不是很多，除非是在使用设计模式的时候我会想起来，用于函数的传递，返回一个beanClass对象即可。第三个参数BeanDefinitionCustomizer用于BeanDefinition的定制，如加上lazy-init或者是primary的特性。
+
+
+
