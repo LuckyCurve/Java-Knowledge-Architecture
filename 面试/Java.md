@@ -71,3 +71,166 @@ java包和javax包有什么区别？
 为什么说Java是编译与解释共存的语言？
 
 主要是Java文件需要编译成class文件，最后再经过虚拟机解释执行，因此被说为是编译与解释执行共存的语言。
+
+
+
+字符型常量和字符串常量的区别
+
+|           字符型常量           |           字符串常量           |
+| :----------------------------: | :----------------------------: |
+|      单引号引起的一个字符      | 双引号引起的零个或者若干个字符 |
+| 相当于一个整数值，可以参与运算 |        代表一个地址空间        |
+|            两个字节            |            若干字节            |
+
+> Char的封装类Character有public static属性SIZE大小为16，转换为字节为2字节
+>
+> 其他封装类也有这个属性
+
+
+
+谈谈你对注释的认识
+
+有三种类型：单行注释、多行注释、文档注释（带有Javadoc标签的多行注释）
+
+在编译期间会被编译器直接删除，只存在于源文件.java中
+
+注释能够帮助看代码的人快速地理清代码之间的逻辑关系，快速上手编写代码
+
+
+
+标识符和关键字之间的区别
+
+简单来说，标识符就是一个名字，通常用于指定一个对象或者是基本的数据类型，但是存在一些标识符，Java给予了特殊的含义，这些特殊的标识符就是关键字
+
+常见关键字：
+
+|                      |          |            |          |              |            |           |        |
+| -------------------- | -------- | ---------- | -------- | ------------ | ---------- | --------- | ------ |
+| 访问控制             | private  | protected  | public   |              |            |           |        |
+| 类，方法和变量修饰符 | abstract | class      | extends  | final        | implements | interface | native |
+|                      | new      | static     | strictfp | synchronized | transient  | volatile  |        |
+| 程序控制             | break    | continue   | return   | do           | while      | if        | else   |
+|                      | for      | instanceof | switch   | case         | default    |           |        |
+| 错误处理             | try      | catch      | throw    | throws       | finally    |           |        |
+| 包相关               | import   | package    |          |              |            |           |        |
+| 基本类型             | boolean  | byte       | char     | double       | float      | int       | long   |
+|                      | short    | null       | true     | false        |            |           |        |
+| 变量引用             | super    | this       | void     |              |            |           |        |
+| 保留字               | goto     | const      |          |              |            |           |        |
+
+
+
+continue，break和return的区别是什么？
+
+在循环结构中，当循环条件不满足的时候循环自动结束，但是我们在循环中满足某种条件之后需要执行一些特定操作，因此才出现了上面的几个关键字：
+
+continue：跳过当前循环，直接进入下一次循环
+
+break：跳出整个循环体，继续执行循环下面的语句
+
+return：通常用于跳出方法，也就意味着方法的结束了，如果返回值为void则使用`return;`的语法
+
+
+
+Java泛型，什么是类型擦除，介绍常用的通配符
+
+泛型是在JDK5中引入的一个新特性，参与到编译时候的安全检查，泛型的本质是参数化类型，也就是将操作的数据类型指定为一个参数
+
+Java的泛型是伪泛型，在编译期间会被擦除，也就是我们说的类型擦除，都是以Object类型存储的，然后在我们需要的时候JVM会自动将其转换为我们指定的数据类型。
+
+验证方法：
+
+```java
+/**
+ * @author LuckyCurve
+ * @date 2021/1/20 11:36
+ * 验证Java的伪泛型
+ */
+public class Test {
+    public static void main(String[] args) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+        List<Integer> list = new ArrayList<>();
+
+        Class<? extends List> listClass = list.getClass();
+        Method add = listClass.getMethod("add", Object.class);
+        add.invoke(list,"sss");
+
+        System.out.println(list);
+    }
+}
+```
+
+突破了编译期的检查，使用反射，在运行期间才能确定下来，上面代码不会报错，说明类型确实被擦除了。
+
+泛型的三种使用方式：泛型类、泛型接口、泛型方法
+
+```java
+public class Generic<T> {
+    private T t;
+}
+
+// 使用
+Generic<Integer> g = new Generic<>();
+```
+
+这里采用了Java7提供的菱形语法，简便一点。
+
+```java
+public interface Generator<T> {
+    T method();
+}
+
+class GeneratorImpl<T> implements Generator<T> {
+    @Override
+    T method() {
+        return null;
+    }
+}
+
+class GeneratorImpl<T> implements Generator<String> {
+    @Override
+    String method() {
+        return null;
+    }
+}
+```
+
+其实这里类指不指定泛型与接口无关了，只需要提供接口的泛型即可使用。
+
+```java
+public static <E> void printArray(E[] array) {
+    for (E e:array) {
+        System.out.println(e);
+    }
+}
+```
+
+在返回值前面指定就可以了，使用时候不用指定，因为传参就相当于带上了类型了。
+
+
+
+==和equals的区别
+
+==判断两个对象地址是否相等，实际上也就相当于判断是否是同一个对象
+
+基本数据类型==比较的是值，而对象则比较的是地址
+
+> 实质上都是比较变量的值，只是基本数据类型存放的是值，而应用类型存放的是地址
+
+equals只能比较对象是否相等，是Object中的一个方法，默认是调用==的，可以进行重载
+
+
+
+hashcode方法和equals方法
+
+重写equals方法时必须重写hashcode
+
+hashcode返回一个int整数，实际上就是该对象在哈希表中的索引位置，Object中的hashcode是native的，使用C/C++实现，通常只是将对象的内存地址转换为整数进行输出
+
+为什么会有hashcode呢？集合框架可以将哈希值作为对象的唯一标识从而判断是否有重复对象，如HashSet，如果两者的hashcode相等，在调用equals方法判断是否是真的相同，如果相同了hashSet不会让对象成功插入。**大大减少了equals的使用次数，相应的就大大的提升了效率**
+
+如果两个对象相等，那么hashcode一定是相同的，但是两个对象的hashcode相等不意味着它们两相等，还是要调用equals函数，为了能够顺利的调用equals函数判断是否相等，hashcode必须重写。
+
+为什么不能通过hashcode相等判断两个对象相等？
+
+hash值是有上限的，可能出现哈希碰撞，且算法越差，碰撞几率越大
+
