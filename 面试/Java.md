@@ -358,3 +358,218 @@ static、final（private属于final）是前期绑定，其他普通方法是后
 
 ![68747470733a2f2f6d792d626c6f672d746f2d7573652e6f73732d636e2d6265696a696e672e616c6979756e63732e636f6d2f323031392d372f6a6176612d646565702d616e642d7368616c6c6f772d636f70792e6a7067 (400×195)](https://camo.githubusercontent.com/2ba88f5f00d8f37b58c303929a0cb97bc9925189287ad741ec74338c867ee14e/68747470733a2f2f6d792d626c6f672d746f2d7573652e6f73732d636e2d6265696a696e672e616c6979756e63732e636f6d2f323031392d372f6a6176612d646565702d616e642d7368616c6c6f772d636f70792e6a7067)
 
+
+
+
+
+## 二、Java面向对象
+
+
+
+面向对象和面向过程的比较
+
+面向过程语言性能高，因为不需要实例化类，在单片机、嵌入式开发这类注重性能的场合使用较多
+
+面向对象具有易维护，易复用、易扩展的特性，因为有封装继承多态三种特性，可以轻松设计出低耦合的系统
+
+> 当然这并不是Java性能瓶颈的原因，主要是因为Java是半编译语言，编译出来的文件无法被CPU直接执行，需要JVM解释执行
+
+
+
+在Java中之所以往往要加上一个不做事儿且无参的构造方法的作用
+
+因为在执行子类的构造方法之前，如果其中没有使用super调用父类的构造方法，会默认调用父类的无参构造方法，这里声明主要是为了子类的实例化考虑。
+
+
+
+成员变量和局部变量的区别
+
+|                   成员变量                    |    局部变量     |
+| :-------------------------------------------: | :-------------: |
+|              从属于类或者是对象               |   从属于方法    |
+|  可以被public，protected、private、final修饰  | 只能被final修饰 |
+| 存储于堆、元空间（HotSpot是使用堆来实现的）中 |   存储于栈中    |
+|             非final类型存在默认值             |    需要赋值     |
+
+
+
+对象实体和对象引用的关系
+
+对象实体存在于堆中，对象引用存储于栈中
+
+对象实体可以有n个对象引用，而对象引用只能有0或1个对象实体
+
+
+
+面向对象的三种特性
+
+封装：把一个类的状态信息（属性）隐藏在状态内部，不允许外部对象直接访问对象的内部信息，只能通过该对象预设的方法来完成对类的状态信息的访问。
+
+继承：继承是使用已存在的类的定义作为基础新建新的类的技术，新增的类可以增加数据或者是功能，也可以直接沿用父类的功能，但不能选择性的继承（这也是为什么重写只能扩大父类方法的访问权限的一个原因），提升开发效率。**子类拥有父类一切的属性和方法，只不过父类中的私有属性和方法子类无法访问，仍然持有。**
+
+多态：表示一个对象具有多种的状态，具体表现为父类的引用指向子类的实例。
+
+具有的特点：
+
+- 对象类型和引用类型之间具有继承/实现的关系
+- 引用类型的方法调用只有在运行期间才能确定到底是调用哪个类的方法
+- 多态无法调用子类存在但是父类不存在的方法
+
+
+
+String、StringBuilder和StringBuffer各自定义和他们之间的关系
+
+可变性：
+
+在Java9之前，内部实现都是`char[] value;`，Java9之后使用的是`byte[] value;`实现，String直接在类里面了，后两者在父抽象类AbstractStringBuilder中，只是String的value被`private final`修饰，且String还被final修饰（基本数据类型和String都被final修饰），体现了String的不可变性。
+
+线程安全性：
+
+在《Java并发编程实战中》提到一种线程安全策略：只读共享，由于这里的String是不可变的，因此是满足只读共享特性，是线程安全的。
+
+在共同父类AbstractStringBuilder中就已经提供了append方法，StringBuilder和StringBuffer都是直接对其中方法的调用，只是StringBuffer使用synchronized关键字修饰了整个方法，而StringBuilder没有。
+
+性能：
+
+StringBuilder>StringBuffer>String
+
+使用终结：
+
+少量数据：String
+
+单线程操作大量数据：StringBuilder
+
+多线程操作大量数据：StringBuffer
+
+
+
+Object的方法：
+
+```java
+public class Object {
+
+    // 本地函数的注册
+    private static native void registerNatives();
+    static {
+        registerNatives();
+    }
+
+    // 构造方法
+    @HotSpotIntrinsicCandidate
+    public Object() {}
+
+    // native方法，获取当前对象的Class对象，且该方法被final修饰，无法被子类重写
+    @HotSpotIntrinsicCandidate
+    public final native Class<?> getClass();
+
+    // 返回对象的哈希值，默认是堆内地址，主要使用在Map中
+    @HotSpotIntrinsicCandidate
+    public native int hashCode();
+
+    // 比较两个对象是否相等，默认是比较对象的内存地址
+    public boolean equals(Object obj) {
+        return (this == obj);
+    }
+
+    // 创建当前对象的一份拷贝，即x.clone() != x，且该类必须实现Cloneable否则报错CloneNotSupportedException
+    @HotSpotIntrinsicCandidate
+    protected native Object clone() throws CloneNotSupportedException;
+
+    // 转字符串的方法，默认是类名@实例哈希吗的十六进制，建议子类重写
+    public String toString() {
+        return getClass().getName() + "@" + Integer.toHexString(hashCode());
+    }
+
+    // final native方法，随机唤醒一个在此对象上等待的线程
+    @HotSpotIntrinsicCandidate
+    public final native void notify();
+
+    // 唤醒所有在此对象上等待的线程
+    @HotSpotIntrinsicCandidate
+    public final native void notifyAll();
+
+    // final方法。调用内部
+    public final void wait() throws InterruptedException {
+        wait(0L);
+    }
+
+    // native final方法，加入等待时间，暂停线程的执行，并释放持有的锁
+    public final native void wait(long timeoutMillis) throws InterruptedException;
+
+    // 多了第二个参数单位为纳秒，相加共同表示超出时间
+    public final void wait(long timeoutMillis, int nanos) throws InterruptedException {
+        if (timeoutMillis < 0) {
+            throw new IllegalArgumentException("timeoutMillis value is negative");
+        }
+
+        if (nanos < 0 || nanos > 999999) {
+            throw new IllegalArgumentException(
+                                "nanosecond timeout value out of range");
+        }
+
+        if (nanos > 0) {
+            timeoutMillis++;
+        }
+
+        wait(timeoutMillis);
+    }
+
+    // 实例被垃圾收集器回收的时候触发的操作
+    @Deprecated(since="9")
+    protected void finalize() throws Throwable { }
+}
+```
+
+
+
+==和equals
+
+==对基本数据类型来说比的是值，引用数据类型比较的是所指向的内存地址
+
+equals是判断两个对象是否相等，一般存在两种情况：
+
+- 没有覆盖equals方法，此时使用Object的equals，默认还是==来比较
+- 覆盖了equals，一般都会覆盖，通过内部逻辑来比较两个对象的内容是否相等
+
+
+
+hashcode和equals
+
+为什么重写equals的时候必须重写hashcode
+
+hashcode 在Object中就已经存在了，意味着任何对象都有hashcode，通过hashcode可以快速的在哈希表上查找到对象的位置。
+
+主要是在使用集合框架的时候，在比较是否有重复对象的时候，会先通过hashcode来看有没有重复，如果有重复的话再对这两个对象使用equals方法来检查到底是否相等。没有直接使用hashcode是为了减少equals直接调用的次数，提升性能。因此只有在散列表的集合框架中才有用。
+
+
+
+有些字段不想序列化
+
+可以使用transient关键字修饰不想被序列化的变量
+
+transient只能修饰变量，不能修饰类和方法
+
+
+
+Java键盘输入，使用Java7提供的Try With Resources语法
+
+```java
+try (Scanner scanner = new Scanner(System.in)) {
+    System.out.println(scanner.nextLine());
+}
+```
+
+```java
+try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+    System.out.println(reader.readLine());
+} catch (IOException e) {
+    e.printStackTrace();
+}
+```
+
+
+
+
+
+
+
