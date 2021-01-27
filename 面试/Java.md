@@ -571,5 +571,90 @@ try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in)
 
 
 
+## 三、Java核心技术
+
+
+
+反射机制
+
+指在运行过程中，对任意一个类，都可以知道这个类的所有属性和方法，对任意一个对象，都可以调用他的任意一个方法和获取任意一个属性，这种动态获取的信息以及动态调用对象的方法的功能被称为Java语言的反射机制
+
+
+
+静态编译和动态编译
+
+静态编译：在编译期间确定类型，绑定对象
+
+动态编译：在运行期间才能确认类型，绑定对象
+
+
+
+反射机制的优缺点
+
+优点：将对象类型的推断和类的加载（JDBC）推迟到了运行期间，具有更高的灵活性
+
+缺点：1、性能瓶颈，反射机制相当于一系列解释操作，即通知JVM去做什么，远不如运行class文件来的效率高。2、安全问题：可以实现private属性的访问，突破了安全限制。
+
+
+
+反射的应用场景
+
+反射是框架设计的灵魂
+
+在使用JDBC连接数据库的时候，就使用到了`Class.forName()`方法来动态加载数据库驱动
+
+Spring的IOC和AOP都和反射有关
+
+
+
+异常
+
+Java异常类的层次结构
+
+![68747470733a2f2f67756964652d626c6f672d696d616765732e6f73732d636e2d7368656e7a68656e2e616c6979756e63732e636f6d2f323032302d31322f4a617661254535254243253832254535254238254238254537254231254242254535254231253832254536254143254131254537254242253933254536253945253834254535253942254245322e706e67 (1946×952)](https://camo.githubusercontent.com/17d2b543fcd5c80208deea27d941b41d7cb868da7172d6cf1e91722b34a86f0b/68747470733a2f2f67756964652d626c6f672d696d616765732e6f73732d636e2d7368656e7a68656e2e616c6979756e63732e636f6d2f323032302d31322f4a617661254535254243253832254535254238254238254537254231254242254535254231253832254536254143254131254537254242253933254536253945253834254535253942254245322e706e67)
+
+Throwable是直接继承Object的，实现了序列化接口，有两个子类：Error和Exception
+
+只有Exception可以被try-catch，Error错误往往是Java程序无法处理的，因此只能避免，常见的Error如：VirtualMachineError、OutOfMemoryError、StackOverflowError
+
+在Exception中，除了RuntimeException及其子类是不受检查异常，其余的都是受检查异常，需要进行处理，否则无法通过编译。
+
+Throwable类的常用方法如下：
+
+```java
+// 异常的简要描述
+public String getMessage();
+// 异常的详细信息
+public String toString();
+// 返回异常对象的本地化信息，通常子类会覆盖，如果不覆盖则返回与getMessage相同
+public String getLocalizedMessage();
+// 最常用的，打印到控制台
+public void printStackTrace();
+```
+
+
+
+try-catch-finally语句块
+
+try块：用于捕获异常，后面跟零个或者多个catch，如果没有catch则必须有finally
+
+catch块：处理捕获到的异常
+
+finally块：无论是否捕获到异常，finally中的语句都会执行，如果其中存在return语句，则在return语句执行前执行完finally块中的语句
+
+存在几种情况finally语句不会运行：
+
+1. 运行了`System.exit(int)`，如果前面有异常，那么该语句没有被执行到，依然会执行finally，且finally中的return语句会覆盖原来的return语句
+2. 程序所在的线程死亡
+3. CPU关闭
+
+
+
+使用Java7提供的try-with-resources代替try-catch-finally
+
+适用范围：实现了`java.io.Closeable`（父类是AutoCloseable）或者是`java.lang.AutoCloseable`的类
+
+执行顺序：任何catch/finally在资源关闭之后运行
+
 
 
