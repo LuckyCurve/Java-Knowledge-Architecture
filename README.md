@@ -28,6 +28,12 @@
 
 
 
+## 设计模式
+
+[大话设计模式（读书笔记：《大话设计模式》）](设计模式/大话设计模式.md)
+
+
+
 ## Spring Framework
 
 [Spring实战（读书笔记：《Spring实战（第五版）》）](Spring技术栈/Spring实战.md)
