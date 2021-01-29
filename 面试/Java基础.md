@@ -1,6 +1,8 @@
 # 面试常见题目
 
-
+> 内部类和静态内部类的区别：编译完成后非静态内部类会保存一个引用指向他的外围类，但是静态内部类不会有。
+>
+> 静态成员变量存放于方法区当中，在HotSpot中方法区的实现是永久代或者是元空间（Java8为界），划分一部分堆空间出来由Java垃圾回收器共同管理，但是容易造成内存泄露问题
 
 ## 一、Java基本概念与常识
 
@@ -607,6 +609,68 @@ Spring的IOC和AOP都和反射有关
 
 
 
+反射动态获取信息需要通过Class对象，获取Class对象的四种方式
+
+```java
+// 1 直接通过类名来获取class对象
+Class c = TargetObject.class;
+// 2 通过Class.forName来获取类信息，默认是需要初始化的，可以通过传参控制，默认true初始化，否则不初始化
+Class c = Class.forName("...");
+// 3 通过Object#getClass方法获取
+Class c = targetObject.getClass();
+// 4 通过类加载器去获取，不会就行初始化
+Class c = ClassLoader.loadClass("...");
+```
+
+使用Demo：
+
+```java
+public class TargetObject {
+
+    private String value;
+
+    public TargetObject() {
+        value = "LuckyCurve";
+    }
+
+    public void flag(String flag) {
+        System.out.println(flag + "\t In " + new Date());
+    }
+
+    private void getValue() {
+        System.out.println(value);
+    }
+}
+
+public static void main(String[] args) throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException, NoSuchFieldException {
+    Class<?> classInfo = Class.forName("cn.luckycurve.reflection.TargetObject");
+    // 创建实例
+    TargetObject instance = (TargetObject) classInfo.getDeclaredConstructor().newInstance();
+
+    // 输出所有方法名
+    Arrays.stream(classInfo.getDeclaredMethods()).forEach(System.out::println);
+
+    // 获取方法名并调用
+    Method method = classInfo.getDeclaredMethod("flag", String.class);
+    method.invoke(instance, "实习上岸");
+
+    // 修改private的值
+    Field field = classInfo.getDeclaredField("value");
+    // 取消安全检查，访问private
+    field.setAccessible(true);
+    field.set(instance, "LuckyCurve2");
+
+    // 调用private方法
+    Method method1 = classInfo.getDeclaredMethod("getValue");
+    method1.setAccessible(true);
+    method1.invoke(instance);
+}
+```
+
+
+
+
+
 异常
 
 Java异常类的层次结构
@@ -713,3 +777,329 @@ Blocking IO：同步阻塞IO，数据的读取写入必须阻塞在一个线程�
 Non-blocking IO/New IO：同步非阻塞IO，Java1.4时候引入，核心抽象为Channel、Selector、Buffer。他是面向缓冲的，基于通道的IO操作方法，在文件传输过程中不会涉及到操作系统状态转换（管态——用户态），而是实现文件的直接传输，在高负载、高并发的环境下能起到很好的作用
 
 Asynchronous IO：也被称为NIO2，在Java7中引入，是对NIO的改良版，AIO是基于事件和回调机制来实现的，不会出现线程等待的情况，当后台处理完成时，会通知线程（BIO则是需要线程自己去获取IO操作是否执行完成了）。AIO目前应用不是很广泛，Netty曾经尝试使用过，后来放弃了
+
+
+
+## 四、Java易错点
+
+
+
+1、正确使用equals方法
+
+如果进行a和b的比较，不要直接使用`a.equals(b)`，如果a为null则会报空指针异常
+
+> 通过null来调用非静态方法会抛出异常，换言之调用静态方法不会抛出异常
+
+推荐使用Java7提供的Objects#equals方法
+
+
+
+2、关于BigDecimal的用法
+
+《阿里巴巴Java开发手册》中强制规定：浮点数之间的基本判断，基本数据类型不能用==来比较，包装数据类型不能用equals来比较
+
+```java
+float a = 1.0f - 0.9f;
+float b = 0.9f - 0.8f;
+System.out.println(a == b);
+```
+
+因为浮点数采用位数+阶码的编码方式，会造成精度丢失
+
+解决方法，通过将浮点数转换成为BigDecimal对象，然后调用方法substract进行减法运算等等，最后通过compareTo方法比较，绝对不是equals方法，因为只有compareTo 方法会忽略精度
+
+BigDecimal内部使用到了BigInteger，推荐初始化的时候使用BigDecimal的static方法valueOf方法进行初始化，如果直接使用BigDecimal(double)可能会造成精度的丢失，使用valueOf方法会先将double转换成String，保留精度
+
+
+
+Arrays#asList方法的一些坑
+
+Arrays.asList入参必须是对象数组，因为asList是泛型方法，如果是基本数据类型数组则会直接得到数组本身。返回的数组是不可变的，增删会抛出UnsupportedOperationException异常
+
+推荐使用的将数组转换成List的方法：
+
+可以返回一个可变的List（推荐）：
+
+```java
+new ArrayList<>(Arrays.asList(nums));
+```
+
+使用Java8的方法（推荐）：可以处理原始数据类型，返回的List为ArrayList
+
+```
+Arrays.stream(nums).boxed().collect(Collectors.toList());
+```
+
+使用Guava（推荐），可以选择性的生成可变和不可变对象
+
+
+
+集合转数组和集合元素的反转
+
+```java
+Integer[] ints = list.toArray(new Integer[0]);
+```
+
+这里的`new Integer[0]`是经过了JVM的优化的，只是起到了一个模板的作用，0是为了节省空间
+
+数组的翻转得先将其转换为集合，调用Collections#reverse()方法
+
+
+
+不要在foreach集合中使用增删元素操作
+
+会抛出一个ConcurrentModificationException异常，这被称为fail-fast机制，java.util包下面的集合类都是fail-fast的，而java.util.concurrent包下面的类都是fail-safe的
+
+> List移除倒数第二个元素不会报错
+
+推荐使用Java8的list.removeIf(filter)方法
+
+推荐使用Iterator的方式
+
+之所以foreach会报错而Iterator不会报错，看报错的栈
+
+```java
+public E next() {
+    // 报错
+    checkForComodification();
+    int i = cursor;
+    if (i >= size)
+        throw new NoSuchElementException();
+    Object[] elementData = ArrayList.this.elementData;
+    if (i >= elementData.length)
+        throw new ConcurrentModificationException();
+    cursor = i + 1;
+    return (E) elementData[lastRet = i];
+}
+```
+
+```java
+final void checkForComodification() {
+    if (modCount != expectedModCount)
+        throw new ConcurrentModificationException();
+}
+```
+
+主要是由于修改次数和期望修改次数两个参数不等导致的
+
+我们在foreach中直接add和remove只是会改变modCount的值，不会更改exceptedModCount的值
+
+如果是Iterator（ArrayList中的内部类Itr），源码如下：
+
+```java
+public void remove() {
+    if (lastRet < 0)
+        throw new IllegalStateException();
+    checkForComodification();
+
+    try {
+        ArrayList.this.remove(lastRet);
+        cursor = lastRet;
+        lastRet = -1;
+        expectedModCount = modCount;
+    } catch (IndexOutOfBoundsException ex) {
+        throw new ConcurrentModificationException();
+    }
+}
+```
+
+最主要的就是第十行的信息，会修改expectedModCount的值，所以不会报错
+
+之所以倒数第二个不会报错，是因为不会进入next方法，删除元素后当前hasNext（）方法返回了false
+
+```java
+public boolean hasNext() {
+    return cursor != size;
+}
+```
+
+0 1 2 3的第三个元素，本来size=4，结果remove后size=3，相等就返回false，但是如果删除到最后一个仍然是不相等，所以true。
+
+
+
+
+
+## 五、Java枚举
+
+
+
+可以使用在非常多的场景，比如SpringMVC的全局异常处理
+
+enum在Java5中引入，使用enum标注的类默认是继承java.lang.Enum的
+
+我们在使用枚举的时候大部分都是代替常量的，目的是增加代码的可读性，
+
+Demo：
+
+```java
+public enum PizzaEnum {
+    ORDERED,
+    READY,
+    DELIVERED;
+
+    public static void main(String[] args) {
+        System.out.println(PizzaEnum.ORDERED);
+        System.out.println(PizzaEnum.ORDERED.getClass());
+        System.out.println(PizzaEnum.ORDERED.name());
+    }
+}
+```
+
+因为enum标注的终究只是一个特殊的类（继承了Enum抽象类），可以包含一些状态（类型为PizzaStatus本身），也可以包含一些函数如主函数来进行测试。
+
+因为枚举类型在JVM中能确保是一个常量实例，因此可以直接使用`==`进行运算，且`==`运算不会像equals可能抛出NullPointExceptioin异常。因此可以直接在switch语句中使用，本质上就是一些if == 的集合
+
+重点：可以在枚举中定义方法和构造函数来让枚举更加强大
+
+例如我们需要返回每个状态大概订单的等待时间，原来是需要switch语句然后返回固定时间，现在通过给枚举中添加方法的方式来返回，并且返回当前Pizza在该状态是否完成了。
+
+```java
+public enum PizzaEnum {
+    /**
+     * 常量
+     */
+    ORDERED(5) {
+        @Override
+        public boolean isOrdered() {
+            return true;
+        }
+    },
+    READY(2) {
+        @Override
+        public boolean isReady() {
+            return true;
+        }
+    },
+    DELIVERED(1) {
+        @Override
+        public boolean isDelivery() {
+            return true;
+        }
+    };
+
+    /**
+     * 属性
+     */
+    private int timeToDelivery;
+
+    /**
+     * 方法
+     */
+    PizzaEnum(int timeToDelivery) {
+        this.timeToDelivery = timeToDelivery;
+    }
+
+    public int getTimeToDelivery() {
+        return timeToDelivery;
+    }
+
+    public boolean isOrdered() {
+        return false;
+    }
+
+    public boolean isReady() {
+        return false;
+    }
+
+    public boolean isDelivery() {
+        return false;
+    }
+
+    /**
+     * 测试方法
+     */
+    public static void main(String[] args) {
+        PizzaEnum pizzaEnum = PizzaEnum.ORDERED;
+        System.out.println(pizzaEnum.isOrdered());
+        System.out.println(pizzaEnum.getTimeToDelivery());
+    }
+}
+```
+
+感觉是非常方便的。
+
+
+
+跟随Java5一起引进的还有EnumSet和EnumMap两个抽象类型
+
+初始化时候可以直接使用EnumSet.of方法进行对象的创建，至于返回哪一个子类则是看实例化时候的枚举常量的数量，如果需要获取当前Enum的所有可能状态可以使用`Enum.values();`方法，这个方法应该是动态字节码生成的，找不到values方法。
+
+EnumSet可以返回如取子集、增删等操作，基本和HashSet差不多，都继承了AbstractSet接口
+
+就相当于是对元素为enum的单独操作，HashSet会报错。
+
+```java
+private final EnumSet<PizzaEnum> unDeliveredPizzaStatus = EnumSet.of(ORDERED, READY);
+
+public List<pizza> getUnDeliveredPizza(List<pizza> list) {
+    return list.stream().filter(pizza -> unDeliveredPizzaStatus.contains(pizza.getPizzaEnum())).collect(Collectors.toList());
+}
+```
+
+
+
+EnumMap则是HashMap对enum操作的实现。
+
+之所以对enum进行了单独的实现，是希望更加高效的处理enum，而不是像对普通的Object。
+
+
+
+通过枚举类型实现设计模式
+
+1、 单例模式
+
+使用枚举来实现会非常简洁，并且无偿提供序列化机制，安全性和稳定性由JVM直接保障。
+
+```java
+public enmu SystemConfiguration {
+    INSTANCE;
+    SystemConfiguration() {
+        // 一些初始化操作
+    }
+    
+    public static SystemConfiguration getInstance() {
+        return INSTANCE;
+    }
+}
+```
+
+这里的INSTANCE就是绝对的单例模式了。
+
+2、策略模式，策略模式意味着添加新的实现类
+
+而枚举中的所有常量都可以对原来的方法进行覆盖，非常轻松的就可以完成任务，但是只能有一个对象，即枚举属性本身
+
+Jackson序列化，和普通类达到的效果差不多，实例化所有的常量
+
+
+
+
+
+## 六、关键字总结
+
+
+
+final关键字：意思是最终的，不可变的，用来修饰类、方法和变量
+
+private方法都隐式的指定为final。
+
+使用final方法的原因有两个：1、锁定方法，避免被子类重写。2、早期的Java可以通过声明final使得方法转为内嵌调用，增加性能，现在没必要了。
+
+
+
+static关键字，常见用法：
+
+1、修饰成员变量和成员方法，使得变量和方法从属于类，静态成员变量存放于方法区中
+
+2、静态代码块：初始化类信息，至于对象的初始化顺序，则是非静态代码块——构造方法，对于定义在静态代码块之后的静态变量，静态代码块可以赋值不能访问
+
+3、静态内部类：static修饰类只能修饰内部类，非静态内部类创建时候在对象中会存放一个引用指向外围对象，而静态内部类没有，意味着静态内部类：1、不需要依赖外围类的 2、无法获取外围类的非static成员变量和方法，静态内部类只有被访问到时候才会进行初始化。运用于单例模式，主要是当静态内部类没有被访问的时候不会初始化，被访问之后才进行了初始化，延迟初始化特性，单例是通过JVM初始化锁来保证的
+
+4、静态导包：5提供的新特性。`import static`导入某个类中的指定静态资源，省去了`类名.方法名/资源名`的类名。
+
+
+
+需要注意的一个问题：
+
+一旦在构造函数中显式的调用了super的构造函数或者是this的构造函数，必须在首行，否则会报错（默认是在构造函数执行之前调用`super()`）
+
