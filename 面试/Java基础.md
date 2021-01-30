@@ -3,6 +3,12 @@
 > 内部类和静态内部类的区别：编译完成后非静态内部类会保存一个引用指向他的外围类，但是静态内部类不会有。
 >
 > 静态成员变量存放于方法区当中，在HotSpot中方法区的实现是永久代或者是元空间（Java8为界），划分一部分堆空间出来由Java垃圾回收器共同管理，但是容易造成内存泄露问题
+>
+> 在Linux操作系统中，线程本质上就是一个进程，线程这个概念确实是windows平台独有的，JVM进行了Linux环境下的适配
+>
+> 为什么LinkedList在1.7的时候取消了循环？【双向循环链表】
+>
+> 
 
 ## 一、Java基本概念与常识
 
@@ -669,8 +675,6 @@ public static void main(String[] args) throws ClassNotFoundException, NoSuchMeth
 
 
 
-
-
 异常
 
 Java异常类的层次结构
@@ -777,6 +781,72 @@ Blocking IO：同步阻塞IO，数据的读取写入必须阻塞在一个线程�
 Non-blocking IO/New IO：同步非阻塞IO，Java1.4时候引入，核心抽象为Channel、Selector、Buffer。他是面向缓冲的，基于通道的IO操作方法，在文件传输过程中不会涉及到操作系统状态转换（管态——用户态），而是实现文件的直接传输，在高负载、高并发的环境下能起到很好的作用
 
 Asynchronous IO：也被称为NIO2，在Java7中引入，是对NIO的改良版，AIO是基于事件和回调机制来实现的，不会出现线程等待的情况，当后台处理完成时，会通知线程（BIO则是需要线程自己去获取IO操作是否执行完成了）。AIO目前应用不是很广泛，Netty曾经尝试使用过，后来放弃了
+
+这里更加注重的是网络编程中的IO操作
+
+
+
+可以理解为Java语言对操作系统的各种IO模型的封装，我们直接调用即可。
+
+
+
+同步、异步、阻塞、非阻塞比较
+
+当你同步执行某项任务时，你需要等待其完成才能继续执行其他任务，当你异步执行某些操作时，你可以在完成另一任务之间继续进行。
+
+阻塞：调用者会一直等待请求返回，只有当结果返回再能继续执行
+
+非阻塞：调用者发起一个请求后可以去干别的事情
+
+
+
+同步/异步是从行为角度描述的，而阻塞和非阻塞描述的是调用者线程的状态
+
+BIO：同步阻塞IO，使用BIO，服务端通讯模型如下
+
+![img](https://camo.githubusercontent.com/954def15d50a7807d3e43cd4d7b8a451bf88ac2e9fdd665ea4e10d728f0c8020/68747470733a2f2f6d792d626c6f672d746f2d7573652e6f73732d636e2d6265696a696e672e616c6979756e63732e636f6d2f322e706e67)
+
+Acceptor负责分配Client线程与Server线程对应，面对百万级别的请求，可能需要百万个线程同时处理，但是线程是重量级资源，是不现实的。
+
+后来使用了线程池进行了优化，形成了伪异步IO
+
+![伪异步IO模型图](https://camo.githubusercontent.com/707e56443bcc2e10f05f3af5e9cf75a9a5bc10b7d7b67f1c0637c52657853296/68747470733a2f2f6d792d626c6f672d746f2d7573652e6f73732d636e2d6265696a696e672e616c6979756e63732e636f6d2f332e706e67)
+
+尽管这样，由于socket的read和write方法仍然是阻塞的，无法从根本上解决问题，只会到头来任务量越来越多。
+
+当服务量小于1000的时候（单机），使用BIO还是非常好的，每个线程专注于自己所做的事情，并且应该尽量使用线程池，可以起到异步削峰的作用，毕竟有一条工作对列作为缓冲
+
+
+
+Java1.4引入的NIO，提供了Channel、Selector、Buffer等抽象
+
+NIO是面向缓存的，基于通道的IO操作方法，提供了SocketChannel，ServerSocketChannel代替传统的BIO操作，都支持阻塞和非阻塞方式，因此在低负载、低并发场景下使用同步阻塞IO方法，在高负载，高并发的应用使用非阻塞方式
+
+NIO与IO的区别：
+
+1、名字，NIO 非阻塞IO模型，BIO 阻塞IO模型
+
+2、面向对象：NIO是面向缓冲区的，BIO是面向流的
+
+NIO是将数据直接读取到Buffer抽象中进行操作，BIO也有Buffered开头的流，却要将数据从流中读入缓冲区在进行操作，比较慢。NIO中的所有操作都是面向缓冲区的，读的时候直接从缓冲区里面读，写的时候直接写入缓冲区，最常见的缓冲区是ByteBuffer，实际上每一种数据类型除了Boolean都有缓冲区
+
+3、读写方式不同：NIO使用管道进行读写，IO使用流进行读写
+
+NIO使用Channel对Buffer进行读写操作，是双向的，而流是单向的，只能读或者写
+
+4、NIO具有选择器，IO没有
+
+选择器用于单个线程处理多个通道（这也正是能客户端到服务端为1：n的关系了），避免为每个Channel都创建一个线程，减小了创建成本和切换成本
+
+NIO使用起来非常复杂，不吐槽了，Netty很大程度上简化了NIO操作，因此才被推崇
+
+
+
+AIO主要就是异步非阻塞，调用方完成调用指令执行后可以干其他事儿，等待被调用方执行完成后自动执行回调函数等操作来通知调用方
+
+
+
+
 
 
 
@@ -1102,4 +1172,329 @@ static关键字，常见用法：
 需要注意的一个问题：
 
 一旦在构造函数中显式的调用了super的构造函数或者是this的构造函数，必须在首行，否则会报错（默认是在构造函数执行之前调用`super()`）
+
+
+
+
+
+## 七、Java的代理模式
+
+
+
+代理模式非常好理解，可以通过使用代理对象来代替真实对象的访问，这样我们可以在不修改真实对象的前提下完成对功能的扩展。
+
+代理模式有动态代理和静态代理两种实现：
+
+- 静态代理
+
+在静态代理中，对目标方法的增强都是手动完成的，非常不灵活（通常代理类和目标类都实现了同一份接口，如果接口一旦发生改变就都需要更改了），并且非常麻烦（每进行一次代理都要创建一个代理类），通常不是很实用，示例如下
+
+```java
+public interface Message {
+    void sendMessage(String info);
+}
+
+// 原有的实现类
+public class TargetMessage implements Message {
+    @Override
+    public void sendMessage(Stirng info) {
+        // do something
+    }
+}
+
+// 代理类
+public class ProxyMessage implements Message {
+    private final Message message;
+    
+    public ProxyMessage(Message message) {
+        this.message = message;
+    }
+    
+    @Override
+    public void sendMessage(String info) {
+        // do something before
+        message.sendMessage(info);
+        // do something after
+    }
+}
+```
+
+
+
+- 动态代理【依靠反射来实现的】
+
+不需要为每次代理都创建一个代理类，从JVM角度看，动态代理是在运行时动态生成类字节码，并加载到JVM中的（Spring AOP和RPC框架【方法的远程调用，可以向调用本地方法一样直接调用远程的方法，不涉及到HTTP数据包的封装与拆解，效率高，较知名的RPC框架：Dubbo】使用到了），虽然在日常开发中使用较少，但是在框架中基本是必用的。
+
+两种实现方法：JDK动态代理和CGLIB动态代理
+
+JDK动态代理的两个核心类：` java.lang.reflect.InvocationHandler`和`java.lang.reflect.Proxy`，可以看到都是reflect包下面的类，是基于反射来实现的
+
+Proxy的关键方法为：
+
+public **static** Object newProxyInstance(ClassLoader loader,
+                                      Class<?>[] interfaces,
+                                      InvocationHandler h);
+
+该方法生成一个代理对象，可以看到方法入参有：类加载器、被代理类实现的一些接口，InvocationHandler的实例化子类，不难猜测出内部方法的调用逻辑都在InvocationHandler对象当中，InvocationHandler接口里面只存在一个方法：public Object invoke(Object proxy, Method method, Object[] args);也正是这个方法来处理实的际调
+
+使用实例：
+
+```java
+public interface Message {
+    void send(String info);
+}
+
+public class SendMessage implements Message {
+    @Override
+    public void send(String info) {
+        System.out.println(getClass().getName() + "\t" + info);
+    }
+}
+
+public class DebugInvocationHandler implements InvocationHandler {
+
+    /**
+     * 被代理对象
+     */
+    private final Object target;
+
+    public DebugInvocationHandler(Object target) {
+        this.target = target;
+    }
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // before
+        System.out.println("before Method:" + method.getName());
+        // 调用方法
+        Object o = method.invoke(target, args);
+        System.out.println("After Method:" + method.getName());
+        return o;
+    }
+}
+
+public class JdkProxyFactory {
+
+    // 返回一个代理后的对象
+    public static Object getProxy(Object target) {
+        return Proxy.newProxyInstance(target.getClass().getClassLoader(),
+                target.getClass().getInterfaces(),
+                new DebugInvocationHandler(target));
+    }
+
+    // 实际使用
+    public static void main(String[] args) {
+        Message message = (Message) getProxy(new SendMessage());
+        message.send("LuckyCurve");
+    }
+
+}
+```
+
+可悲的是，在最后测试时候需要将其转换为接口，使用Java的动态绑定机制来完成对象的指定，因此，JDK动态代理只能代理实现了接口的类，并且只能代理哪些
+
+因此CGLIB动态代理产生了
+
+- CGLIB动态代理
+
+CGLIB是基于ASM的字节码生成库，允许运行时候对字节码进行修改和动态生成
+
+JDK动态代理是向上，那么CGLIB更像是向下，对这个类进行了扩展和继承
+
+核心类为：MethodInterceptor接口和Enhancer类
+
+MethodInterceptor唯一方法：
+
+public Object intercept(Object obj, java.lang.reflect.Method method, Object[] args,
+                           MethodProxy proxy);
+
+传入被代理对象，被拦截的方法，方法入参，最后一个参数用于调用原始方法
+
+可以Enhancer的create方法来获取一个被代理后的对象，当然提前要进行一些参数的设定，和Proxy类的定义是一样的。
+
+```java
+public interface Message {
+    void send(String info);
+}
+
+public class SendMessage implements Message {
+    @Override
+    public void send(String info) {
+        System.out.println(getClass().getName() + "\t" + info);
+    }
+}
+
+public class MessageMethodInterceptor implements MethodInterceptor {
+    @Override
+    public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
+        // before
+        System.out.println("before method:" + method.getName());
+
+        // 调用方法
+        Object o = proxy.invokeSuper(obj, args);
+
+        // after
+        System.out.println("after method:" + method.getName());
+
+        return o;
+    }
+}
+
+public class CglibProxyFactory {
+
+    public static Object getProxy(Class<?> classInfo) {
+        // 用于创建动态代理增强类
+        Enhancer enhancer = new Enhancer();
+        // 设置类加载器
+        enhancer.setClassLoader(classInfo.getClassLoader());
+        // 设置被代理对象
+        enhancer.setSuperclass(classInfo);
+        // 设置MethodInterceptor
+        enhancer.setCallback(new MessageMethodInterceptor());
+        return enhancer.create();
+    }
+
+    public static void main(String[] args) {
+        SendMessage proxy = (SendMessage) getProxy(SendMessage.class);
+        proxy.send("LuckyCurve");
+    }
+}
+```
+
+通过输出可以看到，第一个输出为
+
+```
+before Method:send
+cn.luckycurve.proxy.SendMessage	LuckyCurve
+After Method:send
+```
+
+CGLIB的输出为：
+
+```
+before method:send
+cn.luckycurve.proxy.SendMessage$$EnhancerByCGLIB$$b65d50cd	LuckyCurve
+after method:send
+```
+
+可以这样理解，JDK动态代理仍然是直接让被代理对象执行方法的，和代码逻辑吻合，而CGLIB是直接生成一个子类，并让方法在子类中执行。
+
+JDK动态代理始终只能得到一个接口，CGLIB则可以得到一个被代理后的子类
+
+
+
+JDK动态代理和CGLIB动态代理对比：
+
+1、JDK动态代理只能代理接口中的方法，无法代理类中的方法，CGLIB则可以直接代理类中的方法
+
+2、JDK的效率是要高于CGLIB的，且随着JDK版本提升优势只会越来越大
+
+静态代理和动态代理的区别：
+
+1、灵活性，毋庸置疑动态代理灵活性更强，不用去创建代理类
+
+2、JVM层面：静态代理实际上就是普通的方法调用，而动态代理则是在运行时动态生成字节码并加载到JVM中
+
+
+
+
+
+## 八、Java集合框架
+
+
+
+List、Set、Map区别
+
+List：存储的元素是有序的、可重复的
+
+Set：存储的元素是无序的、不可重复
+
+Map：使用KV存储，KV都是无序的，K不能重复，V可以重复
+
+
+
+集合框架中实现类的数据结构
+
+ArrayList：Object[]
+
+Vector：Object[]
+
+LinkedList：双向链表（1.6之前为双向循环链表、1.7取消了循环，改成了双向链表）
+
+ArrayList和Vector的区别
+
+ArrayList是List的主要实现类，适合频繁的随机查找工作，线程不安全，Vector是List的古老实现类，线程安全，底层数据结构都是`Object[]`
+
+ArrayList和LinkedList的区别
+
+ArrayList采用Object[]数据结构，LinkedList采用双向链表结构（1.6之前为循环双向链表）
+
+插入删除的时间复杂度比较：ArrayList的插入和删除都和位置i和数组长度n有关，为O（n-i）因为要移动后面的元素，LinkedList的插入时间复杂度近似为O（1），但如果是指定下标的插入则近似O（n）
+
+ArrayList支持随机访问，LinkedList不支持随机访问，随机访问就是根据元素的序号快速获得元素，Java中提供RandomAccess接口用来标识是否支持随机访问，不仅仅是标注给我们看的，还有应用在如`Collections#binarySearch(List list,T key)`中，判断是否支持随机访问，如果支持就使用基于index的二分查找，否则就走基于迭代器的二分查找
+
+元素利用效率：ArrayList的空间浪费主要是在尾部的数组空余，也是为了避免频繁的resize，而LinkedList的空间浪费主要是每个节点都维护了一个指向前一个和后一个节点的引用。
+
+ArrayList的扩容机制（JDK11）：
+
+```java
+// 通过add方法可以进入到这里来，只有当已经存满的时候就进入这里来发生扩容，传入的mincapacity=当前size+1
+private int newCapacity(int minCapacity) {
+    // overflow-conscious code
+    int oldCapacity = elementData.length;
+    // 默认是原来的1.5倍
+    int newCapacity = oldCapacity + (oldCapacity >> 1);
+    // 防止oldcapacity=0的情况，进行初始化
+    if (newCapacity - minCapacity <= 0) {
+        // DEFAULTCAPACITY_EMPTY_ELEMENTDATA 默认持有的一个空数组，使用无参构造函数的时候就让elementData = DEFAULTCAPACITY_EMPTY_ELEMENTDATA
+        if (elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA)
+            // 通常返回DEFAULT_CAPACITY=10
+            return Math.max(DEFAULT_CAPACITY, minCapacity);
+        if (minCapacity < 0) // overflow
+            throw new OutOfMemoryError();
+        return minCapacity;
+    }
+    // 判断是否过大MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8
+    return (newCapacity - MAX_ARRAY_SIZE <= 0)
+        ? newCapacity
+        : hugeCapacity(minCapacity);
+}
+
+// 其实太大了也很好解决，剩余的留着也没用，如果大于了MAX_ARRAY_SIZE直接赋值Integer.MAX_VALUE
+private static int hugeCapacity(int minCapacity) {
+    if (minCapacity < 0) // overflow
+        throw new OutOfMemoryError();
+    return (minCapacity > MAX_ARRAY_SIZE)
+        ? Integer.MAX_VALUE
+        : MAX_ARRAY_SIZE;
+}
+```
+
+
+
+<hr>
+
+HashSet：（无序）：基于HashMap的Key实现的，采用HashMap保存元素
+
+LinkedHashSet：（有序）：内部是通过LinkedHashMap来实现的
+
+TreeSet：（有序）：红黑树（自平衡的排序二叉树）
+
+<hr>
+
+HashMap：在JDK1.8之前是数组+链表的实现，链表主要是为了解决哈希冲突而存在的（拉链法），在1.8之后有了变化，当链表长度大于阈值8时（`static final int TREEIFY_THRESHOLD`）将链表转换为红黑树。（其实在转换过程前一步有判断，如果当前数组长度是小于64，则进行数组扩容，不会进行树的转换）
+
+LinkedHashMap：LinkedHashMap继承自HashMap，拥有HashMap一切的数据结构，此外还增加了一条双向链表，使得上面的结构具有了保持键值对的插入顺序，实现了访问顺序相关逻辑
+
+HashTable：实现是数组+链表，不会转换成树结构，所有方法均被synchronized修饰
+
+TreeMap：红黑树（自平衡的排序二叉树）
+
+
+
+使用集合的优势
+
+为了存放数据，原来使用的是数组，但是数组特点单一，且一旦声明之后长度无法改变，因此出现了集合来进行数据的存储，Java集合框架不仅可以实现对象的存储，还实现了映射关系的存储
+
+
 
