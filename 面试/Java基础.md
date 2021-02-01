@@ -8,7 +8,15 @@
 >
 > 为什么LinkedList在1.7的时候取消了循环？【双向循环链表】
 >
-> 
+> 1、代码可读性更好，first和last的概念更清晰
+>
+> 2、first节点中可以少存放一个pre的引用，last节点
+>
+> 3、最重要的一点，在头尾插入可以更高效（毕竟LinkedList的特点就是在频繁的插入和删除）
+>
+> 为什么是双端的？
+>
+> 主要移除最后一个元素后，last节点可以快速获取到倒数第二个元素，高效删除
 
 ## 一、Java基本概念与常识
 
@@ -1421,6 +1429,8 @@ Vector：Object[]
 
 LinkedList：双向链表（1.6之前为双向循环链表、1.7取消了循环，改成了双向链表）
 
+CopyOnWriteArrayList：线程安全的ArrayList
+
 ArrayList和Vector的区别
 
 ArrayList是List的主要实现类，适合频繁的随机查找工作，线程不安全，Vector是List的古老实现类，线程安全，底层数据结构都是`Object[]`
@@ -1470,6 +1480,42 @@ private static int hugeCapacity(int minCapacity) {
 }
 ```
 
+其中还有一个非常重要的方法：
+
+```java
+// 在ArrayList内部完全没有被调用过
+public void ensureCapacity(int minCapacity) {
+    if (minCapacity > elementData.length
+        && !(elementData == DEFAULTCAPACITY_EMPTY_ELEMENTDATA
+             && minCapacity <= DEFAULT_CAPACITY)) {
+        modCount++;
+        grow(minCapacity);
+    }
+}
+```
+
+当预存非常多的数据进入到ArrayList当中去的时候，可以先调用ensureCapacity函数来预先分配足够大的空间，避免频繁的发生扩容
+
+LinkedList，实现了List和Deque，说明也具有双端队列的特性
+
+内部结构：
+
+![LinkedList内部结构](https://github.com/Snailclimb/JavaGuide/raw/master/docs/java/collection/images/linkedlist/LinkedList%E5%86%85%E9%83%A8%E7%BB%93%E6%9E%84.png)
+
+内部是基于双向链表来实现的，且持有一个first和last节点，所有插入删除操作就直接映射到链表的操作上来了
+
+
+
+CopyOnWriteArrayList
+
+对比于Collections.synchronizedList，在读写时候都会进行锁定，然而一般都是读多写少，在读过程中需要获取锁，仍然是非常浪费资源
+
+CopyOnWriteArrayList将读取的性能发挥到了极致，在读写锁的读写冲突上更进一步，只有写写操作之间需要同步等待，连读写都不会产生冲突
+
+实现：在写入过程中对原数据进行拷贝，写入的时候写的是拷贝后的数据，读取的时候是读的拷贝前的数据，只有当写完之后，才会将内存指针由原来的内存指向这份拷贝内存，实现读写的完全分离。
+
+
+
 
 
 <hr>
@@ -1480,6 +1526,108 @@ LinkedHashSet：（有序）：内部是通过LinkedHashMap来实现的
 
 TreeSet：（有序）：红黑树（自平衡的排序二叉树）
 
+Set接口基本都是借助Map接口的Key值来实现的，利用Map中的Key值唯一性从而达到Set接口的不可重复性
+
+主要的只有一点，LinkedHashSet维护的是插入的秩序，使用forEach语法遍历得时候是根据插入先后顺序来的
+
+TreeSet维护的是对象的排序，为了可以让对象比大小，强制要求加入的元素必须实现Comparable接口，实现其中的compareTo方法，否则直接报错，排序按照compareTo的返回值来
+
+```java
+public class Test {
+
+    public static void main(String[] args) {
+        Set<Person> set = new TreeSet<>();
+        set.add(new Person("Lucky", 22));
+        set.add(new Person("Lucky2", 21));
+        set.add(new Person("Lucky3", 20));
+        set.forEach(System.out::println);
+    }
+
+    public static class Person implements Comparable<Person> {
+        private String name;
+        private Integer age;
+
+        public Person(String name, Integer age) {
+            this.name = name;
+            this.age = age;
+        }
+
+        @Override
+        public String toString() {
+            return "Person{" +
+                    "name='" + name + '\'' +
+                    ", age=" + age +
+                    '}';
+        }
+
+        @Override
+        public int compareTo(Person o) {
+            if (this.age > o.age) {
+                return 1;
+            } else if (this.age < o.age) {
+                return -1;
+            }
+            return 0;
+        }
+    }
+}
+```
+
+不是必须实现的，只要给一个比较规则就行，通过Comparator来定义一个规则：
+
+```java
+public class Test {
+
+    public static void main(String[] args) {
+        Set<Person> set = new TreeSet<>(new Comparator<Person>() {
+            @Override
+            public int compare(Person o1, Person o2) {
+                return o1.age.compareTo(o2.age);
+
+                // 等价于
+                //                 if (o1.age > o2.age) {
+                //                    return 1;
+                //                } else if (o1.age < o2.age) {
+                //                    return -1;
+                //                } else {
+                //                    return 0;
+                //                }
+            }
+        });
+        set.add(new Person("Lucky", 22));
+        set.add(new Person("Lucky2", 21));
+        set.add(new Person("Lucky3", 20));
+        set.forEach(System.out::println);
+    }
+
+    public static class Person {
+        private String name;
+        private Integer age;
+
+        public Person(String name, Integer age) {
+            this.name = name;
+            this.age = age;
+        }
+
+        @Override
+        public String toString() {
+            return "Person{" +
+                    "name='" + name + '\'' +
+                    ", age=" + age +
+                    '}';
+        }
+    }
+}
+```
+
+
+
+Comparable是待比较元素本身需要去实现，本身有方法`int compareTo(T t);`
+
+Comparator与待比较元素是外部关系，本身方法有`int compare(T t1, T t2);`
+
+可以使用在Collections.sort方法入参当中，否则按照自然排序从小到大排
+
 <hr>
 
 HashMap：在JDK1.8之前是数组+链表的实现，链表主要是为了解决哈希冲突而存在的（拉链法），在1.8之后有了变化，当链表长度大于阈值8时（`static final int TREEIFY_THRESHOLD`）将链表转换为红黑树。（其实在转换过程前一步有判断，如果当前数组长度是小于64，则进行数组扩容，不会进行树的转换）
@@ -1489,6 +1637,163 @@ LinkedHashMap：LinkedHashMap继承自HashMap，拥有HashMap一切的数据结�
 HashTable：实现是数组+链表，不会转换成树结构，所有方法均被synchronized修饰
 
 TreeMap：红黑树（自平衡的排序二叉树）
+
+ConcurrentHashMap：相当于一个线程安全的HashMap
+
+ConcurrentSkipListMap：使用跳表实现的支持并发的Map
+
+可能比较多了
+
+KV能否存储null值总结：
+
+|      集合类       |     Key      |    Value     |
+| :---------------: | :----------: | :----------: |
+|      HashMap      |  允许为null  |  允许为null  |
+|     HashTable     | 不允许为null | 不允许为null |
+|   LinkedHashMap   |  允许为null  |  允许为null  |
+|      TreeMap      | 不允许为null |  允许为null  |
+| ConcurrentHashMap | 不允许为null | 不允许为null |
+
+可以发现，并发Map/同步Map都是不支持null值的，主要是因为Map接口调用get方法后如果没有找到会返回null值，那么并发Map就无法知道是put进入的null还是没有找到了，但是HashMap可以通过containsKey来判断，但是并发Map调用containsKey时候，该Map的数据可能已经发生变化了，与调用get时候的map可能完全不同了。
+
+此外TreeMap也不支持null值，因为要根据Key进行排序，null无法进行排序，所以删除了。
+
+
+
+HashMap和HashTable对比
+
+1、线程是否安全 	2、效率	3、kv能否为null
+
+4、初始化容量大小和扩容
+
+HashMap默认进行延迟初始化，初始化大小为DEFAULT_INITIAL_CAPACITY = 1 << 4，此后每次扩容都会变为原来的两倍，如果给了initCapacity进行初始化，大小为initCapacity扩充到2的n次方为止。
+
+HashTable默认进行就地初始化，初始化大小为11，如果给了initCapacity，大小为initCapacity
+
+扩容：HashMap容量变成原来的两倍，HashTable的大小变为2n+1
+
+
+
+TreeMap：
+
+较之于HashMap还多实现了个NavigableMap接口，该接口表明可以对数据结构进行由小到大的排序和查找。相比之下多出了按照键来排序的能力和对集合元素搜索的能力
+
+
+
+HashMap的底层实现
+
+1.8之前采用数组+链表的方式进行处理，将K值经过hashcode和Map的扰动处理，为了尽可能避免哈希冲突，将计算出来的hash&（length - 1）计算该键值对存放的位置，如果当前位置存在元素，调用equals方法判断是否相等，如果相等则直接覆盖，如果不等则使用拉链表解决哈希冲突
+
+> 位运算符：
+>
+> |  &   |  与  |
+> | :--: | :--: |
+> |  \|  |  或  |
+> |  ^   | 异或 |
+> |  ~   | 取反 |
+>
+> 
+
+> 这里的扰动函数指的就是Map的hash方法，主要是为了避免一些糟糕的hashcode实现，尽可能减少哈希冲突
+>
+> ```java
+> static final int hash(Object key) {
+>     int h;
+>     return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
+> }
+> ```
+>
+> 还是非常简单的
+
+
+
+JDK1.8之后当链表长度大于阈值8的时候会将链表转换成红黑树减少搜索时间，在转换前会进行判断当前数组长度是否小于64，如果小于的话会进行数组扩容来直接减少哈希冲突而不是转换成树结构。
+
+> 都使用红黑树而不使用二叉树的原因是因为二叉查找树在某些情况下会退化成线性结构
+
+
+
+为什么HashMap的长度为2的n次方
+
+主要是计算哈希值之后，需要将哈希值映射到数组上，自然而然会采用取余操作，但是计算机取余操作的效率比较低，位运算效率比较高，为了将`hash % n == hash & (n - 1)`，需要n为2的n次方。（好理解，n-1 = 111111111……）
+
+
+
+HashMap不适用于多线程的原因
+
+在并发环境下resize操作会形成一个循环链表从而导致死循环，Java8解决了这个问题，但是仍然有可能存在数据丢失的风险
+
+
+
+遍历HashMap的几种方法：
+
+1、迭代EntrySet	2、迭代KeySet	3、Foreach EntrySet	4、Foreach KeySet	5、map.forEach（lambda语法）	6、转换成Stream再foreach
+
+
+
+HashTable和ConcurrentHashMap
+
+一个是同步容器一个是并发容器
+
+数据结构不同：HashTable数据结构与1.8之前的HashMap一致，ConcurrentHashMap的数据结构在1.8之前是分段数组`Segment[]`+链表的形式，在1.8之后和HashMap保持一致
+
+HashTable：
+
+![HashTable全表锁](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-6/HashTable%E5%85%A8%E8%A1%A8%E9%94%81.png)
+
+ConcurrentHashMap（1.8之前）
+
+![JDK1.7的ConcurrentHashMap](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-6/ConcurrentHashMap%E5%88%86%E6%AE%B5%E9%94%81.jpg)
+
+ConcurrentHashMap（1.8之后）
+
+![Java8 ConcurrentHashMap 存储结构（图片来自 javadoop）](https://gitee.com/SnailClimb/JavaGuide/raw/master/docs/java/collection/images/java8_concurrenthashmap.png)
+
+实现线程安全的方式不同：
+
+1、HashTable是使用一个全局锁，锁住了整个数组，每当有需要put或者get的时候都需要获取这个全局锁
+
+2、ConcurrentHashMap在1.7之前是采用的分段锁，将数组进行了分割，每一把锁Segment（默认共16个，一旦初始化就不能改变了）仅仅只是保证一块儿位置，因此提升了并发性，在1.8的时候使用了Node数组+链表或者是TreeNode数组+红黑树的方式来实现，使用synchronized锁定链表或者红黑数的首节点和CAS操作后续节点来进行并发控制
+
+
+
+ConcurrentSkipListMap
+
+数据实现是跳表，在数据存储较多的时候，跳表的查询效率提升会非常明显
+
+跳表是一种典型的用空间换时间的数据结构
+
+且能保证插入的顺序对比于HashMap。
+
+<hr>
+
+ConcurrentLinkedQueue：使用链表实现的并发队列，可以看做一个线程安全的LinkedList
+
+BlockingQueue：阻塞队列，是一个接口，内部通过数组、链表等方式实现了
+
+
+
+Java实现的线程安全队列有两种实现方式：阻塞队列，代表为BlockingQueue接口下的一系列实现类，还有就是非阻塞队列，典型实现为ConcurrentLinkedQueue，使用的是CAS进行实现
+
+ConcurrentLinkedQueue应该是高并发环境中性能最好的队列了，源于内部复杂的设计结构而不是CAS
+
+
+
+BlockingQueue：被广泛运用在生产者消费者问题中，队列满时无法插入，队列空时无法取出，会被阻塞住，BlockingQueue主要有三个实现类：ArrayBlockingQueue、LinkedBlockingQueue、PriorityBlockingQueue
+
+ArrayBlockingQueue使用数组进行实现，一旦创建容量无法改变，默认非公平，支持更高的吞吐量，可以通过构造函数第二个参数来实现是否公平（都是传入true为公平的）
+
+
+
+LinkedBlockingQueue使用单向链表实现的阻塞队列（所以才是Queue不是Deque），如果没指定大小，则为Integer.MAX_VALUE，可以指定大小作为有界队列
+
+
+
+PriorityBlockingQueue
+
+支持优先级的无界阻塞队列，即会对其中元素进行排序，由于是无界队列，因此添加操作put是不会被阻塞的，只有获取操作take可能被阻塞。因为是有优先级的，所以需要对象实现comparable接口或者传入一个Comparetor，一样不能寸null值
+
+
 
 
 
