@@ -108,6 +108,48 @@ String c = a.intern();
 
 
 
+JVM的常见运行参数指定：
+
+`-Xms`：堆的最小内存，也就是初始化堆内存
+
+`-Xmx`：堆的最大内存
+
+```
+-Xms2G -Xmx5G
+```
+
+`-XX:NewSize`：新生代内存的最小值，也就是初始化新生代内存大小
+
+`-XX:MaxNewSize`：新生代内存最大大小
+
+```
+-XX:NewSize=256M -XX:MaxNewSize=1024M
+```
+
+如果不想让新生代扩容，可以指定两个值为一样的，也可以使用`-Xmn`
+
+```
+-Xmn256M
+```
+
+`-XX:NewRatio`：新生代和老年代的比值
+
+```
+-XX:NewRatio=1
+```
+
+`-XX:MetaspaceSize`：元空间的初始化大小
+
+`-XX:MaxMetaspaceSize`：元空间最大的大小
+
+![项目中垃圾回收器常用配置](https://gitee.com/SnailClimb/JavaGuide/raw/master/media/pictures/jvm/java_jvm_suggest_parameters.png)
+
+
+
+**GC调优思路：到万不得已的时候才会进行GC调优，一般都是通过GC日志信息来分析Java代码哪里写的不合理，从而解决问题。目的是将转移到老年代的对象数量降至最低，减少GC的执行时间**
+
+
+
 
 
 ## 二、JVM垃圾回收
@@ -320,3 +362,42 @@ un表示n个字节
 3、类加载器已经被GC
 
 因此，出现类被GC的情况很少，因为JDK自带的ClassLoader是一定不会被GC的，必不满足第三条，因此通常只有我们自定义的类加载器加载的类可能发生GC。
+
+
+
+
+
+## 四、类加载器和双亲委派模型
+
+
+
+类加载的三个步骤：加载——连接（验证、准备、解析）——初始化
+
+
+
+类加载器的作用就是将.class文件加载到内存当中
+
+JVM内置的三个类加载器：
+
+BootstrapClassLoader（启动类加载器），不在JDK 中，是使用C++实现的，加载`JAVA_HOME/lib`目录下的jar包或者是class文件
+
+ExtensionClassLoader（扩展类加载器），主要负责加载`JRE_HOME/lib/ext`目录下的JAR包和class文件的加载
+
+AppClassLoader（应用程序类加载器），负责加载当前classpath下的jar包和class文件
+
+
+
+![ClassLoader](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-6/classloader_WPS%E5%9B%BE%E7%89%87.png)
+
+**双亲委派模型：**
+
+**得先从类加载器说起，JVM内置有三层类加载器，这三层之间不是通过继承来实现功能复用的，而是通过组合的方式实现功能复用的，最上层的BootStrapClassLoader是使用C++来实现的，主要加载JAVA_HOME/lib下的JAR包和class文件，第二层的ExtensionClassLoader是第二层，负责对JRE_HOME/lib/ext的JAR包和class文件进行加载，第三层的AppClassLoader负责加载classpath下的JAR包和class文件。我们自己实现的类加载器就都处于第四层，自定义类加载规则，当需要加载类的时候，会先从下往上进行查找是否加载过了，如果加载过了就直接返回，如果没有加载就自上而下地尝试去加载类。**
+
+这里的双亲更多指的是父辈与子辈之间的关系
+
+使用双亲委派模型可以保证JVM的稳定，类不会被重复加载。
+
+> 自定义类加载器，继承classLoader，如果不想打破双亲委派模型，需要实现ClassLoader类中的findClass方法，如果想要打破双亲委派模型，重写loadClass方法。
+>
+> 因为loadclass方法里面存在着双亲委派模型的代码，在其中会调用findclass，相当于是一种模板模式，如果我们覆盖了loadclass的默认实现就破坏了双亲委派模型。
+
