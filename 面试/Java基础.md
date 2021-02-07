@@ -1433,7 +1433,7 @@ CopyOnWriteArrayList：线程安全的ArrayList
 
 ArrayList和Vector的区别
 
-ArrayList是List的主要实现类，适合频繁的随机查找工作，线程不安全，Vector是List的古老实现类，线程安全，底层数据结构都是`Object[]`
+ArrayList是List的主要实现类，适合频繁的随机查找工作，线程不安全，Vector是List的古老实现类，线程安全，底层数据结构都是`Object[]`，还有初始化和扩容的区别，默认大小都是10，但是ArrayList是扩容成1.5倍，Vector是两倍
 
 ArrayList和LinkedList的区别
 
