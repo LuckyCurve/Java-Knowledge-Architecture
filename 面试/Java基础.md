@@ -848,7 +848,7 @@ NIO使用Channel对Buffer进行读写操作，是双向的，而流是单向的�
 
 NIO使用起来非常复杂，不吐槽了，Netty很大程度上简化了NIO操作，因此才被推崇
 
-
+![一个单线程中Selector维护3个Channel的示意图](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-2/Slector.png)
 
 AIO主要就是异步非阻塞，调用方完成调用指令执行后可以干其他事儿，等待被调用方执行完成后自动执行回调函数等操作来通知调用方
 
