@@ -1795,6 +1795,10 @@ PriorityBlockingQueue
 
 
 
+核心API：
+
+poll 取出队首元素，peek 返回队首元素，add 从队尾插入
+
 
 
 使用集合的优势
