@@ -117,7 +117,7 @@ RUNNING ——FINISH——> TERMINATED
 
 1、互斥条件，该资源同一时刻只能由一个线程占用
 
-2、部分分配：先申请一次资源，对已持有资源不放再去申请另一份资源
+2、部分分配：先申请一次资源，再去申请另一份资源
 
 3、不可剥夺条件：没有执行完就不会释放当前持有资源
 
@@ -159,6 +159,11 @@ synchronized锁定的内容不同，如果标注在静态方法上锁定的就�
 ```java
 public class Singleton {
     private volatile static Singleton singleton;
+    
+    // 构造方法私有化
+    private Singleton() {
+        
+    }
     
     public static Singleton getInstance() {
         if (singleton == null) {
@@ -496,3 +501,19 @@ CountDownLatch
 可能用到的场景：
 
 假设用户执行一个批量操作，如同时上传5个文件，就可以使用CountDownLatch让这五个线程全部执行完之后一起返回
+
+
+
+
+
+## 四、Synchronized
+
+
+
+锁消除：发生在编译期间，Javac会对一些无意义的加锁过程进行消除
+
+如我们使用Vector，上面的add方法已经加锁了，但是我们在使用的时候仍然在外层使用了`synchronized(vector)`,这时候编译器就会将synchronized去掉了
+
+
+
+锁粗化：按照常理来说我们应该保证锁的一个细密度，但是由于加锁和释放锁的过程是执行了一个系统调用，存在一个状态转换的问题，会消耗掉大量的性能，所以

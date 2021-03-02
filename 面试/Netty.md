@@ -90,6 +90,6 @@ server.group(boss, worker);
 
 
 
-因此，具体的执行逻辑即为：创建两个EventLoopGroup，分别作为客户端的Boss和Child，通过NioEventLoopGroup的构造方法指定线程个数，如果没有指定则是CPU线程数（通过Runtime中的信息获取到的）*2 。
+因此，具体的执行逻辑即为：创建两个EventLoopGroup，分别作为客户端的boss和worker，通过NioEventLoopGroup的构造方法指定线程个数，如果没有指定则是CPU线程数（通过Runtime中的信息获取到的）*2 。
 
 然后创建服务器的引导类ServerBootstrap，通过ServerBootstrap的group方法实现对boss和child的装载，此时有三种状态：单线程，多线程，主从多线程。然后书写对应的业务处理逻辑即可。

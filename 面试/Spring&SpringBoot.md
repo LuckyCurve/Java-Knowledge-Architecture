@@ -86,7 +86,7 @@ Spring AOP和AspectJ AOP的区别
 
 AspectJ算是Java生态中最完整的AOP框架了，Spring AOP集成了AspectJ，但两者之间仍有差别，其实就是JDK代理和CGLIB代理的差别，Spring AOP中包含了运行时增强（JDK方式）和编译时增强（CGLIB动态字节码操作技术），而AspectJ只涉及到编译时增强
 
-
+​	
 
 走过了IoC和AOP两种特性，接下来就是Spring中一个比较重要的模块了：Spring MVC
 
@@ -106,9 +106,10 @@ Spring事务相关知识点：
 
 七种传播特性，传播特性的定义主要是为了如方法A调用了方法B，此时如果方法AB同时开启事务那么如何处理：
 
-- 如果不存在外层事务，就主动创建事务，否则使用外层事务
+- 如果不存在外层事务，就主动创建事务，否则使用外层事务【默认】
 - 如果不存在外层事务，就不开启事务，否则使用外层事务
 - 如果不存在外层事务，就抛出异常，否则使用外层事务
+- 如果不存在外层事务，就主动创建事务，否则创建嵌套的子事务
 
 <hr>
 
@@ -116,9 +117,7 @@ Spring事务相关知识点：
 - 总是不开启事务，如果存在外层事务，就将外层事务挂起
 - 总是不开启事务，如果存在外层事务，则抛出异常
 
-<hr>
 
-- 如果不存在外层事务，就主动创建事务，否则创建嵌套的子事务
 
 
 
@@ -217,7 +216,7 @@ XML文件：@ImportResource
 
 properties文件：@PropertySource实现对properties配置文件的读取，注入即可使用@Value注解等，但是无法读取yaml文件，如果存在覆盖问题，以application配置文件为主
 
-当然更推荐使用@ConfigurationProperty方式完成字段的注入
+当然更推荐使用@ConfigurationProperties方式完成字段的注入
 
 SpringBoot默认配置的优先级：项目目录下的`config/application.yml`——resources目录下的`config/application.yml`——resources目录下的`application.yml`
 

@@ -40,7 +40,7 @@ Java虚拟机栈，也就是我们常说的栈，用于存放方法执行的栈�
 
 ![img](https://img-blog.csdn.net/20161019204824590?watermark/2/text/aHR0cDovL2Jsb2cuY3Nkbi5uZXQv/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70/gravity/Center)
 
-当不支持动态扩展的时候报StackOverflowError，支持动态扩展且达到了最大内存报OutOfMemoryError
+当支持动态扩展的时候报StackOverflowError，不支持动态扩展且达到了最大内存报OutOfMemoryError
 
 
 
@@ -400,4 +400,22 @@ AppClassLoader（应用程序类加载器），负责加载当前classpath下的
 > 自定义类加载器，继承classLoader，如果不想打破双亲委派模型，需要实现ClassLoader类中的findClass方法，如果想要打破双亲委派模型，重写loadClass方法。
 >
 > 因为loadclass方法里面存在着双亲委派模型的代码，在其中会调用findclass，相当于是一种模板模式，如果我们覆盖了loadclass的默认实现就破坏了双亲委派模型。
+
+
+
+
+
+## 五、总线嗅探机制和总线风暴
+
+
+
+主要是volatile的弊端，而JUC包里面的核心AQS使用到了volatile，所以RentrantLock也会存在这个问题，面试时候可以着重回答。
+
+
+
+总线风暴具体的体现就是总线带宽飙升
+
+
+
+**每个线程都有一个自己的工作内存，为了保证工作内存的变量的可见性，引入了缓存一致性协议，而其中的MESI（Intel提出的）就是其中的佼佼者，每个线程需要通过嗅探器来保证volatile变量是否过期，在频繁修改CAS和volatile的时候就会产生大量的消息，从而导致总线带宽飙高，总线风暴问题产生。**
 
