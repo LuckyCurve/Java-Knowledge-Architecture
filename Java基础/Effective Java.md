@@ -108,7 +108,154 @@ public static Boolean valueOf(boolean b) {
 
 
 
+## 第２条：遇到多个构造器参数时要考虑使用构建器
+
+
+
+前面两种构造方法都无法很好的扩展到大量参数，如果存在大量的可选参数如食品包装外部的营养成分标签，那么通过重载构造函数或者是静态工厂方法都是非常困难的，此时我们倾向于使用重叠构造器，重叠构造器也就是我们创建多个构造函数，然后通过赋予默认值的方式来进行实现的，Demo如下
+
+```java
+public class Student {
+    
+    private final Integer id;
+    
+    private final String name;
+    
+    public Student(String name) {
+        Student(null, name);
+    }
+    
+    public Student(Integer id, String name) {
+        // 赋值操作
+    }
+}
+```
+
+实际的赋值操作仅仅只是在全参构造函数中进行。
+
+
+
+但是随着参数变多，会存在只想填写几个参数的情况，参数的值和顺序都需要严格按照构造函数中来，显然是不太好的。
+
+第二种方法：JavaBeans模式
+
+JavaBeans模式只需要提供一个无参函数和一系列的Setter方法，这样创建对象容易，设置属性也容易，可读性高。
+
+但是Setter操作使得对象的不可变性不复存在，如果想使用final保证一致性也是不可能的，因为如果字段被final修饰需要在构造函数中赋初值或者是就地赋值，无法延迟到set方法调用的时候。这就可能需要程序员付出额外的努力来确保线程安全了。
+
+
+
+所幸出现了建造者模式（Builder）来改善了这些问题，Demo如下：
+
+```java
+public class NutritionFacts {
+    private final int servingSize;
+    private final int servings;
+    private final int calories;
+    private final int fat;
+    private final int sodium;
+    private final int carbohydrate;
+
+    public static class Builder {
+        // Required parameters
+        private final int servingSize;
+        private final int servings;
+
+        // Optional parameters - initialized to default values
+        private int calories = 0;
+        private int fat = 0;
+        private int sodium = 0;
+        private int carbohydrate = 0;
+
+        public Builder(int servingSize, int servings) {
+            this.servingSize = servingSize;
+            this.servings = servings;
+        }
+
+        public Builder calories(int val) {
+            calories = val;
+            return this;
+        }
+
+        public Builder fat(int val) {
+            fat = val;
+            return this;
+        }
+
+        public Builder sodium(int val) {
+            sodium = val;
+            return this;
+        }
+
+        public Builder carbohydrate(int val) {
+            carbohydrate = val;
+            return this;
+        }
+
+        public NutritionFacts build() {
+            return new NutritionFacts(this);
+        }
+    }
+
+    private NutritionFacts(Builder builder) {
+        servingSize = builder.servingSize;
+        servings = builder.servings;
+        calories = builder.calories;
+        fat = builder.fat;
+        sodium = builder.sodium;
+        carbohydrate = builder.carbohydrate;
+    }
+
+    public static void main(String[] args) {
+        NutritionFacts cocaCola = new NutritionFacts.Builder(240, 8)
+                .calories(100).sodium(35).carbohydrate(27).build();
+    }
+}
+```
+
+可以发现外部的数据全是被final修饰的，且是基本数据类型，因此具有不可变性的特点。
+
+如果我们需要使用Lombok来通过Builder创建不可变的对象的时候，可以参照如下链接：https://stackoverflow.com/questions/29885428/required-arguments-with-a-lombok-builder
+
+大体上都差不多，还帮我们实现了一个xxxBuilder类，非常厉害的实现思路
+
+> 可能会出现问题，因为有些框架是根据setter来完成属性注入的，不支持Builder也是非常可能的
+
+
+
+不过我们现在都是使用对象进行数据存储嘛，应该都是提供getter/setter方法的，然后此时构造器更像是一种部分参数构造函数的替代品，不需要考虑安全性
+
+
+
+Builder模式较之于传统的构造器，在保证不可变的前提下可以多次进行字段赋值
+
+缺点也非常明显，需要新建一个Builder类，每次创建对象都会进行一个Builder对象的创建，在及其注重性能的场景是不可取的，并且一般只在参数大于等于4的时候考虑使用Builder，使用Builder还有一个隐式的好处：在参数进行增减的时候修改起来比较容易，如果使用传统的重叠构造器的方式的话那么需要进行大量的修改
 
 
 
 
+
+
+
+## 第３条：用私有构造器或者枚举类型强化Singleton属性
+
+
+
+第一种常见的方法：
+
+```java
+public class Person {
+    public static final Object INSTANCE = new Object();
+    
+    /**
+     * 避免外部通过反射进行调用
+     */
+    private Person() {
+        if (INSTANCe != null) {
+            throw new IllegalCallerException();
+        }
+    }
+}
+```
+
+使用时候直接使用`Person.INSTANCE`即可。
