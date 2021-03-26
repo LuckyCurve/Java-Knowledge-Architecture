@@ -390,4 +390,84 @@ private static void calculate2() {
 
 
 
-由于Java语言的垃圾收集机制，我们不用像C/C++手动进行垃圾收集，
+由于Java语言的垃圾收集机制，我们不用像C/C++手动进行垃圾收集，但是仍然存在着隐式的问题，如在进行出栈操作时候就非常容易出现错误:
+
+```java
+public class Stack {
+    private Object[] element;
+    private int size = 0;
+    
+    // push操作存在扩容
+    public void push(Object obj) {
+        // Something TO DO
+    }
+    
+    // 可能存在内存泄露
+    public Object pop() {
+        if (size == 0) {
+            throw new EmptyStackException();
+        }
+        // 置null操作，
+        return element[--size];
+    }
+}
+```
+
+上述代码存在内存泄露问题，因为不断进行pop操作，处于element高位的元素不会被GC到，根据GC Roots判定仍是可达的对象，此时需要手动置null，这点在JDK的实现中也有相关注释来避免泄露。
+
+> 这里没有使用到泛型，仅仅只是为了阐述这个内存泄露问题
+
+
+
+另一个内存泄露的大头是缓存，如果实现缓存时候我们没有定期清理过期的key，很多value可能应该被回收但是还没有被回收，因为在Map中依然是可达的
+
+**解决思路1：此时我们需要使用Doug Lea的一个类WeakHashMap，这个类相当于是仅仅持有key的弱引用，因此key可能被gc掉，如果key被gc了，那么此时形成key为null的一个Entry，WeakHashMap会自动删除这个Entry。**
+
+解决思路2：给缓存设定一个过期时间，然后使用`ScheduledThreadPoolExecutor`这个类来完成实现对过期数据的一个清除，这样也可以完成，但是效率显然没有第一种弱引用的效率来的高，借助LinkedHashMap来完成元素的删除。
+
+
+
+内存泄露的第三点是监听器及其他回调函数，主要是回调函数，感觉理解的不是很深刻，回调函数第一次接触是在AIO的时候，解决方法是持有弱引用，即使用WeakHashMap来存储注册到需要回掉的客户端。
+
+> 不得不说作者对API的整体理解还是远胜于我们的，特别是集合框架以及提供的API，感觉都是在实战中使用到过的，非常厉害。
+>
+> 再次感叹下对并发编程大师Doug Lea的崇拜，以为对JDK的编码是基于5开始的，但是在WeakHashMap在JDK2的时候就进行了引入，作者正是Doug Lea
+
+
+
+
+
+## 第８条：避免使用终结方法和清除方法
+
+
+
+终结方法（finalize）通常是不可预测的，也是很危险的，一般不要使用它，会导致行为不稳定、性能降低、可移植性降低等问题，在Java9中已经明确废弃了，推荐使用Cleaner，但是仍有不可预测，运行缓慢等问题，一般情况下也是要避免使用的。
+
+最主要的缺陷就是：当一个对象开始gc的时候，会执行finalize方法，但是无法保证能被及时执行，从gc到finalize的执行时间可以是任意长的，如果太依赖于终结方法，如想在终结方法中完成资源的close操作，那么也是不现实的，可能会导致大量资源没办法及时关闭。
+
+使用终结方法还可能导致OOM问题，因为finalize没有执行对象是不会释放内存的，因finalize执行时间是不可控的，可能造成大量对象堆积。
+
+如果是想要释放其他资源，可以实现接口AutoCloseable，然后使用Java7提供的try-with-resources语法来进行关闭，主要就是其中的close方法，实现close方法来保证持有资源的释放，而不是通过finalize或者是clean方法来进行的，注意，实现自己的close方法需要在对象的私有域中记录一个closed标志位，这样才能保证不会被重复关闭。
+
+FileInputStream指定如下变量形式：
+
+```java
+private volatile boolean closed;
+```
+
+然后在其他的方法中都会对这个closed变量进行一个检查，来避免使用已经关闭的对象了，使用了volatile保证可见性，细节。
+
+> 讲道理这里和阿里的开发规范明显冲突了。
+>
+> 可能阿里的开发规范仅仅只在效率和正确上做了一个权衡，而JDK API更倾向于效率，因此使用基本数据类型来避免拆箱装箱
+
+
+
+当然也有适合的场景，不然也不会出现这么危险的方法给程序员了，Java语言毕竟也是以安全性著称的，谁没事儿会打自己的脸呢。
+
+
+
+
+
+
+
