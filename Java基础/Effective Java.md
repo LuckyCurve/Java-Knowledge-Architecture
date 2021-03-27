@@ -467,6 +467,52 @@ private volatile boolean closed;
 
 
 
+似乎有点理解为什么要使用Cleaner方法来代替finalize方法了，因为finalize是`protected`的，是无法在外部直接调用的，只能由虚拟机在GC的时候进行调用，但是这就造成了被调用时间的不确定性，因此我们需要使用一种确定的调用方式，也就是Java9提出的Cleaner类来完成对资源的一个清理。一般会让当前类实现一个AutoCloseable接口，然后在close方法内部调用`Cleaner.Cleanable#clean`方法，在使用资源的时候就可以直接使用7提出的try-with-resource语法来进行资源的自动释放。
+
+这里使用Cleaner也是对我们资源释放起到了弥补的作用，如果我们没有调用close方法，那么在最后JVM仍然会帮我们调用clean方法。
+
+
+
+书上是将资源和关闭资源这个动作封装成一个静态State类（通过实现Runnable接口来进行实现的），但是一定要是静态的，因为如果不是静态类，那么会持有一个外围对象的一个引用，导致外部类无法被回收，也不要使用Lambda表达式来进行资源关闭的逻辑书写，因为也是很容易捕获到了外部的this引用。
+
+这种资源在不安全释放时候具有强烈的不确定性，如果使用如下编程范式，那么会得到执行：
+
+```java
+try(Resource resource = new Resource()) {
+    // TO DO
+}
+```
+
+但是如果仅仅只是使用`Resource resource = new Resource();`那么有可能不会执行。
+
+
+
+总之终结方法和清理方法是具有强烈的不确定性和性能损失的，能不用尽量不用。
+
+
+
+
+
+## 第９条：try-with-resources优先于try-finally
+
+
+
+许多类在使用时候都需要我们调用close方法来手动关闭资源，但是我们有可能忘记关闭资源，好多都是使用终结方法来作为安全网（但是在Java9中直接不推荐使用终结方法，这些类里原来finalize代码都直接清空了）。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
