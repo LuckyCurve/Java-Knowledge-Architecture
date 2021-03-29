@@ -580,15 +580,103 @@ try(Resource resource = new Resource()) {
 
 
 
+计算hashCode比较好的定式为：
+
+遍历所有关键域，对每个关键域都取hashCode，如果是第一个就直接赋值到res，剩下的`res = 31 * res + hashCode`
+
+例子：
+
+```java
+public class Student {
+    private Integer age;
+    private String name;
+    private Integer score;
+    
+    @Override
+    public int hashCode() {
+        // 如果是基本数据类型：
+        // hashCode = Integer.hashCode(age);
+        // 如果是数组
+        // hashCode = Arrays.hashCode(array);
+        int res = age.hashCode();
+        res = res * 31 + name.hashCode();
+        res = res * 31 + score.hashCode();
+    }
+}
+```
+
+这样对绝大多数的应用程序而言已经够了。因为大部分的JDK类都是作者编写的，也是按照这个思路进行处理了，最能体现的就是Arrays#hashCode方法：
+
+```java
+public static int hashCode(Object a[]) {
+    if (a == null)
+        return 0;
+
+    int result = 1;
+
+    for (Object element : a)
+        result = 31 * result + (element == null ? 0 : element.hashCode());
+
+    return result;
+}
+```
 
 
 
+如果我们觉得上面的hashCode写的麻烦，可以尝试使用Objects#hash方法：
 
+```java
+public static int hash(Object... values) {
+    return Arrays.hashCode(values);
+}
+```
 
+使用实例：
 
+```java
+public class Student {
+    private Integer age;
+    private String name;
+    private Integer score;
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(age, name, score);
+    }
+}
+```
 
+可能效率较之于我们手码的效率要低下一些，因为涉及到基本数据类型都会进行装箱拆箱操作，涉及到数组的hash值计算也会直接将数组中的所有元素考虑进来
 
+对不可变对象，因为关键域都是不可变的，没有必要进行多次计算，可以将数值缓存起来，Demo如下：
 
+```java
+public final class Student {
+    private final Integer age;
+    private final String name;
+    private final Integer score;
+    
+    private int hashCode;
+    
+    @Override
+    public int hashCode() {
+        // 引入本地变量记录hashCode，避免并发问题，确实对基本数据类型也是一个避免并发的好办法
+        int res = hashCode;
+        if (res == 0) {
+            res = Objects.hash(age, name, score);
+            hashCode = res;
+        }
+        
+        return res;
+    }
+}
+```
+
+不要想着通过删减关键域进行哈希运算来提高hashCode的执行速度，很可能得不偿失
+
+现在可以使用Lombok来直接生成hashCode方法了。
+
+> 不得不说作者从开发者的角度完全考虑到了用户可能怎么调用这些库函数，并且给出了最佳的一种调用方案和可能出现的错误
 
 
 
