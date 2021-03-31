@@ -680,3 +680,164 @@ public final class Student {
 
 
 
+
+
+
+
+## 第12条：始终要覆盖toString方法
+
+
+
+Object的toString方法默认输出：全限定类名+@+hashCode的十六进制表示，测试方法如下：
+
+```java
+Object o = new Object();
+System.out.println("hashCode：" + Integer.toHexString(o.hashCode()));
+System.out.println(o);
+```
+
+但是toString方法的初衷是输出一个简易的但信息丰富的，易于阅读的表达式，建议所有的子类都覆盖这个方法：
+
+`It is recommended that all subclasses override this method.`出现在toString方法注释上。
+
+> 读书难免会带着批判的眼光，但是对这本书，可以放松一点对书籍内容的质疑了，再次感叹作者对Java库和并发的理解。
+
+toString方法不仅在我们日常使用中调用很多，在错误输出的时候，很可能直接打印对象，这时候如果有优越的字符串，那么就会让线上Debug变得非常简单。
+
+存在一个观点：toString产生的字符串是否需要对外部指出具体的格式，如果指定了具体的格式，我们需要提供一个构造器或者是静态工厂方法来完成通过String的对象构建
+
+> 感觉很有点序列化和反序列化的意思了。
+
+但如果指定格式，那么需要慎重定义格式，因为在以后的发行版本中都需要维持这个格式
+
+> 真的是体验过版本迭代的过程才能发出的肺腑之言：如果将来的发行版本中改变了这种表示法
+
+无论时候指定格式都应该表明toString的意图
+
+
+
+在最后也是推荐使用像是Lombok等自动生成工具来生成toString方法，只不过推荐的是Google的AutoValue工具
+
+
+
+
+
+
+
+## 第13条：谨慎地覆盖clone
+
+
+
+由于Object中的clone方法是protected的，我们在外部无法直接调用clone方法来完成对象的克隆操作，因此我们需要实现自己的clone并且扩大访问权限。
+
+使用clone方法需要对象实现Cloneable接口，否则会抛出CloneNotSupportException异常，**这种模式不值得效仿，通常情况下，实现接口是为了表明类可以为它的客户做些什么，然而，Cloneable接口改变了父类中受保护的方法的行为**
+
+> 确实是这样的，使用起来就感觉有点奇怪，果不其然，极端的实现案例，估计是为JVM的性能让步
+
+:question:为什么clone方法被设置为protected
+
+Answer：https://stackoverflow.com/questions/1138769/why-is-the-clone-method-protected-in-java-lang-object
+
+不一定对，没几个人有权能对Java语言的Object类设计说三道四，都只是发表一下自己的看法而已：
+
+The Clonable interface is just a marker saying the class can support clone. The method is protected because you shouldn't call it on object, you can (and should) override it as public
+
+感觉仅仅只是因为这个方法不太安全或者是效率太低，如果我们需要使用，得手动Override这个方法，将访问权限改成public然后再使用。
+
+突然有了些自己的理解，对有些类如不可变类，在本书当中说道：**不可变的类永远都不应该提供clone方法，因为他只会激发不必要的克隆。**然后通过这样的设计，可以有几层安全防护如果我们没有提供clone方法，第一层protected防护，第二层反射防护（通过抛出CloneNotSupportedException异常的方式来进行防护）
+
+
+
+重写时候的clone方法模板：
+
+```java
+public class Data implements Cloneable {
+    @Override
+    public Data clone() {
+        try {
+            return (Data) super.clone();
+        } catch (CloneNotSupportedException e) {
+            // 不可能发生
+            throw new AssertionError();
+        }
+    }
+}
+```
+
+几个注意点：
+
+1、重写的方法的访问范围可以比原来的大
+
+2、返回值可以是限定返回值的子类
+
+3、抛出异常可以是限定抛出异常的子类
+
+采用以上这种写法可以避免1、异常抛出、2、类型转换
+
+
+
+clone方法仅仅只会将内部关键阈进行值的传递，如果是基本数据类型就会进行值的传递，但是如果是引用数据类型，那么就会直接进行简单的引用传递，不会就行深克隆
+
+为了达到正确性的目的，我们可以使用最简单的解决方法——在clone方法中递归调用
+
+```java
+public class Stack {
+    private Object[] elements;
+    private int size = 0;
+    
+    
+    @Override
+    public Stack clone() {
+        try {
+            Stack res = (Stack) super.clone();
+            // 进行内部对象的克隆，这里因为Array也是按照这个方式进行书写的，可以直接返回Object数组，不用我们再进行墙砖
+            res.elements = elements.clone();
+            return res;
+        } catch (CloneNotSupportExceptioin e) {
+            // 理论上是不可能发生的，因此直接抛出Error
+            throw new AssertionExecption();
+        }
+    }
+}
+```
+
+> Error是可以不用捕获处理的，类似于RuntimeException异常
+
+如果此时elements被final修饰了，那么就无法使用上述这个方法了，final域与Cloneable的设计师存在冲突的，无法相互兼容，因为一旦赋初值了就无法改变了。
+
+参考ArrayList的clone方法：
+
+```java
+public Object clone() {
+    try {
+        ArrayList<?> v = (ArrayList<?>) super.clone();
+        v.elementData = Arrays.copyOf(elementData, size);
+        v.modCount = 0;
+        return v;
+    } catch (CloneNotSupportedException e) {
+        // this shouldn't happen, since we are Cloneable
+        throw new InternalError(e);
+    }
+}
+```
+
+但是这里没有进行转型操作。
+
+
+
+设计的clone方法终究只是浅拷贝，可能是出于性能的原因吧，没有直接在native方法中实现深拷贝，感觉如果Java真的想要实现深拷贝，在JVM层面应该还是非常容易完成的（说白了对象只是一段内存，复制这段内存到一个新的地方，然后返回就行了）。
+
+
+
+使用CLone架构最多也只能做到这样了，另一种思路是：
+
+我们直接创建一个对象，然后将对象中所有的关键域按照当前这个需要克隆的对象来进行遍历赋值操作。
+
+如果可克隆的类有了子类，但是不想要克隆这个属性，但是由于实现了Cloneable接口，那么clone方法调用是不会出错的，~~此时我们需要在子类中Override这个clone方法并且将这个方法的访问权限改成protected~~，并且在方法体当中直接抛出CloneNotSupportException异常
+
+> 一旦子类扩展了这个方法的访问权限，那么他的子类也只能在他的基础上完成方法访问权限的扩展
+>
+> 即不存在protected——public——protected的转换过程
+
+
+
