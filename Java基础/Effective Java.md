@@ -863,7 +863,96 @@ public Object clone() {
 
 
 
+## 第14条：考虑实现Comparable接口
 
 
 
+类实现Comparable接口表示类具有内在的排序关系，排序关系是由Comparable中的compareTo方法来决定的
 
+Java当中所有的值类以及所有的枚举类型都实现了Comparable接口，如果你在实现一个值类，并且他具有非常明显的内在排序关系，那么就需要你考虑实现Comparable接口了。
+
+Java当中的TreeSet、TreeMap的数据存储依赖于Comparable接口，并且工具类Collections和Arrays的搜索和排序算法依赖于Comparable接口。
+
+
+
+一点强烈的建议：compareTo方法应该和equals方法施加等同的测试，即返回相同的结果，因为有些集合会按照equals方法来进行判断（Hash），有些会按照compareTo方法来进行判断（Tree），应该尽最大的努力去争取，当然这并不会造成多大的问题。
+
+
+
+测试Demo：
+
+```java
+// 可以替换为HashSet，结果会输出 两个数字，这个只会输出一个数字
+static Set<BigDecimal> set = new TreeSet<>();
+
+public static void main(String[] args) {
+    set.add(new BigDecimal("1.0"));
+    set.add(new BigDecimal("1.00"));
+
+    System.out.println(set);
+}
+```
+
+> 使用BigDecimal类推荐使用`public BigDecimal(String info)`来完成对象的初始化 ，而不是使用参数为double的来进行初始化
+>
+> 之所以使用字符串来进行数据初始化还是因为double数据类型数据在存储的时候可能会导致小数点丢失的问题。
+
+
+
+equals和compareTo最主要的区别在于方法意义，一个是比较是否相等，进行等同性的比较，另一个是进行大小的比较，除此之外，调用时候传入null值的处理方式应该是不一样的，equals因为有固定的`if (obj instanceof Class)`固定编程范式，会直接返回false，而compareTo方法不需要对值进行特殊处理如对null值进行单独处理。
+
+
+
+对所有的基本数据类型的比较，我们可以直接使用基本数据类型的封装类的静态方法compare，直接使用就可以了。
+
+如果一个类拥有多个关键域，那么这个类的compareTo方法的实现应该是从最关键的阈开始比较，降低关键级别直到所有的域对比完，如果某个阈产生了非零的比较结果，那么直接将这个值进行返回，如存在以下类需要进行compareTo方法实现：
+
+```java
+public class PhoneNumber implements Comparable {
+    
+    // 关键域
+    private Short areaCode;
+    private Integer prefix;
+    private Integer offset;
+    
+    @Override
+    public int compareTo(PhoneNumber number) {
+        int res = Short.compare(areaCode, number.areaCode);
+        if (res == 0) {
+            res = Integer.compare(prefix, number.prefix);
+            if (res == 0) {
+                res = Integer.compare(offset, number.offset);
+            }
+        }
+        return res;
+    }
+}
+```
+
+
+
+可以借助Java8的Comparator来完成比较器的构建：
+
+```java
+public class PhoneNumber implements Comparable<PhoneNumber> {
+    private Short areaCode;
+    private Integer prefix;
+    private Integer offset;
+    // 如果不是基本数据类型，但是实现了Comparable接口
+    private Comparable obj;
+
+
+    @Override
+    public int compareTo(PhoneNumber o) {
+        // 创建一个比较器，需要我们自己指定待比较的对象的数据类型
+        Comparator<PhoneNumber> comparator = Comparator.comparingInt((PhoneNumber number) -> number.areaCode)
+                .thenComparingInt(number -> number.prefix)
+                .thenComparingInt(nummber -> nummber.offset)
+                .thenComparing((o1) -> o1.obj.compareTo(this.obj));
+
+        return comparator.compare(this, o);
+    }
+}
+```
+
+如果此时obj关键域没有 指定compareTo方法实现，那么可以递归使用thencomparingInt等方法来实现比较。
