@@ -147,6 +147,47 @@ Spring使用到的设计模式：
 
 
 
+Spring循环依赖的解决方法：
+
+循环依赖产生的原因：
+
+存在如下两个类：
+
+```java
+class A {
+    private B b;
+    // 应该不能通过构造器来进行注入，只能通过Setter来进行对象属性注入
+    public void setB(B b) {
+        this.b = b;
+    }
+}
+
+class B {
+    private A a;
+    public void setA(A a) {
+        this.a = a;
+    }
+}
+```
+
+在构建A对象的过程中存在如下过程：
+
+1、构建A对象：ApplicationContext.getBean方法在Spring容器中查看A是否存在，不存在，直接调用构造函数创建，然后使用Setter注入B
+
+2、构建B对象，直接创建，然后当完成Setter构造器注入的时候调用ApplicationContext的getBean方法完成对A的整体构造。
+
+此时即A对象和B对象都完成创建，直接返回即可。
+
+
+
+只有在依赖注入为Setter注入的时候才能完成，如果是由构造器注入，那么就无法完成了，因为构造器直接构造的是一个完整的对象，无法类似于Setter构造出一个半成品对象，然后相互赋值来完成
+
+
+
+
+
+
+
 
 
 # SpringBoot面试常见问题
