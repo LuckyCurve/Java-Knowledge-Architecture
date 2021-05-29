@@ -589,3 +589,119 @@ JVM内部的服务器与客户端之间的通信，难怪SOFA RPC支持这种通
 小结
 
 完成了Netty的传输、实现和使用。并针对不同的传输给出了不同的最佳实践。
+
+
+
+
+
+
+
+## 第五章、ByteBuf
+
+
+
+网络传输的基本单位是字节，Java NIO使用ByteBuffer作为自己的字节容器，但是由于JDK需要提供全方位功能支持，难免使用起来会比较繁琐和复杂，Netty就另起炉灶，效仿ByteBuffer的处理逻辑推出了自己的字节容器——ByteBuf。
+
+> 千万不要抱有捧一踩一的观点，只是在易用性上ByteBuf或许确实较之于ByteBuffer更加的好，后文也会介绍非常多ByteBuf较之于ByteBuffer的优点，但很有可能这是作者刻意为之，为了保证读者对ByteBuf的长久兴趣，永远要带着辩证的观点去思考和学习。
+
+
+
+ByteBuf优点：
+
+- 可以指定是在堆内存分配还是在直接内存分配
+- 实现零拷贝（仅限于直接内存）
+- 容器可以按需增长（性能不知如何）
+- 在读写期间不需要flip方法（之所以ByteBuffer需要flip是因为他内部仅仅持有一个指针，而ByteBuf内部是持有读写指针的）
+- 支持ByteBuf池化资源的管理
+
+
+
+可以将ByteBuf的读写操作理解成一个字节数组存储数据，读写指针分别完成读操作和写操作
+
+如果读指针跑到了写指针的前面，会触发IndexOutOfBoundsException异常，因为ByteBuf支持动态扩展（当然也可以限定长度），理论上写指针不会触发边界，但是由于内部使用Integer记录数组长度，因此写指针的上限Index为Integer.MAX_VALUE。
+
+read和write操作会推进相应的指针，但get和set开头的方法则不会完成推进。
+
+
+
+具体说下ByteBuf的数据结构和使用特点吧：
+
+1、分配在堆缓冲区的ByteBuf
+
+支持快速的进行分配和释放（毕竟较之于直接内存，JVM对堆内存的管控力更强），其实就相当于是将数据保存在一个堆内存的字节数组当中，然后通过ByteBuf的API完成对字节数组的操控。
+
+完成对堆缓冲区上的ByteBuf的基本操作：
+
+```java
+ByteBuf buf = Unpooled.buffer();
+// 一个字节表示范围：-128 ~ 127
+buf.writeByte(128);
+
+// 是基于堆内存的ByteBuf
+if (buf.hasArray()) {
+    byte[] array = buf.array();
+    int offset = buf.arrayOffset();
+    int length = buf.readableBytes();
+    // 特殊处理，CopyOfRange是[]区间
+    byte[] copy = Arrays.copyOfRange(buf.array(), offset, offset + length);
+}
+```
+
+为什么要特殊处理呢？结合ByteBuf的数据结构：
+
+0| ---	可废弃字节	--- |readIndex| ---	可读字节	--- |writeIndex| ---	可写字节	--- |capacity
+
+capacity默认是Integer.MAX_VALUE
+
+可以手动调用discardReadBytes方法完成对废弃空间的回收，这时候废弃空间就到了可写空间里面去了，非常类似于一个循环队列。
+
+
+
+2、分配在直接缓冲区的ByteBuf
+
+好处是在网络传输过程中可以直接实现发送功能，如果是在堆上的ByteBuf则需要完成到直接内存的复制才能完成数据发送
+
+缺点也非常明显：如果想要操作在直接内存上的ByteBuf则需要完成数据到堆内存的复制过程：
+
+```java
+ByteBuf buf = Unpooled.directBuffer();
+if (!buf.hasArray()) {
+    int length = buf.readableBytes();
+    byte[] array = new byte[length];
+    buf.getBytes(length, array);
+}
+```
+
+非常明显，需要自己new一片Byte数组。
+
+
+
+3、复合缓冲区
+
+ByteBuf的一个子类：CompositeByteBuf
+
+算是自己的一个创新点：完成对多个ByteBuf的逻辑抽象，在外看类似于实现了对ByteBuf的合并
+
+> 如果其中都是hasArray最后会返回true，如果其中有一个false就返回false了
+
+```java
+public static ByteBuf merge(ByteBuf... bufs) {
+    CompositeByteBuf res = Unpooled.compositeBuffer();
+    for (ByteBuf buf : bufs) {
+        res.addComponent(buf);
+    }
+    res.removeComponent(0);
+    return res;
+}
+```
+
+因为可能不支持堆内存方式，因此还是老老实实复制一遍到堆上吧
+
+```java
+CompositeByteBuf buf = Unpooled.compositeBuffer();
+int length = buf.readableBytes();
+byte[] array = new byte[length];
+buf.getBytes(length, array);
+```
+
+以上三种就是ByteBuf基本数据存储方式了。
