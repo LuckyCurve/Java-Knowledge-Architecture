@@ -655,6 +655,8 @@ capacity默认是Integer.MAX_VALUE
 
 可以手动调用discardReadBytes方法完成对废弃空间的回收，这时候废弃空间就到了可写空间里面去了，非常类似于一个循环队列。
 
+无论是对基于堆内存的还是基于直接内存的都是这样，只是基于直接内存的ByteBuf我们无法直接获取数组，还是可以通过readByte方法获取一个个字节的。
+
 
 
 2、分配在直接缓冲区的ByteBuf
@@ -705,3 +707,156 @@ buf.getBytes(length, array);
 ```
 
 以上三种就是ByteBuf基本数据存储方式了。
+
+
+
+存储完成后，自然该学习的是基于ByteBuf暴露的API完成字节级操作了，直接粘贴一些Sample吧
+
+- 随机访问索引
+
+```java
+ByteBuf buf = Unpooled.buffer();
+for (int i = 0; i < buf.capacity(); i++) {
+    System.out.println(buf.getByte(i));
+}
+```
+
+> 对基于堆内存的ByteBuf指的是readIndex还没有移动时候的顺序访问
+
+- 可丢弃字节
+
+```java
+ByteBuf buf = Unpooled.buffer();
+// 普通ByteBuf
+ByteBuf byteBuf = buf.discardReadBytes();
+// 组合ByteBuf
+ByteBuf byteBuf1 = buf.discardSomeReadBytes();
+```
+
+> test了一下，都是直接进行的就地修改，不需要使用返回值了
+
+- 获取所有字节
+
+自己写的通用方法
+
+```java
+ByteBuf buf = Unpooled.directBuffer();
+buf.writeBytes("hello world".getBytes(CharsetUtil.UTF_8));
+
+while (buf.isReadable()) {
+    System.out.println(((char) buf.readByte()));
+}
+```
+
+- 所有数据写入
+
+```java
+ByteBuf buf = Unpooled.buffer(5);
+while (buf.writableBytes() >0) {
+    buf.writeByte(100);
+}
+```
+
+- 索引管理
+
+直接操作reader和writer索引
+
+```java
+buf.writerIndex(4);
+buf.readerIndex(1);
+```
+
+还有一组mark和reset操作：markReaderIndex、markWriterIndex、resetReaderIndex、resetWriterIndex来完成标记和复位操作。
+
+clear方法会将write和read都置为零，但是不会清除掉数据，仍可以以`getByte(index)`来访问到
+
+```java
+ByteBuf buf = Unpooled.buffer();
+buf.writeBytes("hello world".getBytes(CharsetUtil.UTF_8));
+buf.clear();
+for (int i = 0; i < buf.capacity(); i++) {
+    System.out.println(buf.getByte(i));
+}
+```
+
+无论怎么操作都必须保证reader<writer<capacity，否则会报异常IndexOutOfBoundsException
+
+clear方法较之于discardReadBytes会轻量得多，只涉及到指针的移动，discardReadBytes会涉及到内存复制问题。
+
+- 查找方法
+
+```java
+ByteBuf buf = Unpooled.buffer();
+// 普遍查找方法
+buf.writeBytes("hello world".getBytes(CharsetUtil.UTF_8));
+System.out.println(buf.indexOf(0, buf.capacity(), ((byte) 'o')));
+
+// 常见值查找方法
+int index = buf.forEachByte(ByteProcessor.FIND_ASCII_SPACE);
+```
+
+- 派生缓冲区
+
+相当于是为ByteBuf提供一个单独的视图，非常类似于copy了一个新的ByteBuf，这个ByteBuf具有自己的读索引，写索引以及标记索引，但是与原来派生的ByteBuf共享内部存储，因此修改时候是会一起修改的。
+
+派生操作（记录我认为重要的两个API）：`duplicate()`，`slice()`，`slice(int, int)`
+
+复制操作：`copy()`，`copy(int, int)`
+
+- 读写操作
+
+分两大块：get/set（保持索引位置不变）、read/write（推进索引）
+
+
+
+- 其他操作
+
+isReadable、isWritable、readableBytes、writableBytes、capacity、maxCapacity都可以见名知意了
+
+
+
+
+
+ByteBufHolder接口
+
+ByteBufHolder为ByteBuf提供了多种高级特性如缓冲区池化等
+
+提供的几个方法：
+
+`content()`：返回ByteBufHolder底层所持有的ByteBuf
+
+`copy()`：返回该ByteBufHolder的一个深拷贝
+
+`duplicate`：返回ByteBufHolder浅拷贝，内部ByteBuf共享
+
+
+
+ByteBuf分配（创建）的几种方式：
+
+- 按需分配：ByteBufAllocator接口
+
+Netty通过这个接口可以实现ByteBuf的池化，提供的API：
+
+![image-20210530165251937](https://gitee.com/LuckyCurve/img/raw/master//img/image-20210530165251937.png)
+
+使用起来ByteBufAllocator是一个接口，可以直接调用Channel或者是ChannelHandlerContext的alloc方法来完成对ByteBufAllocator的获取。
+
+- Unpooled缓冲区
+
+也是最常见的方式了，因为并不是所有时候你都可以获取到ByteBufAllocator的引用
+
+![](https://gitee.com/LuckyCurve/img/raw/master//img/image-20210530170231829.png)
+
+都是静态方法，非常适用于并不需要Netty的其他组件的非网络项目。
+
+
+
+Netty的ByteBuf和ByteBufHolder实现了ReferenceCounted接口从而具有了引用计数的特征，如果引用计数为0那么就会被释放，如果试图去访问一个已经被释放了的对象。会报异常：IllegalReferenceCountException。
+
+
+
+小结：
+
+这一章完成了对ByteBuf的创建，使用，聚合视图，数据访问，读写操作，池化资源的使用等操作。
+
+下一章将专注ChannelHandler，因为ByteBuf仅仅提供一个数据载体，而在ChannelHandler中定义了数据处理规则，ChannelHandler会将前面的各个组件串起来。
