@@ -860,3 +860,54 @@ Netty的ByteBuf和ByteBufHolder实现了ReferenceCounted接口从而具有了引
 这一章完成了对ByteBuf的创建，使用，聚合视图，数据访问，读写操作，池化资源的使用等操作。
 
 下一章将专注ChannelHandler，因为ByteBuf仅仅提供一个数据载体，而在ChannelHandler中定义了数据处理规则，ChannelHandler会将前面的各个组件串起来。
+
+
+
+
+
+## 第六章、ChannelHandler和ChannelPipeline
+
+
+
+ByteBuf是数据装载容器，这一章开始了解数据容器的处理流程以及处理组件，主要是在ChannelPipeline当中完成对ChannelHandler链接的组装。
+
+因为数据是基于Channel来进行传输的，在学习ChannelHandler和ChannelPipeline之前有必要了解基本的生命周期：
+
+- ChannelUnregistered：被创建，但未注册到EventLoop当中去
+- ChannelRegistered：已经被注册进了EventLoop
+- ChannelActive：已经连接到远程节点，可以收发数据
+- ChannelInactive：没有连接到远程节点
+
+当发生状态转变时候会发送相应的事件到ChannelPipeline中的ChannelHandler
+
+
+
+ChannelHandler的生命周期发生变化时，主要指的是当ChannelHandler被添加到ChannelPipeline或者是从ChannelPipeline当中移除时候会调用这些操作，这些操作会接受一个入参ChannelHandlerContext，通过ChannelHandlerContext可以完成对ChannelHandler上下文信息的获取，或者是获取对应的Channel来完成对应的操作：
+
+- handlerAdded：当把ChannelHandler添加到ChannelPipeline中被调用
+- handlerRemoved：当把ChannelHandler从ChannelPipeline移除时候调用
+- exceptionCaught：在处理过程中ChannelPipeline中产生错误时候调用
+
+主要两个重要的ChannelHandler子接口：
+
+- ChannelInboundHandler：处理入站数据以及各种状态变化
+- ChannelOutboundHandler：处理出站数据并且允许拦截所有的操作
+
+
+
+ChannelHandler就是观察者模式的一种实现，通过完成对对应方法的回调来处理事件，入参均为ChannelHandlerContext，ChannelHandler提供的监听方法有：
+
+- handlerAdded：当ChannelHandler被加入到ChannelPipeline后完成回调
+- handlerRemoved：当ChannelHandler从ChannelPipeline当中移除时候调用
+- 已废弃，建议在ChannelInboundHandler当中使用 exceptionCaught：当CHannelPipeline发生异常时候会将此异常和ChannelHandlerContext以入参的形式传入到该方法当中来
+
+ChannelInboundHandler在接收数据时候或者与其对应的Channel状态发生变化时候调用，只有这两种情况下会完成对ChannelInboundHandler的调用，和Channel的生命周期密切相关，提供的特有方法有：
+
+- channelRegistered
+- channelUnRegistered
+- channelActive
+- channelInactive
+- channelRead
+- channelReadComplete
+- userEventTriggered：当完成对`ChannelInboundInvoker fireUserEventTriggered(Object event);`调用时候会将当前event和ChannelHandlerContext传入到这个方法当参数传入
+
