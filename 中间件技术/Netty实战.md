@@ -910,4 +910,5 @@ ChannelInboundHandler在接收数据时候或者与其对应的Channel状态发�
 - channelRead
 - channelReadComplete
 - userEventTriggered：当完成对`ChannelInboundInvoker fireUserEventTriggered(Object event);`调用时候会将当前event和ChannelHandlerContext传入到这个方法当参数传入
-
+- channelWritabilityChanged：当Channel的可写状态发生改变时被调用，可以调用channel.isWritable方法来判断Channel的可写性
+- exceptionCaught：发生异常时候捕获，向后面的ChannelInboundHandler传递

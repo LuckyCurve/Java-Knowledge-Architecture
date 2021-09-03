@@ -40,7 +40,7 @@ Java虚拟机栈，也就是我们常说的栈，用于存放方法执行的栈�
 
 ![img](https://img-blog.csdn.net/20161019204824590?watermark/2/text/aHR0cDovL2Jsb2cuY3Nkbi5uZXQv/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70/gravity/Center)
 
-当支持动态扩展的时候报StackOverflowError，不支持动态扩展且达到了最大内存报OutOfMemoryError
+**当支持动态扩展的时候报StackOverflowError，不支持动态扩展且达到了最大内存报OutOfMemoryError**
 
 
 

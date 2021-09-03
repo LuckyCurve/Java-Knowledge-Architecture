@@ -285,7 +285,7 @@ ThreadLocal
 
 原理：每个Thread内部都持有一份ThreadLocalMap，实际数据存储于此，我们使用ThreadLocal时候只是将其作为代理，存取数据都是直接映射到了本地线程的ThreadLocalMap上，ThreadLocalMap的结构为`<ThreadLocal, Value>`，Value就是我们通过ThreadLocal#set进来的值
 
-ThreadLocalMap的内存泄露问题：ThreadLocalMap内部持有的ThreadLocal是软引用，而Value是强引用，如果GC了Key，存在一个key为null的Entry，那么该Value永远不会被GC掉。当然ThreadLocalMap已经考虑到了，在增删查的时候会手动清理到key为null的记录
+ThreadLocalMap的内存泄露问题：ThreadLocalMap内部持有的ThreadLocal是弱引用，而Value是强引用，如果GC了Key，存在一个key为null的Entry，那么该Value永远不会被GC掉。当然ThreadLocalMap已经考虑到了，在增删查的时候会手动清理到key为null的记录
 
 > 强引用：只要强引用存在，指向的对象一定不会被回收
 >
@@ -452,7 +452,7 @@ AQS，全名AbstractQueuedSynchronizer，是一个用来构建锁和同步器的
 
 ![AQS原理图](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-6/AQS%E5%8E%9F%E7%90%86%E5%9B%BE.png)
 
-通过维护一个int成员变量来表示同步状态，每次视图改变变量状态（获取锁和释放锁）就会使用CAS操作来保证操作的正确性。
+通过维护一个int成员变量来表示同步状态，每次视图改变变量状态（获j取锁和释放锁）就会使用CAS操作来保证操作的正确性。
 
 
 
