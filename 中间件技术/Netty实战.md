@@ -1318,3 +1318,19 @@ AbstractBootstrap的签名为：`public abstract class AbstractBootstrap<B exten
 
 指明远程地址，可以使用connect方法指明
 
+
+
+在connect方法被调用后，Bootstrap类会创建一个新的Channel
+
+
+
+不能混用Channel和EventLoopGroup，必须使用前缀搭配的，如NIO、OIO、Epoll等
+
+
+
+在引导调用bind或者connect方法之前，必须完成以下设置：
+
+- group
+- channel或者channelFactory
+- handler
+
