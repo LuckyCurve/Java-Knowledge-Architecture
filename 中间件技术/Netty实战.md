@@ -642,7 +642,7 @@ if (buf.hasArray()) {
     byte[] array = buf.array();
     int offset = buf.arrayOffset();
     int length = buf.readableBytes();
-    // 特殊处理，CopyOfRange是[]区间
+    // 特殊处理，CopyOfRange是[)区间
     byte[] copy = Arrays.copyOfRange(buf.array(), offset, offset + length);
 }
 ```
@@ -912,3 +912,409 @@ ChannelInboundHandler在接收数据时候或者与其对应的Channel状态发�
 - userEventTriggered：当完成对`ChannelInboundInvoker fireUserEventTriggered(Object event);`调用时候会将当前event和ChannelHandlerContext传入到这个方法当参数传入
 - channelWritabilityChanged：当Channel的可写状态发生改变时被调用，可以调用channel.isWritable方法来判断Channel的可写性
 - exceptionCaught：发生异常时候捕获，向后面的ChannelInboundHandler传递
+
+> ~~只有在发生变化的时候才会激活，比如最开始是UnRegistered，只有在最后资源释放的时候重新变回了UnRegistered才会触发方法，否则不会~~
+>
+> 状态流转：Register——Active——Inactive（离开活动状态，即断开连接）——unRegister（Channel取消注册到EventLoop上了）
+
+
+
+之所以`SimpleChannelInboundHandler`可以自动自动释放，是因为
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    boolean release = true;
+    try {
+        if (acceptInboundMessage(msg)) {
+            @SuppressWarnings("unchecked")
+            I imsg = (I) msg;
+            channelRead0(ctx, imsg);
+        } else {
+            release = false;
+            ctx.fireChannelRead(msg);
+        }
+    } finally {
+        if (autoRelease && release) {
+            ReferenceCountUtil.release(msg);
+        }
+    }
+}
+```
+
+只是自动帮我们加上了ReferenceCountUtil的release方法调用
+
+
+
+
+
+ChannelOutboundHandler接口
+
+出站操作和数据将被该实例处理，强大的功能是按需推迟操作或者是事件，可以通过一些复杂的方法来处理请求，如：远程节点写入暂停了，可以推迟flush操作并稍后继续。
+
+核心方法：
+
+- bind：当Channel绑定到远程地址时候调用
+- connect：当Channel连接到远程地址时候调用
+- disconnect：当Channel断开远程连接
+- close：当关闭Channel时候调用
+- deregister：从EventLoop注销时候调用
+- read：从Channel读取数据时候调用
+- flush：当Channel调用了flush时候调用
+- write：向Channel当中写数据时候调用
+
+绝大多数的ChannelOutboundHandler都需要一个ChannelPromise作为入参，ChannelFuture是ChannelFuture的子类，提供了setSuccess和setFailure方法完成回调函数的设置，相当于扩展提供了Future的部分写方法。
+
+
+
+ChannelHandlerAdapter存在方法isSharable，如果实现类当中被注解@Sharable标注了，那么该方法就返回true，表示该Handler可以同时被注册进多个ChannelPipeline当中
+
+
+
+看到一个非常好的总结：**ChannelInboundHandler和ChannelOutboundHandler的区别主要是对ChannelPipeline而言的，如果事件是传播出ChannelPipeline，那么则是outBound的，如果是传入ChannelPipeline，那么是inBound的**
+
+
+
+ChannelOutboundHandler并没有类似于SimpleChannelInboundHandler，当消费完成之后需要手动完成资源释放：`ReferenceCountUtil.release(obj);`，此外还必须通知ChannelPromise，否则ChannelFuture上注册的ChannelFutureListener会失效。
+
+如果一个消息被消费了或者是被丢弃了，没有被传入到下一个ChannelOutboundHandler，那么用户就需要回收掉它（为什么不是ChannelHandler？）。如果消息到达了实际的传输层，那么在写入或者是Channel关闭时候，资源会自动释放（Channel关闭不会释放不在传输层的资源）。
+
+Channel绑定唯一的ChannelPipeline，并且不能修改，不能分离，通过ChannelHandlerContext实现，会将消息转发到同一超类型的下一个ChannelHandler
+
+通过ChannelHandlerContext可以实现和ChannelPipeline以及其他的ChannelHandler交互，实现通知下一个ChannelHandler或者动态修改所属的ChannelPipeline。
+
+![image-20211126155041990](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211126155041990.png)
+
+**一个ChannelPipeline可以包含多种类型的ChannelHandler，具体的Handler的执行顺序直接上ChannelPipeline注：**
+
+```
+例如，假设我们创建了以下管道：
+   ChannelPipeline p = ...;
+   p.addLast("1", new InboundHandlerA());
+   p.addLast("2", new InboundHandlerB());
+   p.addLast("3", new OutboundHandlerA());
+   p.addLast("4", new OutboundHandlerB());
+   p.addLast("5", new InboundOutboundHandlerX());
+
+在上面的示例中，名称以Inbound开头的类表示它是一个入站处理程序。 名称以Outbound开头的类表示它是一个出站处理程序。
+在给定的示例配置中，当事件进入时，处理程序评估顺序为 1、2、3、4、5。 当事件出站时，顺序为 5, 4, 3, 2, 1。 在此原则之上， ChannelPipeline跳过某些处理程序的评估以缩短堆栈深度（根据事件类型来完成跳过）：
+3 和 4 没有实现ChannelInboundHandler ，因此入站事件的实际评估顺序将是：1、2 和 5。
+1 和 2 没有实现ChannelOutboundHandler ，因此出站事件的实际评估顺序将是： ChannelOutboundHandler和 3。
+如果 5 同时实现ChannelInboundHandler和ChannelOutboundHandler ，则入站和出站事件的评估顺序可能分别为 125 和 543。
+```
+
+ChannelHandler可以在运行过程当中动态更改从属的Pipeline，主要方式为通过ChannelHandlerContext来获取到Pipeline来调用Pipeline的addFirst/Last、addBefore/After，甚至将自身从ChannelPipeline当中移除，实现灵活的逻辑
+
+
+
+```
+建议可以使用带名称的Handler，因为在后续对ChannelPipeline的remove或者replace的时候可以指定唯一名字来完成，Netty会保证名字唯一
+```
+
+
+
+ChannelHandler的执行：因为ChannelHandler是从属于一个特定的Channel的，一个Channel有且仅能从属一个EventLoop，一个EventLoop绑定唯一的Thread，所以当前Channel当中的所有ChannelHandler的IO操作，甚至别的共用这一个EventLoop的Channel当中的ChannelHandler的IO操作，都会直接使用到这个IO线程，至关重要的就是不要阻塞住这个线程，否则整体IO都会受影响。
+
+以上是尽量避免在ChannelHandler当中使用阻塞IO，但是难免的有时候业务处理逻辑就需要和老的阻塞IO打交道，那么此时ChannelPipeline在完成ChannelHandler的组装的时候（如addLast等方法时候）这时候我们需要传入一个EventExecutorGroup参数，这时候当中的阻塞IO操作会被这个特定的EventExecutorGroup当中的某个EventExecutor所执行，而不会去阻塞整个EventLoop当中默认的DefaultEventExecutorGroup的执行。
+
+几个Pipeline访问ChannelHandler的操作：
+
+```
+ChannelPipeline pipeline = ctx.pipeline();
+
+List<String> list = pipeline.names();
+
+pipeline.get(name / Class.ChannelHandler);
+
+pipeline.context(name / ChannelHandler / ChannelHandler.class);
+```
+
+
+
+ChannelPipeline触发入站操作：
+
+```java
+@Override
+ChannelPipeline fireChannelRegistered();
+
+@Override
+ChannelPipeline fireChannelUnregistered();
+
+@Override
+ChannelPipeline fireChannelActive();
+
+@Override
+ChannelPipeline fireChannelInactive();
+
+@Override
+ChannelPipeline fireExceptionCaught(Throwable cause);
+
+@Override
+ChannelPipeline fireUserEventTriggered(Object event);
+
+@Override
+ChannelPipeline fireChannelRead(Object msg);
+
+@Override
+ChannelPipeline fireChannelReadComplete();
+
+@Override
+ChannelPipeline fireChannelWritabilityChanged();
+```
+
+都是调用head的对应事件，而head调用完对应事件必然会接连下去调用后面的事件了，入站感觉好理解，着重看一下出站的：
+
+![image-20211126220918630](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211126220918630.png)
+
+也会调用对应的ChannelOutboundHandler当中对应的方法，以及完成后续的链式调用。
+
+
+
+实际上这些方法都在ChannelInboundInvoker和ChannelOutboundInvoker当中定义了。
+
+
+
+ChannelHandlerContext当中也实现了这两个接口，与Channel或者ChannelPipeline当中不同的是传播的起点是不同的（这两者本身是等价的），**前者是当前ChannelHandlerconContext所对应的下一个ChannelHandler开始传播**，后者是从head开始传播或者tail开始传播（根据入站事件和出站事件的不同而定）。
+
+使用ChannelHandlerContext的两个要点：
+
+- ChannelHandlerContext与ChannelHandler之间的绑定永远不会改变
+- ChannelHandlerContext会产生更短的事件流，依据这个特性可以获得更大的性能
+
+
+
+因为ChannelHandlerContext负责的是当前ChannelHandler与下一个ChannelHandler之间的交互，因此在ChannelHandlerContext当中发起事件调用的时候只能将该事件发送给下一个ChannelHandler，从代码层面上也可以看出来：
+
+```java
+static void invokeChannelActive(final AbstractChannelHandlerContext next) {
+    EventExecutor executor = next.executor();
+    if (executor.inEventLoop()) {
+        next.invokeChannelActive();
+    } else {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                next.invokeChannelActive();
+            }
+        });
+    }
+}
+```
+
+
+
+非常重要的一点：ChannelHandler是可以实现复用的，但ChannelHandlerContext相当于是ChannelHandler在这个Channel当中的上下文信息，因此是不可能复用的，从源代码和注解当中可以窥见一二。
+
+```java
+/**
+     * Gets called after the {@link ChannelHandler} was added to the actual context and it's ready to handle events.
+     */
+void handlerAdded(ChannelHandlerContext ctx) throws Exception;
+```
+
+如果一个ChannelHandler可以添加到多个ChannelPipeline当中，需要在该ChannelHandler头上加上注解@Sharable标注，非常明显的错误标注为：
+
+![image-20211127123416076](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127123416076.png)
+
+一般标注了@Sharable的需要是无状态的或者是线程安全的才可以
+
+> 一种非常常见的ChannelHandler的共享使用为：收集跨越多个Channel的统计信息
+
+
+
+高级用法：
+
+- 可以通过动态修改ChannelPipeline来实现动态的协议切换，如上一个ChannelHandler完成的是对消息的协议判断，根据判断出来的协议动态切换下一个ChannelHandler的协议解析模式
+- 缓存ChannelHandlerContext的引用，然后通过该引用来发送消息
+
+
+
+Netty当中的异常处理：
+
+可以分为两部分：处理入站异常和处理出站异常
+
+如果ChannelHandler抛出了异常，那么首先会被当前ChannelHandler当中的exceptionCaught捕获到，所以我们一般都会在方法当中完成两件事情：异常堆栈打印、ctx关闭，至于具体需要执行什么其他的业务逻辑，就自己添加了。
+
+往往都是在最后一个ChannelHandler当中完成异常处理，因为异常信息也会沿着入站方向流动，这样可以确保所有的异常信息都会被处理掉，无论该异常是发生在ChannelPipeline的什么位置，默认实现是转发给下一个ChannelHandler，如果到达最后还是没人处理，那么netty会将该异常标注为未处理，如下：
+
+```
+11月 27, 2021 12:53:02 下午 io.netty.channel.DefaultChannelPipeline onUnhandledInboundException
+警告: An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
+```
+
+
+
+
+
+出站异常：
+
+无论是操作成功或者是出现异常，都是基于以下的通知机制：
+
+- 根据出站操作返回的ChannelFuture，然后在ChannelFuture注册ChannelFutureListener来完成处理成功还是失败
+- 成功或者失败是出站操作时候对传入的ChannelPromise参数决定的，主要两个方法：`setSuccess();`  `setFailure(Throwable cause)`
+
+也是最常见的处理方式：
+
+![image-20211127125843013](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127125843013.png)
+
+还有另一种写法是直接将回调函数在ChannelOutboundHandler当中就注册了
+
+![image-20211127130017589](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127130017589.png)
+
+两种效果完全一致，只是编码风格不同，个人推荐使用第一种，更接近回调的思想
+
+
+
+
+
+## 第七章、EventLoop和线程模型
+
+
+
+Java当中提供了Thread和1.5引入的Thread优化技术Executor来利用多线程的优势，虽然池化技术可以很好的完成Thread重量级资源的重用，但是随着线程数的增加，上下文切换的次数也会增加的很明显，Netty显然也是认识到了这种线程模型所带来的问题，Netty的主旨是：**简化应用程序代码，同时最大限度的提高性能和可维护性**
+
+
+
+EventLoop：事件循环，整个模型的核心，包含两大部分API：并发处理和网络通信。并且其上的事件和任务都是FIFO的，可以保证字节内容总是顺序消费。
+
+其中只有一个方法parent，用来获取对应的EventLoopGroup
+
+所有的IO操作和事件都被分配给了EventLoop对应的Thread来进行处理，因此一定不能有阻塞操作，这是最新的Netty4的模型。
+
+Netty3原来只有入站事件会被EventLoop处理，出站事件都由调用线程处理，因此可能是EventLoop的线程也可能是别的线程，乍看上去是好的，但有种情况：无法保证多个线程不会再同一时刻尝试访问出站事件，也就是两个线程同时调用channel.write方法。
+
+
+
+任务调度API：
+
+JDK的：Timer和ScheduledExecutorService
+
+![image-20211127163657727](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127163657727.png)
+
+好用的，但是存在一个性能瓶颈：如果大量任务紧密的调度，为了保证执行，会有大量的额外线程被创建
+
+![image-20211127164445107](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127164445107.png)
+
+![image-20211127164506310](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127164506310.png)
+
+Netty的EventLoop实际上是扩展了ScheduledExecutorService，这几个方法都是直接@Override了ScheduledExecutorService的
+
+取消定时调度操作：
+
+![image-20211127164956375](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127164956375.png)
+
+
+
+前面看到的都是Netty的性能提升表现，真正的线程模型实现细节从现在开始。
+
+EventLoop会将所有内部发生的事件（对应的Channel的事件）都在Thread内部解决掉
+
+执行逻辑如下：
+
+1、判断当前线程是否是EventLoop所持有的线程
+
+```
+Channel channel = ...;
+channel.eventLoop().inEventLoop(thread);
+```
+
+2、如果是的，那么当前线程直接执行任务
+
+3、如果不是的，把任务放入队列等EventLoop下一次来处理
+
+因此，**永远不要将一个长时间运行的任务放入到执行队列中，因为它将阻塞需要在同一线程上执行的任何其他任务**，如果必须的话就使用一个单独的EventExecutor来完成
+
+```java
+static final EventExecutorGroup group = new DefaultEventExecutorGroup(16);
+
+ChannelPipeline pipeline = ch.pipeline();
+
+pipeline.addLast("decoder", new MyProtocolDecoder());
+
+pipeline.addLast("encoder", new MyProtocolEncoder());
+
+// Tell the pipeline to run MyBusinessLogicHandler's event handler methods
+// in a different thread than an I/O thread so that the I/O thread is not blocked by
+// a time-consuming task.
+// If your business logic is fully asynchronous or finished very quickly, you don't
+// need to specify a group.
+pipeline.addLast(group, "handler", new MyBusinessLogicHandler());
+```
+
+
+
+根据传输方式的不同，可以分为异步传输和阻塞传输：
+
+- 异步传输
+
+通过尽可能少的Thread来支撑大量的Channel
+
+![image-20211127171144385](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127171144385.png)
+
+这时候多个Channel就无法使用ThreadLocal来做状态追踪了，因为都是共用一个ThreadLocal的，但是使用ThreadLocal来完成在Channel之间传递对象还是很好用的
+
+- 阻塞传输
+
+![image-20211127171655310](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127171655310.png)
+
+最常见的传输模型了，一个任务对应一个Thread
+
+
+
+
+
+## 第八章、引导
+
+
+
+引导一个应用程序是指对他进行配置，并使他运行起来的过程
+
+类图如下：
+
+![image-20211127230208241](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211127230208241.png)
+
+之所以会有这个区分，是因为致力方向不同：
+
+- 服务器致力于使用一个父Channel来接收来自客户端的连接，并创建子Channel以用于他们之间的通信
+- 客户端往往只需要一个单独的，没有父Channel的Channel来用于所有的网络交互
+
+之所以implements了Cloneable是因为需要完成配置引导类的拷贝，其中的EventLoopGroup是浅拷贝的。
+
+
+
+AbstractBootstrap的签名为：`public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C extends Channel> implements Cloneable `
+
+之所以要传入BC两个泛型（B就是当前子类的Class，C是子类的Channel对象），是为了支持链式调用，将本体或者Channel对象返回出去，这样就需要指明具体的数据类型
+
+
+
+先从结构简单的客户端API说起（Bootstrap往往只需要单独的Channel即可）：
+
+- `public Bootstrap group(EventLoopGroup group);`
+
+处理Channel事件的EventLoopGroup
+
+- `public Bootstrap channel(Class<? extends C> channelClass);`
+
+指定Channel实现类，会调用其中Channel的无参构造函数来创建Channel
+
+- `public B localAddress(SocketAddress localAddress);`
+
+指定Channel应该绑定到的本地地址，或者可以在bind和connect（就默认连本地了）方法当中去指定
+
+- `public <T> Bootstrap option(ChannelOption<T> option, T value);`
+
+设置ChannelOptional，在bind或者connect时候完成ChannelConfig属性设置，如果Channel已经被创建完成了再去调用，则不会有任何的效果
+
+- `public <T> Bootstrap attr(AttributeKey<T> key, T value);`
+
+:question:感觉就是上面option方法的翻版，也是在bind或者connect执行时候属性设置
+
+- `public Bootstrap handler(ChannelHandler handler);`
+
+设置ChannelHandler
+
+- `public Bootstrap remoteAddress(SocketAddress remoteAddress);` 
+
+指明远程地址，可以使用connect方法指明
+
