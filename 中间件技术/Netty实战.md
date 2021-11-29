@@ -1261,6 +1261,22 @@ pipeline.addLast(group, "handler", new MyBusinessLogicHandler());
 
 
 
+Netty支持多种NIO实现，有：
+
+- COMMON：NioEventLoopGroup
+- Linux：EpollEventLoopGroup
+- macOS：KQueueEventLoopGroup
+
+其实COMMON就是直接使用的JDK提供的NIO，JDK提供的NIO在Linux环境下使用的也是Epoll技术，Netty在这里之所有要重新写一个是因为Netty作者有自信自己写出来的Epoll比JDK当中的要好，好的地方是以下两点：
+
+- JDK的NIO只支持水平触发，Netty Epoll支持水平触发和边缘触发（默认）
+
+> 水平触发，当文件描述符的读缓冲区非空，有数据可读的时候，就一直发送可读信号，当文件描述符的写缓冲区非满，可写的时候，一直发出可写信号。
+>
+> 边缘触发：当文件描述符的读缓冲区由空转为非空的时候，代表有数据可读，发送一次可读信号，当文件描述符的写缓冲区由满转为非满的时候，代表有数据可写，发送一次可写信号。
+
+
+
 
 
 ## 第八章、引导
@@ -1333,4 +1349,40 @@ AbstractBootstrap的签名为：`public abstract class AbstractBootstrap<B exten
 - group
 - channel或者channelFactory
 - handler
+
+
+
+
+
+服务器引导
+
+操作非常多，比如从ServerChannel的子Channel中引导一个客户端这样的特殊情况
+
+主要的API区别是增加了一些child开头的方法，主要有：option、attr、handler、
+
+这里存在两个抽象：ServerChannel和子Channel，ServerChannel负责创建子Channel，而这些子Channel代表已经建立的连接，因此，ServerChannel的创建时期是在ServerBootstrap调用bind方法时候创建的，而子Channel创建时机是有客户端connect进来的时候创建的
+
+![image-20211128222515631](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211128222515631.png)
+
+
+
+Channel属性设置：可以在Bootstrap当中设置ChannelOption，这样在创建Channel的时候会自动应用，主要几种方式：
+
+1、`bootstrap#option(k, v)`，这里的k都是ChannelOption当中预设的属性，因此可用度不是很高
+
+2、`bootstrap#attr(k, v)`，这里的k是`AttributeKey<T>`，这里的v就是T，Channel当中取出值的话也是非常容易取出的，直接`channel#attr(k).get()`即可
+
+
+
+前面大多数都是TCP协议的，其实Bootstrap也可以引导无连接的协议，唯一的区别就是调用bind去接收消息。
+
+
+
+完成bootstrap的关闭：只需要调用`shutdownGracefully`方法即可，EventLoopGroup将处理任何挂起的事件和任务，并且随后释放所有的线程，但是是个异步操作，需要我们使用sync阻塞或者是向Future注册监听器以完成通知。
+
+
+
+
+
+
 
