@@ -1384,5 +1384,40 @@ Channel属性设置：可以在Bootstrap当中设置ChannelOption，这样在创
 
 
 
+## 第九章、单元测试
 
+
+
+单元测试的基本思想是：以尽可能小的区块测试你的代码，并且尽可能的和其他的代码模块以及运行时的依赖（如数据库和网络）相隔离
+
+Netty当中的单元测试主体为ChannelHandler，Netty专门针对单元测试提供了EmbeddedChannel，使用Junit4来完成。
+
+EmbeddedChannel可以认为是特殊的Channel实现，将入站事件或者是出站事件写入到EmbeddedChannel当中，然后检查Channel的尾部即可
+
+核心API：
+
+![image-20211130154015997](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211130154015997.png)
+
+书中给出了很明确的说法，关于入站数据和出站数据：
+
+- 入站数据由ChannelInboundHandler处理，代表从远程节点读取的数据
+- 出站数据由ChannelOutboundHandler处理，代表将要写到远程节点的数据
+
+![image-20211130154920283](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211130154920283.png)
+
+可以就把EmbeddedChannel看做一个简易的客户端，使用起来感觉应该会非常棒
+
+
+
+一些断言方法都在`org.junit.Assert`当中，并且是静态测试方法，因此建议使用`import static org.junit.Assert.*`来高效使用
+
+
+
+
+
+# 第二部分：编解码器
+
+
+
+在数据和网络字节流之间相互转换是最常见的编程任务之一
 
