@@ -1473,3 +1473,64 @@ MessageToMessageDecoder：完成消息到消息间的转换
 一个异常：TooLongFrameException：因为Netty是异步的，所以需要使用缓冲区来缓存大量的入站消息，为了防止缓冲大量数据导致内存耗尽，在缓冲区扩张到指定大小时候会抛出这个异常，这个异常会顺着Channel往下走，被下游的exceptionCaught捕获到。需要我们在解码器当中手动抛出：
 
 ![image-20211201233221433](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211201233221433.png)
+
+
+
+
+
+编码器，主要也就两种：
+
+- MessageToByteEncoder
+- MessageToMessageEncoder
+
+都是直接extends了ChannelOutboundHnadlerAdaptor
+
+
+
+MessageToByteEncoder核心API
+
+![image-20211202155218654](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211202155218654.png)
+
+对比ByteToMessageDecoder做逆向的事儿，
+
+
+
+MessageToMessageEncoder
+
+感觉之所以有这个，是对上面的补充，因为字节流只是一种网络传输的方式（或者字符串编码），还会有其他的方式，也就是该方法所做的补充了
+
+
+
+抽象编解码器：在同一个类当中完成对入站和出站数据的编解码操作，这些类同时实现了ChannelInboundHandler和ChannelOutboundHandler接口。其实Netty没有那么优先于这种编解码器，因为将编码和解码功能分开，可以最大化代码的可重用性和可扩展性
+
+
+
+1、ByteToMessageCoderc
+
+他是extends了ChannelInboundHandlerAdaptor然后再implements了ChannelOutboundHandler，可见入站操作普遍会比出站操作复杂
+
+![image-20211202165602831](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211202165602831.png)
+
+完完全全的简单组合。
+
+
+
+2、MessageToMessageCodec
+
+![image-20211202170223665](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211202170223665.png)
+
+decode操作是将in转成out，encode操作是将out转换成in
+
+因此ByteToMessageCoderc可以理解成MessageToMessageCodec<ByteBuf, Object>，将第一个参数IN看做是网络上的数据即可
+
+
+
+
+
+上面提到的Codec会降低代码的重用性，所以Netty也是通过组合的方式来解决了：
+
+`public class CombinedChannelDuplexHandler<I extends ChannelInboundHandler, O extends ChannelOutboundHandler>`
+
+可以实现各自的编解码器，然后再组装到这个Handler当中来即可。
+
+提供给第三方使用会比较好，感觉自己使用感觉还是挺麻烦的，个人偏好问题吧。
