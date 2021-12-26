@@ -106,3 +106,33 @@ git config branch.develop.merge refs/heads/develop
 
 [1] 为什么merge = refs/heads/develop 而不是refs/remotes/develop?
 因为这里merge指代的是我们想要merge的远程分支，是remote上的refs/heads/develop，文中即是origin上的refs/heads/develop，这和我们在本地直接执行`git merge`是不同的(本地执行`git merge origin/develop`则是直接merge refs/remotes/develop)。
+
+
+
+
+
+# Git配置
+
+
+
+三种变量配置存储行为：
+
+- 系统配置配置：`/etc/gitconfig`，查看参数`--system`
+- 当前用户配置：`~/.gitconfig`，查看参数`--global`
+- 当前仓库配置：`.git/config`，查看参数`--local`
+
+默认下一级的配置变量会覆盖上一级的，可以使用`git config`+对应存储行为参数+`-l`来查看，如果没有指定存储行为那么直接获取当前能获取到的变量信息，可以加上`--show-origin`参数查看当前变量配置来源文件
+
+
+
+就行存储行为变量配置时候也非常简单，带上`--global`参数之后，即可直接将变量信息写入到对应的配置文件当中去，如果没有指定只会写入当前临时变量区，因此以后就不用再去添加了 ，变量设置格式为：
+
+```
+git config --global user.name "LuckyCurve"
+git config --global user.email "luckycurvec@gmail.com"
+```
+
+> 查找对应的参考手册很容易：`git <command> --help`，本地HTML文件，是英文的并且比较全，如果只是想获取使用参数：`git <command> -h`
+
+
+
