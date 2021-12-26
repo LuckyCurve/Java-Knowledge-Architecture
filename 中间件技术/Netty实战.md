@@ -1689,3 +1689,33 @@ Protocol Buffers
 ![image-20211205163528945](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211205163528945.png)
 
 后面两者来避免粘包半包问题的
+
+
+
+
+
+
+
+## 第十二章、WebSocket
+
+
+
+实现实时Web的功能：实时Web利用技术和实践，使用户在信息的作者发布信息之后就能够立即收到信息，而不需要他们或者其他的软件周期性的检查信息源以获取更新（JQuery）
+
+WebSocket协议在这方面迈出了坚实的一步
+
+WebSocket协议是完全重新设计的协议，旨在为Web上的双向数据传输问题提供一个坚实可行的解决方案，使得客户端和服务器之间可以在任一时刻传输消息。
+
+因此要求异步处理消息回执（如果同步处理，无法保证任一时刻都在传输消息）
+
+用Netty使用WebSocket实现以下实时聊天功能：
+
+![image-20211206225154099](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211206225154099.png)
+
+
+
+WebSocket协议需要从标准的HTTP进行升级握手，因此WebSocket的应用程序都是以HTTP开头
+
+因此可以指定如下规则：如果请求以/ws结尾就升级，否则不升级
+
+![image-20211206225528005](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211206225528005.png)
