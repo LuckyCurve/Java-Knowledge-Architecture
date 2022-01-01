@@ -136,3 +136,312 @@ git config --global user.email "luckycurvec@gmail.com"
 
 
 
+
+
+# Git基础
+
+
+
+我们使用`git clone`命令克隆仓库的时候，执行逻辑为：从远程仓库拉取`.git`文件夹，然后从中读取最新版本的文件的拷贝，拷贝到当前工作区当中来
+
+如果需要单独指定文件名字：`git clone <url> <dir-name>`
+
+
+
+文件的两种状态：
+
+- 已追踪：在上一次的快照当中有它们的记录，可细分为
+  - 未修改
+  - 已修改
+  - 已放入暂存区
+- 未追踪：在上一次的快照当中没有它们的记录，往往是新创建的
+
+
+
+直接使用`git status`来查看文件状态，会输出的比较繁琐，可以使用`git status -s`命令来简短输出内容，输出的几种格式：
+
+- `M`：修改过的文件，绿色的：已经加入缓冲区，红色的：未加入缓冲区
+- `??`：未追踪的文件
+- `A`：新添加到的暂存区的文件，一般是开始追踪的文件
+
+
+
+`.gitignore`忽略文件，使用标准的glob模式匹配（Shell使用的，简化了的正则表达式）
+
+很好的一个Demo：
+
+```
+# 忽略所有的 .a 文件
+*.a
+# 但跟踪所有的 lib.a，即便你在前面忽略了 .a 文件
+!lib.a
+# 只忽略当前目录下的 TODO 文件，而不忽略 subdir/TODO
+/TODO
+# 忽略任何目录下名为 build 的文件夹
+build/
+# 忽略 doc/notes.txt，但不忽略 doc/server/arch.txt
+doc/*.txt
+# 忽略 doc/ 目录及其所有子目录下的 .pdf 文件
+doc/**/*.pdf
+```
+
+> 文件 .gitignore 的格式规范如下：
+> • 所有空行或者以 # 开头的行都会被 Git 忽略。
+> • 可以使用标准的 glob 模式匹配，它会递归地应用在整个工作区中。
+> • 匹配模式可以以（/）开头防止递归。
+> • 匹配模式可以以（/）结尾指定目录。
+> • 要忽略指定模式以外的文件或目录，可以在模式前加上叹号（!）取反。
+> 所谓的 glob 模式是指 shell 所使用的简化了的正则表达式。 星号（*）匹配零个或多个任意字符；[abc] 匹配
+> 任何一个列在方括号中的字符 （这个例子要么匹配一个 a，要么匹配一个 b，要么匹配一个 c）； 问号（?）只
+> 匹配一个任意字符；如果在方括号中使用短划线分隔两个字符， 表示所有在这两个字符范围内的都可以匹配
+> （比如 [0-9] 表示匹配所有 0 到 9 的数字）。 使用两个星号（**）表示匹配任意中间目录，比如 a/**/z 可以
+> 匹配 a/z 、 a/b/z 或 a/b/c/z 等。
+
+
+
+通常使用`git diff`命令查看两点：
+
+1、哪些更新尚未暂存——`git diff`
+
+2、哪些更新已经暂存并等待下次提交——`git diff --staged`或者`git diff -cached`
+
+
+
+可以直接使用git commit命令，命令输出过程当中会调用git status帮助你查看哪些文件进行了修改
+
+git提供了`git commit -a`的方式跳过暂存区，直接将所有以追踪的文件进行提交，相当于帮你自动执行add已经track的文件了
+
+
+
+删除文件：
+
+- git rm：从工作区和暂存区当中删除，如果暂存区当中存在修改未提交，此时需要-f参数才能rm成功
+- rm：操作系统指令，删除工作区内容，进行add后将删除提交到缓冲区就等价于git rm了
+- git rm --cached：仅在暂存区当中添加文件删除信息，磁盘上仍保留
+
+> 如果将删除信息写入到暂存区了并且提交了（上述三条指令都有这个作用），那么Git仓库的最新版本当中文件消失
+
+
+
+git历史
+
+git log查看，可以使用`git log -p`查看每次提交的修改，以及使用`git log -p -2`查看最近两次提交的修改，或者使用`git log --stat`列出审计信息，如增加修改文件数量等等。
+
+![image-20211228172348228](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211228172348228.png)
+
+
+
+
+
+一个非常有用的命令：`git commit --amend` amend：修正
+
+该命令会将当前暂存区内容直接合并到Git仓库的最新版本当中，并且可以重新提交commit信息，因此如果commit info写错了可以使用该命令来完成，版本的SHA-1的值也会变
+
+实际操作就是用一个新的提交覆盖了旧的提交，因为上面的SHA-1的值完全改变了
+
+
+
+取消暂存的文件，在原来的git版本当中我们使用`git status`命令的时候，git建议我们使用`git reset HEAD <file>`去将文件从暂存区当中删除，在新版本的git当中建议使用`git restore --staged <file>`，可能因为git reset是一个非常危险的命令，可能更改工作区当中的内容
+
+
+
+想要撤销对工作区当中文件的修改，命令行当中也提示了：`git restore <file>`，会回到最近的一个版本当中去
+
+
+
+在git当中任何已经提交的东西几乎总是可以恢复的，包括被删除的分支中的提交和使用amend覆盖的提交，如果没有提交很有可能找不回来了
+
+
+
+`git fetch <remote> [<branch>]`命令相当于拉取远程仓库到本地仓库，但他不会合并或者修改你的工作区，因此`git clone <remote> [<dir>]`相当于是先fetch下来到本地然后再合并到当前工作区的组合命令了，`git pull <remote>`命令也是使用fetch远程仓库然后尝试合并到当前分支，如果有冲突就得我们手动去fetch然后处理了。
+
+
+
+可以使用`git remote show <origin>`查看远程分支状态
+
+```bash
+$ git remote show github
+* remote github
+  Fetch URL: git@github.com:LuckyCurve/Java-Knowledge-Architecture.git
+  Push  URL: git@github.com:LuckyCurve/Java-Knowledge-Architecture.git
+  HEAD branch: master
+  Remote branch:
+    master tracked
+  Local ref configured for 'git push':
+    master pushes to master (up to date)
+```
+
+
+
+git推荐给一些重要的版本打上tag，可以使用`git tag`查看打上的所有标签
+
+> 默认就是查看所有的，如果使用参数`git tag -l "user*"`这时候-l就不是list，而是强调使用后面的
+
+
+
+标签：轻量标签和附注标签
+
+轻量标签：某个特定提交的引用
+
+附注标签：存储在Git仓库当中的一个完整对象，有自己的SHA-1，可以被校验的
+
+通常建议创建附注标签：`git tag -a <tagname>`，通常是v1.2的形式，然后输入附加信息
+
+使用`git show <tagname>`查看具体信息
+
+轻量标签：不带参数a即可，没有附加信息
+
+附注标签较之于轻量标签会多这个信息：
+
+![image-20211229195744406](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211229195744406.png)
+
+
+
+如果想给历史版本打标签也非常简单：`git tag -a <tagname> SHA-1`
+
+SHA-1的值建议使用`git log --pretty=oneline`来查看
+
+
+
+默认操作下标签是不共享的，如果想要将本地标签push到服务器上，得显式的加上：
+
+- `git push <branch> <tagname>`
+
+如果需要上传所有标签：
+
+- `git push <branch> --tags`
+
+这样可以把标签上传到服务器，别人从服务器上拉取的时候也可以看到标签信息
+
+
+
+如果删除本地标签，-d参数就好了，但是远程标签不会删除，即使我们也按照上面的push标签信息过去了也不会，要使用：`git push origin --delete <tagname>`来完成
+
+
+git别名，可以使用一个别名代替组合命令：
+
+```
+git config --global alias.last 'log -1'
+```
+
+因此`git last`等价于`git log -1`
+
+
+
+
+
+# Git分支
+
+
+
+使用分支最主要的一点就是把工作从主线当中分离开来，以免影响主线的开发
+
+
+
+Git在add到暂存区的时候就会计算文件的校验和信息，在commit的时候会产生一个完整的提交对象，提交对象可能有一个或者多个父对象指向上一次提交。
+
+假设我们提交了三个文件到仓库，这次提交会产生五个对象，三个blob文件（文件快照），一个树信息（记录文件快照的层次结构，通过BLOB的SHA-1的值来构造的）和一个提交对象
+
+提交对象包含上述的所有信息，此外还包括作者信息以及提交信息等等
+
+![image-20220101131251901](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101131251901.png)
+
+**Git的分支本质上仅仅是指向提交对象的可变指针**，只是在每次提交操作的时候会向后移动罢了
+
+
+
+最直观的感受：创建一个testing分支：`git branch testing`
+
+![image-20220101131506033](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101131506033.png)
+
+Git区分当前是在哪一分支的，也非常简单：
+
+![image-20220101131815805](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101131815805.png)
+
+HEAD指向当前分支即可，相当于是当前分支的别名，因此在我们commit的时候，自然而然会让我们当前分支向后移动了
+
+```
+$ git log --oneline
+db1066b (HEAD -> master, tag: v1.2, testing) complete Java v2
+b606a4e (tag: v1.1) add Java.txt
+401965b first commit
+1870402 init version
+```
+
+切换分支也非常简单：`git checkout <branch>`，然后修改一下文件并进行提交，此时Git仓库状态为：
+
+![image-20220101132244020](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101132244020.png)
+
+
+
+如果我们此时再切换回master分支，**做了两件事儿**：
+
+- 使HEAD重新指向master
+- 将工作目录恢复成master所指向的快照内容
+
+> 有一个非常奇怪的事儿，如果我们修改了内容，没有提交到git仓库，就checkout分支了，无论当前这个文件在工作目录还是在暂存区，都会直接带到切换后的工作目录和暂存区当中去
+>
+> :warning:：**不用太过在意修改内容**，如果修改了一个文件，在别的分支是没有的，是不允许切换过去的
+>
+> 
+>
+> ```
+> error: Your local changes to the following files would be overwritten by checkout:
+>      master.txt
+> Please commit your changes or stash them before you switch branches.
+> Aborting
+> ```
+>
+> **官方给出的解答**：在你这么做之前，要留意你的工作目录和暂存区里那些还没有被提交的修改， 它可能会和你即将检出的分支产生冲突从而阻止 Git 切换到该分支。 最好的方法是，在你切换分支之前，保持好一个干净的状态。 
+
+可以使用如下命令查看多分支：
+
+```
+$ git log --oneline --all[查看所有分支] --graph[以图形化的方式]
+* 45ccf01 (HEAD -> master) master change
+| * 64bf5f0 (testing) make a change in branch testing
+|/
+* db1066b (tag: v1.2) complete Java v2
+* b606a4e (tag: v1.1) add Java.txt
+* 401965b first commit
+* 1870402 init version
+
+```
+
+![image-20220101133154429](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101133154429.png)
+
+
+
+切换到原分支之后Git会重置工作区内容，让工作区内容和最后一次提交时候一模一样
+
+
+
+分支合并：当前分支`git merge <branch>`合并其他分支
+
+![image-20220101231939690](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220101231939690.png)
+
+一般切Master然后merge其他，简单的三方合并：C2，C4，C5
+
+大部分情况不会出现冲突，出现冲突的情况：对同一文件的同一部分进行了不同的修改
+
+文件会被标注成unmerged状态，并且git会手动修改文件内容成：
+
+```
+<<<<<<< HEAD:index.html
+<div id="footer">contact : email.support@github.com</div>
+=======
+<div id="footer">
+please contact us at support@github.com
+</div>
+>>>>>>> iss53:index.html
+```
+
+`=======`用于文件内容分割，上半部分为HEAD的，下半部分为iss53的
+
+修改完成之后add然后commit即可
+
+
+
+git branch参数：
+
+--merged 与 --no-merged 这两个有用的选项可以过滤这个列表中已经合并或尚未合并到当前分支的分支
