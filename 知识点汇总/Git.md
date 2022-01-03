@@ -422,7 +422,7 @@ $ git log --oneline --all[查看所有分支] --graph[以图形化的方式]
 
 一般切Master然后merge其他，简单的三方合并：C2，C4，C5
 
-大部分情况不会出现冲突，出现冲突的情况：对同一文件的同一部分进行了不同的修改
+大部分情况不会出现冲突，出现冲突的情况：对同一文件的同一部分（同一行）进行了不同的修改
 
 文件会被标注成unmerged状态，并且git会手动修改文件内容成：
 
@@ -445,3 +445,104 @@ please contact us at support@github.com
 git branch参数：
 
 --merged 与 --no-merged 这两个有用的选项可以过滤这个列表中已经合并或尚未合并到当前分支的分支
+
+
+
+远程追踪分支：
+
+```
+$ git log --oneline -2
+69b0b41 (HEAD -> master, github/master, gitee/master) Git point summerize
+ab69a1d Git Configuration
+```
+
+可以看到，这里的`<remote>/<branch>`即为远程追踪分支，是最后一次网络通信之后`git remote show <remote>`，git远程仓库的本地状态记录，这里的master如果没有remote信息就是本地分支了，不是远程追踪分支
+
+![image-20220102202955085](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220102202955085.png)
+
+
+
+获取远程分支的状态，可以选择使用：`git remote show <remote>`来查看远程仓库是否有更新，或者使用`git fetch <remote>`来拉取远程仓库到本地，这时候我们使用`git branch -a`指令查看：
+
+```
+$ git branch -a
+* master
+  remotes/gitee/master
+```
+
+会发现有一个remotes分支，但是是红色的，本地从远程fetch之后，不会自动生成一个分支去对应远程，只有一个不可修改的`remote/<remote>/<branch>`指针，如果想要基于这个分支进行工作，需要基于这个分支创建一个新的分支
+
+`$ git branch remotes remotes/gitee/master
+Branch 'remotes' set up to track remote branch 'master' from 'gitee'.`
+
+或者使用如下命令顺带分支切换：
+
+`git checkout -b remotes remotes/gitee/master`
+
+
+
+使用上述命令，该本地分支称为追踪分支，被追踪的远程分支称为上游分支，追踪分支每次在进行切换到的时候，会自动对标本地仓库fetch下来的远程追踪分支，看下是否为最新，或者我们可以直接在该追踪分支当中执行`git pull`命令，会自动的去哪个远程节点上合并哪个远程分支
+
+
+
+如果需要修改当前分支所追踪的上游分支，使用`git branch -u <fetch-branch-info>`即可
+
+
+
+`git branch -vv`查看所有本地分支所追踪的远程分支状态已经领先【需要提交到远程】落后【需要拉取到本地】状态
+
+> 建议所有的上述操作都需要先`git fetch`一下，因为git只会与本地缓存数据来判断，或者`git fetch --all`直接fetch所有的远程分支
+
+
+
+git pull等于fetch加上一个merge
+
+
+
+git推送：`git push <remote> <localbranch>:<remotebranch>`
+
+删除远程分支：`git push <remote> --delete <branch>`
+
+
+
+
+
+在git当中整合来自不同分支的修改主要有两种方式：merge（合并）和rebase（变基）
+
+![image-20220102212633012](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220102212633012.png)
+
+除了merge来完成分支合并之外，还可以使用另一种技术，变基来达到相同的效果，核心思路：提取C4当中的补丁和修改，然后再C3的基础上重新应用一次，以达到以下的效果，需要切换到experiment分支然后`git rebase master`，或者直接`git rebase master experiment`：
+
+![image-20220102213050741](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220102213050741.png)
+
+然后这时候再merge一下：
+
+![image-20220102213105237](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220102213105237.png)
+
+使用变基之后，整个项目的提交历史会变得非常的整洁
+
+> 如果想要向其他人维护的项目贡献代码时，在这种情况下，首先在自己的分支里进行开发（或者零时分支），然后再变基到稳定的分支或者主分支上提交到主项目，这样项目维护者只需要快进合并即可
+
+变基是将一系列提交按照原有次序依次应用到另一分支上，而合并是把最终结果合在一起
+
+
+
+变基存在很大的风险，需要遵从一条准则：**如果提交存在于你的仓库之外，而别人可能基于这些提交进行开发，那么不要执行变基**
+
+merge和rebase唯一的区别就在于：在查看历史的时候rebase会更加清楚，因为变基之后整个修改过程在master分支上都变成线性的了，merge则会每个分支的合并都会单独展示出来。这也是使用merge和rebase的两种不同的观点，这两种工具都能达到合并分支的目的。
+
+**总的使用原则**：只对尚未推送或者分享给别人的本地修改执行变基操作清理历史，从不对已推送至别处的提交执行变基操作。
+
+> 在我看来，变基操作只使用到本地主题分支把，多了就别用了
+>
+> 变基操作和合并操作的主体不同，变基操作是将当前分支的修改rebase到其他分支上去，一般都是experiment分支执行`git rebase master`，这样执行之后会将experiment的修改加到master分支之后，然后需要将master merge上experiment
+>
+> :warning:：~~建议在master分支下使用`git rebase experiment`，这样会有这种效果~~
+>
+> ![image-20220102224403046](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220102224403046.png)
+>
+> ~~master分支自动将修改提交到experiment后面去了，这样experiment就不会被强制修改了，这样用就可以和merge操作同一，并且省去一次切换过程~~
+>
+> :warning::warning:：完完全全不建议这样搞，假设这样一种情况，很多补丁都通过变基方式提交到master分支上，如果采用这样一种方式,，master最后一次提交将被无限后置，这与实际是非常不符合的。
+
+> 而合并操作是将其他分支合并过来，通常都是master分支执行`git merge experiment`
