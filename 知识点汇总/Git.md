@@ -53,7 +53,9 @@ To push the current branch and set the remote as upstream, use
 
 > git中存在upstream和downstream，简言之，当我们把仓库A中某分支x的代码push到仓库B分支y，此时仓库B的这个分支y就叫做A中x分支的upstream，而x则被称作y的downstream，这是一个相对关系，每一个本地分支都相对地可以有一个远程的upstream分支（注意这个upstream分支可以不同名，但通常我们都会使用同名分支作为upstream）。
 
-初次提交本地分支，例如`git push origin develop`操作，并不会定义当前本地分支的upstream分支，我们可以通过`git push --set-upstream origin develop`，关联本地develop分支的upstream分支，另一个更为简洁的方式是初次push时，加入-u参数，例如`git push -u origin develop`，这个操作在push的同时会指定当前分支的upstream。
+初次提交本地分支，例如`git push origin develop`操作，并不会定义当前本地分支的upstream分支，我们可以通过`git push --set-upstream origin develop`，关联本地develop分支的upstream分支，另一个更为简洁的方式是初次push时，加入-u参数（就是--set-upstream的缩写），例如`git push -u origin develop`，这个操作在push的同时会指定当前分支的upstream。
+
+如果要取消上游分支：`git branch --unset-upstream`
 
 注意push.default = current可以在远程同名分支不存在的情况下自动创建同名分支，有些时候这也是个极其方便的模式，比如初次push你可以直接输入 git push 而不必显示指定远程分支。
 
@@ -546,3 +548,79 @@ merge和rebase唯一的区别就在于：在查看历史的时候rebase会更加
 > :warning::warning:：完完全全不建议这样搞，假设这样一种情况，很多补丁都通过变基方式提交到master分支上，如果采用这样一种方式,，master最后一次提交将被无限后置，这与实际是非常不符合的。
 
 > 而合并操作是将其他分支合并过来，通常都是master分支执行`git merge experiment`
+
+
+
+
+
+
+
+# 分布式Git
+
+
+
+分布式Git下的几种开发流程：
+
+1、集中式工作流：也就是最常见的，每个developer都有仓库的写权限，写完了直接push，类似于集中式版本管理
+
+![image-20220103164543188](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220103164543188.png)
+
+2、集成管理者工作流：每个开发者拥有自己仓库的写权限和其他所有人仓库的读权限，通常会有一个代表官方的仓库，你可以请求官方仓库的维护者拉取更新（Pull Request）并合并到主项目。维护者需要将你的仓库作为远程仓库添加进来然后合并进主项目当中并推送回官方仓库，通常工作流程：
+
+1、项目维护者推送主仓库
+
+2、贡献者克隆此仓库，做出修改
+
+3、贡献者将自己的修改推送到自己的仓库当中去
+
+4、贡献者给维护者发邮件，请求拉取自己的更新
+
+5、维护者在自己本地合并贡献者仓库的代码
+
+6、维护者将合并后的修改推回到主仓库当中去
+
+> 越来越感觉变基和合并的差距不是很大了，就是对历史的保留程度不一样而已了，但为了历史程度的简单，不然每个修改就多了一个分支信息，往往都是直接变基的
+
+![image-20220103164655675](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220103164655675.png)
+
+3、主管与副主管工作流：是对集成管理者工作流的扩展，往往只有超大型项目才会使用，Linux内核就是这样开发出来的，副主管完成对项目当中某个特定部分的集成管理，主管则完成对总的集成管理：
+
+1、普通开发者在自己的主题分支上工作，并根据 master 分支进行变基。 这里是主管推送的参考仓库的
+master 分支。
+
+2、副主管将普通开发者的主题分支合并到自己的 master 分支中。
+
+3、主管将所有副主管的 master 分支并入自己的 master 分支中。
+
+4、最后，主管将集成后的 master 分支推送到参考仓库中，以便所有其他开发者以此为基础进行变基。
+
+> 可以看到，由于普通开发者自己的主题分支不会共享，所以可以变基，否则就要求去merge了，变基还有一个优势就是可以改写历史
+
+
+
+你通常会在一个主题分支上工作一会儿，当它准备好整合时就合并到你的 master
+分支。 当想要共享工作时，如果有改动的话就抓取它然后合并到你自己的 master 分支， 之后推送到服务器上的 master 分支。
+
+
+
+之所以使用变基是因为可以很容易的让你丢弃掉主题分支，手动选择需要将哪一特性直接加到master分支当中去，如果master分支更新了，我们需要合并到远程的master分支上面去，最常见的一种做法是：
+
+```
+git checkout topicA
+git fetch origin #更新Git仓库信息
+git rebase origin/master
+git push -f myproject topicA
+```
+
+基于最新的origin/master来进行变基，这里之所以要-f推送到远程，是因为改变了myproject上原来的topicA的轨迹
+
+
+
+`git merge --squash <branch>`使用`--squash`参数可以不出现分支的合并操作，只是将变更重放到该分支当中了，但是分支并没有显式的合并，呈现出来的状态如图：
+
+![image-20220103205010011](https://gitee.com/LuckyCurve/img/raw/master//img/image-20220103205010011.png)
+
+仍然是分叉的状态，并且将所有的修改都直接压缩成一次等待去提交了，对主题分支使用这种方法变相等于变基然后合并成一次提交了，但Git内部是知道的，因为你可以直接将topicA删除掉
+
+
+
