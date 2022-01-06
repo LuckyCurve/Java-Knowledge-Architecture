@@ -207,6 +207,21 @@ doc/**/*.pdf
 
 2、哪些更新已经暂存并等待下次提交——`git diff --staged`或者`git diff -cached`
 
+> 默认的`git diff`的可读性往往不强：
+>
+> ```
+> -My friend Tom recently gave an excellent talk
+> +My good friend Tom gave an excellent talk
+> ```
+>
+> 可以使用`--word-diff`的参数来格式化修改
+>
+> ```
+> My {+good+} friend Tom [-recently-] gave an excellent talk
+> ```
+>
+> 非常好用
+
 
 
 可以直接使用git commit命令，命令输出过程当中会调用git status帮助你查看哪些文件进行了修改
@@ -624,3 +639,8 @@ git push -f myproject topicA
 
 
 
+在github中可以提交fork之后创建主题分支，手动合并或者变基然后提交master，但是也可以直接pull Request那个主题分支，Git会自动帮你在评审通过后进行merge操作
+
+但这个merge操作不一定会成功，你需要将源版本库添加为一个新的远端，抓取内容，合并该远端的内容到你的主分支当中去，修复问题并最终重新推送回你提交Pull Request使用的分支。
+
+Pull Request会自动跟踪你的分支的Commit信息的，因此可以在后期完成提交工作
