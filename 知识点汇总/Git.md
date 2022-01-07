@@ -322,11 +322,11 @@ SHA-1的值建议使用`git log --pretty=oneline`来查看
 
 默认操作下标签是不共享的，如果想要将本地标签push到服务器上，得显式的加上：
 
-- `git push <branch> <tagname>`
+- `git push <remote> <branch> <tagname>`
 
 如果需要上传所有标签：
 
-- `git push <branch> --tags`
+- `git push <remote> <branch> --tags`
 
 这样可以把标签上传到服务器，别人从服务器上拉取的时候也可以看到标签信息
 
@@ -644,3 +644,4 @@ git push -f myproject topicA
 但这个merge操作不一定会成功，你需要将源版本库添加为一个新的远端，抓取内容，合并该远端的内容到你的主分支当中去，修复问题并最终重新推送回你提交Pull Request使用的分支。
 
 Pull Request会自动跟踪你的分支的Commit信息的，因此可以在后期完成提交工作
+
