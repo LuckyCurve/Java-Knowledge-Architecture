@@ -1719,3 +1719,38 @@ WebSocket协议需要从标准的HTTP进行升级握手，因此WebSocket的应�
 因此可以指定如下规则：如果请求以/ws结尾就升级，否则不升级
 
 ![image-20211206225528005](https://gitee.com/LuckyCurve/img/raw/master//img/image-20211206225528005.png)
+
+
+
+
+
+Netty自带注解：
+
+1、@Sharable：标注handler可共享，如果不标注，那么当一个Handler被共享的时候就会报错
+
+2、@Skip：跳过，可标注在handler当中的METHOD上，不能用，只支持内部使用
+
+3、
+
+
+
+
+
+
+
+# Netty当中使用到的设计模式
+
+
+
+|  设计模式  |                            出现类                            |                           核心代码                           |
+| :--------: | :----------------------------------------------------------: | :----------------------------------------------------------: |
+|  单例模式  | ReadTimeoutException【在Idle检测的时候避免异常被频繁的创建】 | `public static final ReadTimeoutException INSTANCE = PlatformDependent.javaVersion() >= 7 ? new ReadTimeoutException(true) : new ReadTimeoutException();` |
+|  工厂模式  | ReflectiveChannelFactory【反射加工厂的方式来完成Channel和Childchannel的创建】 | `constructor = clazz.getConstructor();` `return constructor.newInstance();` |
+|  策略模式  | EventExecutorChooser【从NioEventLoopGroup当中选择一个EventLoop，两个具体策略：GenericEventExecutorChooser、PowerOfTwoEventExecutorChooser】 |                   `EventExecutor next();`                    |
+|  装饰模式  | DuplicateByteBuf【创建一个与原ByteBuf共享源缓冲区的ByteBuf，只存在自己的read和write指针】 |                                                              |
+| 责任链模式 |                       ChannelPipeline                        |                                                              |
+| 建造者模式 |         SslContextBuilder【完成对SslContext的构建】          |                                                              |
+| 观察者模式 |                  channelFuture#addListener                   |                                                              |
+|            |                                                              |                                                              |
+|            |                                                              |                                                              |
+
